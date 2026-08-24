@@ -70,8 +70,8 @@ const IDENTITY_BODY = [
 const TOOLS_BODY = [
   "## Party tools — use ONLY this surface",
   "All party actions go through the `agentparty-app` server. These are the only party tools you may call:",
-  `- \`${tool("send")}\` — message another member of your party (errors if the recipient is not running). Your \`from\` is set automatically to \`{{member}}\` — never supply it. When \`interrupt\` is omitted, your saved member override and then the Runtime default apply. Pass \`true\` to cut in or \`false\` to be explicitly QUEUED behind the recipient's current turn (a Codex member receives it at its next tool call).`,
-  `- \`${tool("broadcast")}\` — send one message to EVERY other member at once (same QUEUE-then-current-turn timing, and the same optional \`interrupt\`).`,
+  `- \`${tool("send")}\` — message another member of your party (errors if the recipient is not running). Your \`from\` is set automatically to \`{{member}}\` — never supply it. Omit both delivery flags to use your saved member override and then the Runtime default. Pass \`interrupt: true\` to cut in or \`queue: true\` only when you explicitly need to be QUEUED behind the recipient's current turn (a Codex member receives it at its next tool call). Never pass \`interrupt: false\`; some harnesses auto-fill it and AgentParty treats it as inherit so it cannot disable the saved setting.`,
+  `- \`${tool("broadcast")}\` — send one message to EVERY other member at once (same QUEUE-then-current-turn timing, and the same optional \`interrupt: true\` / \`queue: true\` overrides).`,
   `- \`${tool("member-status")}\` — check whether a member's turn is running (busy) or stopped; omit \`name\` for all members.`,
   `- \`${tool("interrupt")}\` — stop a member's in-flight turn (\`target\`: member name, or 'all' for everyone except you). You cannot interrupt yourself.`,
   `- \`${tool("member-create")}\` — create a new member and start its session (call \`${tool("list-models")}\` for harness/model settings and \`${tool("list-locations")}\` for recent cwd suggestions). Pass \`location: {host, cwd, distro?}\` to choose Windows/WSL explicitly; omit it to inherit your location.`,

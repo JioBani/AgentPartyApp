@@ -2270,11 +2270,17 @@ fail-open: the message is delivered unreviewed with a visible notice. A human
 
 For a **member-originated** message, omitting `interrupt` uses the sender's
 per-member `outboundInterrupt` override, then the Agent-screen
-`memberMessaging.interruptOnSend` default. An explicit `true` or `false` always
-wins. This applies equally to the lower-level member `send` endpoint and the
-agent-facing `send`/`broadcast` tools. Interrupt is conditional on the recipient
-having an active turn when the message arrives: an idle, sleeping, or unstarted
-recipient is sent to, woken, or started normally and is never immediately stopped.
+`memberMessaging.interruptOnSend` default. On the HTTP endpoint an explicit
+`interrupt: true` or `interrupt: false` always wins. The agent-facing
+`send`/`broadcast` tools use unambiguous opt-in flags instead:
+`interrupt: true` forces a cut-in and `queue: true` forces waiting; omitting both
+inherits the saved member/Runtime preference. A legacy tool call containing
+`interrupt: false` is treated as omitted because some harnesses materialize an
+absent optional boolean as `false`. This prevents a generated default from
+silently disabling the user's setting while preserving explicit queueing through
+`queue: true`. Interrupt is conditional on the recipient having an active turn
+when the message arrives: an idle, sleeping, or unstarted recipient is sent to,
+woken, or started normally and is never immediately stopped.
 
 The reviewer's `effort` reaches the model differently per provider — `thinking`
 for Anthropic (which rejects `effort` outright), `effort` for router-backed
@@ -2589,10 +2595,13 @@ a sender setting and works without a live session.
 - `false`: keep a busy recipient's current turn and queue behind it.
 - `null`: inherit `memberMessaging.interruptOnSend` from Agent settings.
 
-Calls that explicitly include `interrupt: true` or `interrupt: false` override
-both this value and the Agent default. Even an explicit `true` only interrupts
-a turn that was already active when the message arrived; it does not stop idle,
-sleeping, or newly started recipients.
+HTTP calls that explicitly include `interrupt: true` or `interrupt: false`
+override both this value and the Agent default. Agent-facing party tools use
+`interrupt: true` to force interruption and `queue: true` to force queueing;
+omitting both inherits this member value, and legacy `interrupt: false` is
+treated as omitted. Even an explicit interruption only stops a turn that was
+already active when the message arrived; it does not stop idle, sleeping, or
+newly started recipients.
 
 ### `POST /api/party/members/:name/permission`
 

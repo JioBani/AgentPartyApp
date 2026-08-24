@@ -43,7 +43,7 @@ async function main() {
     assert((await get("/api/health")).ok, `real app is up at ${base}`);
     const seeded = await post("/api/qa/seed", {
       party: "member interrupt e2e",
-      members: [{ name: "sender" }, { name: "그록" }, { name: "한글-수신자" }, { name: "target-split" }, { name: "target-runtime" }, { name: "target-member" }, { name: "target-explicit" }, { name: "target-idle" }, { name: "target-sleeping" }],
+      members: [{ name: "sender" }, { name: "그록" }, { name: "한글-수신자" }, { name: "target-split" }, { name: "target-runtime" }, { name: "target-member" }, { name: "target-queue" }, { name: "target-explicit" }, { name: "target-http-queue" }, { name: "target-idle" }, { name: "target-sleeping" }],
     });
 
     const unicodeSend = await callPartyMcpAs("그록", seeded.currentPartyId, "한글-수신자", "한글 발신자와 수신자");
@@ -58,18 +58,38 @@ async function main() {
     const runtime = await post("/api/settings", { memberMessaging: { interruptOnSend: true } });
     assert(runtime.memberMessaging?.interruptOnSend === true, "Runtime default persists as interrupt");
     await workingTarget("target-runtime");
-    let sent = await post("/api/party/messages", { from: "sender", to: "target-runtime", content: "runtime-default" });
-    assert(sent.queued === true && sent.queue?.items?.find((item) => item.text === "runtime-default")?.cutIn === true, "omitted value inherits Runtime and cuts in");
+    let sent = await callPartyMcpAs("sender", seeded.currentPartyId, "target-runtime", "runtime-default", { interrupt: false });
+    let queued = await get("/api/party/members/target-runtime/queue");
+    let queuedItem = queued.queue?.items?.find((item) => item.text === "runtime-default");
+    assert(sent.data?.queued === true && queuedItem?.cutIn === true, "legacy false from the member tool inherits Runtime and cuts in");
 
-    const override = await post("/api/party/members/sender/outbound-interrupt", { outboundInterrupt: false });
-    assert(override.member?.outboundInterrupt === false, "member queue override persists");
+    await post("/api/settings", { memberMessaging: { interruptOnSend: false } });
+    let override = await post("/api/party/members/sender/outbound-interrupt", { outboundInterrupt: true });
+    assert(override.member?.outboundInterrupt === true, "member interrupt override persists");
     await workingTarget("target-member");
-    sent = await post("/api/party/messages", { from: "sender", to: "target-member", content: "member-queue" });
-    assert(sent.queue?.items?.find((item) => item.text === "member-queue")?.cutIn !== true, "member false override beats Runtime true");
+    sent = await callPartyMcpAs("sender", seeded.currentPartyId, "target-member", "member-interrupt", { interrupt: false });
+    queued = await get("/api/party/members/target-member/queue");
+    queuedItem = queued.queue?.items?.find((item) => item.text === "member-interrupt");
+    assert(sent.data?.queued === true && queuedItem?.cutIn === true, "legacy false from the member tool inherits the per-member interrupt override");
 
+    await workingTarget("target-queue");
+    sent = await callPartyMcpAs("sender", seeded.currentPartyId, "target-queue", "explicit-queue", { queue: true });
+    queued = await get("/api/party/members/target-queue/queue");
+    queuedItem = queued.queue?.items?.find((item) => item.text === "explicit-queue");
+    assert(sent.data?.queued === true && Boolean(queuedItem) && queuedItem.cutIn !== true, "explicit queue beats the per-member interrupt override");
+
+    override = await post("/api/party/members/sender/outbound-interrupt", { outboundInterrupt: false });
+    assert(override.member?.outboundInterrupt === false, "member queue override persists");
     await workingTarget("target-explicit");
-    sent = await post("/api/party/messages", { from: "sender", to: "target-explicit", content: "explicit", interrupt: true });
-    assert(sent.queue?.items?.find((item) => item.text === "explicit")?.cutIn === true, "explicit true beats member false override");
+    sent = await callPartyMcpAs("sender", seeded.currentPartyId, "target-explicit", "explicit", { interrupt: true });
+    queued = await get("/api/party/members/target-explicit/queue");
+    queuedItem = queued.queue?.items?.find((item) => item.text === "explicit");
+    assert(sent.data?.queued === true && queuedItem?.cutIn === true, "explicit interrupt beats the member queue override");
+
+    await post("/api/settings", { memberMessaging: { interruptOnSend: true } });
+    await workingTarget("target-http-queue");
+    sent = await post("/api/party/messages", { from: "sender", to: "target-http-queue", content: "http-explicit-queue", interrupt: false });
+    assert(sent.queue?.items?.find((item) => item.text === "http-explicit-queue")?.cutIn !== true, "direct HTTP false remains an explicit queue override");
 
     // An interrupt preference is a conditional policy, not an instruction to
     // stop the turn this message itself creates. Idle, sleeping and unstarted
@@ -128,7 +148,7 @@ function killTree(pid) {
   spawn("taskkill", ["/pid", String(pid), "/t", "/f"], { windowsHide: true });
 }
 
-function callPartyMcpAs(member, party, to, content) {
+function callPartyMcpAs(member, party, to, content, delivery = {}) {
   return new Promise((resolve, reject) => {
     const relay = spawn(process.execPath, [path.join(root, "scripts", "agentparty-codex-mcp-server.mjs")], {
       cwd: root,
@@ -166,7 +186,7 @@ function callPartyMcpAs(member, party, to, content) {
     relay.once("exit", (code) => {
       if (code && code !== 0) finish(new Error(`party MCP exited ${code}: ${stderr}`));
     });
-    relay.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "send", arguments: { to, content } } })}\n`);
+    relay.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "send", arguments: { to, content, ...delivery } } })}\n`);
   });
 }
 

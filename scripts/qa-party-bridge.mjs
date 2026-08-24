@@ -329,10 +329,61 @@ console.log("\nCodex dynamic tool assertions:");
 const dynamic = buildPartyDynamicToolSpec();
 assert(dynamic.type === "namespace" && dynamic.name === PARTY_MCP_SERVER, "Codex dynamic tools use the agentparty-app namespace");
 assert(JSON.stringify(dynamic.tools.map((tool) => tool.name)) === JSON.stringify(toolNames), "Codex dynamic tools expose the same canonical party tools");
+const dynamicSendSpec = dynamic.tools.find((tool) => tool.name === "send")?.inputSchema;
+assert(dynamicSendSpec?.properties?.interrupt?.type === "boolean" && dynamicSendSpec?.properties?.queue?.type === "boolean", "member send exposes separate interrupt and queue delivery flags");
 const beforeDynamic = sentTurns.length;
 const dynamicOut = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, { to: "buddy", content: "hello from codex" });
 assert(dynamicOut.ok, "Codex dispatcher accepts namespaced party tool names");
 assert(sentTurns.length === beforeDynamic + 1 && /from="main"/.test(sentTurns[beforeDynamic].text), "Codex dispatcher stamps from=main through the same bridge identity");
+
+// Real harness transcripts showed Codex materializing the old optional boolean
+// as `interrupt:false` on every call. That generated value must inherit rather
+// than silently disabling both Runtime and per-member interrupt preferences.
+snapshots.get(memberSession("buddy")).status = "responding";
+svc.clearMemberQueue("buddy", partyId);
+svc.setMemberOutboundInterrupt("main", null, partyId);
+svc.setMemberMessaging({ interruptOnSend: true });
+let beforeToolInterrupt = interrupted.length;
+let inheritedToolSend = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, {
+  to: "buddy", content: "legacy-false-inherits-runtime", interrupt: false,
+});
+let buddyQueue = svc.getMemberQueue("buddy", partyId);
+assert(inheritedToolSend.ok && interrupted.length === beforeToolInterrupt + 1 && buddyQueue.items[0]?.cutIn === true, "legacy tool interrupt:false inherits the Runtime true default");
+
+svc.clearMemberQueue("buddy", partyId);
+svc.setMemberMessaging({ interruptOnSend: false });
+svc.setMemberOutboundInterrupt("main", true, partyId);
+beforeToolInterrupt = interrupted.length;
+inheritedToolSend = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, {
+  to: "buddy", content: "legacy-false-inherits-member", interrupt: false,
+});
+buddyQueue = svc.getMemberQueue("buddy", partyId);
+assert(inheritedToolSend.ok && interrupted.length === beforeToolInterrupt + 1 && buddyQueue.items[0]?.cutIn === true, "legacy tool interrupt:false inherits a per-member true override");
+
+svc.clearMemberQueue("buddy", partyId);
+beforeToolInterrupt = interrupted.length;
+const forcedQueue = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, {
+  to: "buddy", content: "explicit-tool-queue", queue: true,
+});
+buddyQueue = svc.getMemberQueue("buddy", partyId);
+assert(forcedQueue.ok && interrupted.length === beforeToolInterrupt && buddyQueue.items[0]?.cutIn !== true, "queue:true explicitly queues even when the member override is true");
+
+svc.clearMemberQueue("buddy", partyId);
+svc.setMemberOutboundInterrupt("main", false, partyId);
+beforeToolInterrupt = interrupted.length;
+const forcedInterrupt = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, {
+  to: "buddy", content: "explicit-tool-interrupt", interrupt: true,
+});
+buddyQueue = svc.getMemberQueue("buddy", partyId);
+assert(forcedInterrupt.ok && interrupted.length === beforeToolInterrupt + 1 && buddyQueue.items[0]?.cutIn === true, "interrupt:true explicitly cuts in even when the member override is false");
+const conflictingDelivery = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, {
+  to: "buddy", content: "ambiguous", interrupt: true, queue: true,
+});
+assert(!conflictingDelivery.ok && /only one delivery override/i.test(conflictingDelivery.error || ""), "conflicting interrupt/queue flags are rejected visibly");
+svc.clearMemberQueue("buddy", partyId);
+svc.setMemberOutboundInterrupt("main", null, partyId);
+svc.setMemberMessaging({ interruptOnSend: false });
+snapshots.get(memberSession("buddy")).status = "idle";
 const unknownDynamic = await invokePartyTool(bridge, mainBinding.identity, "mcp__agentparty__send", {});
 assert(!unknownDynamic.ok && /Unknown AgentParty tool/.test(unknownDynamic.error || ""), "Codex dispatcher rejects legacy agentparty tool names");
 const dynamicPermission = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}member-permission`, { name: "buddy", permissionMode: "plan" });
@@ -354,6 +405,7 @@ assert(primer.includes("mcp__agentparty-app__member-permission"), "primer teache
 assert(/Message Gate/.test(primer) && /reject/i.test(primer) && /force: true/.test(primer), "primer explains the Message Gate (review of outgoing messages, reject→rewrite, force escape hatch)");
 assert(primer.includes("mcp__agentparty-app__gate-set"), "primer names the gate-set tool");
 assert(/interrupt: true/.test(primer), "primer explains the interrupt-and-inject send option");
+assert(/queue: true/.test(primer) && /Never pass `interrupt: false`/.test(primer), "primer keeps generated false values from overriding the saved interrupt preference");
 // A sent message QUEUES behind the recipient's current turn (Codex: next tool
 // call) — the primer must teach this so agents stop expecting instant delivery.
 assert(/QUEUED/.test(primer) && /next tool call/.test(primer), "primer teaches queued delivery + Codex next-tool-call timing");

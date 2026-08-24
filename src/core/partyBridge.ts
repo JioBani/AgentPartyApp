@@ -168,6 +168,26 @@ export interface PartyBridge {
 }
 
 /**
+ * The agent tool uses two opt-in flags instead of a tri-state boolean. Some
+ * harnesses materialize an omitted optional boolean as `false`; treating that
+ * as an explicit queue request silently disables the saved Runtime/member
+ * preference. `interrupt:true` and `queue:true` remain unambiguous, while a
+ * legacy `interrupt:false` safely falls back to inheritance.
+ */
+function partyToolInterruptOf(input: Record<string, unknown>): { value: boolean | undefined; error?: string } {
+  if (input.interrupt === true && input.queue === true) {
+    return { value: undefined, error: "Choose only one delivery override: interrupt=true or queue=true." };
+  }
+  if (input.interrupt === true) return { value: true };
+  if (input.queue === true) return { value: false };
+  return { value: undefined };
+}
+
+function partyToolDeliveryArgs(interrupt: boolean | undefined): { interrupt?: true; queue?: true } {
+  return interrupt === true ? { interrupt: true } : interrupt === false ? { queue: true } : {};
+}
+
+/**
  * Rebuilds the PartyBridge capability surface around one transport-neutral tool
  * invoker. Cross-host sessions use this in the execution engine: the model sees
  * the exact same tools as an in-process member, while every mutation is still
@@ -178,7 +198,13 @@ export function partyBridgeFromInvoker(
 ): PartyBridge {
   const hostInvoke = (tool: PartyToolName, args: unknown) => invokePartyToolFromExecutionHost(invoke, tool, args);
   return {
-    send: (_from, to, content, interrupt, force, forceReason) => hostInvoke("send", { to, content, interrupt, force, forceReason }),
+    send: (_from, to, content, interrupt, force, forceReason) => hostInvoke("send", {
+      to,
+      content,
+      ...partyToolDeliveryArgs(interrupt),
+      force,
+      forceReason,
+    }),
     createMember: (request) => hostInvoke("member-create", request),
     removeMember: (name) => hostInvoke("member-remove", { name }),
     setPermission: (name, request) => hostInvoke("member-permission", { name, ...request }),
@@ -189,7 +215,7 @@ export function partyBridgeFromInvoker(
     listModels: (query) => hostInvoke("list-models", query || {}),
     status: (name) => hostInvoke("member-status", name ? { name } : {}),
     interrupt: (target) => hostInvoke("interrupt", { target }),
-    broadcast: (content, interrupt) => hostInvoke("broadcast", { content, interrupt }),
+    broadcast: (content, interrupt) => hostInvoke("broadcast", { content, ...partyToolDeliveryArgs(interrupt) }),
     discordConnect: (channelName) => hostInvoke("discord-connect", channelName ? { channelName } : {}),
     discordSend: (content) => hostInvoke("discord-send", { content }),
     discordSendImage: (path, caption) => hostInvoke("discord-send-image", { path, caption }),
@@ -226,7 +252,7 @@ export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "memb
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
-  send: "Send a message to another member of your party. Errors if the recipient is not running or does not exist. If interrupt is omitted, your member override and then the Runtime default decide whether a busy recipient is stopped. Set interrupt=true to cut in, or interrupt=false to explicitly queue behind the current turn.",
+  send: "Send a message to another member of your party. Errors if the recipient is not running or does not exist. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in, or queue=true to explicitly wait behind the current turn. Legacy interrupt=false is treated as omitted so model-generated false values cannot disable the saved setting.",
   "member-create": "Create a new member in your party and start its session. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?} to choose Windows or WSL explicitly; omit it to inherit your own execution location.",
   "member-remove": "Remove a member from your party. Cannot remove 'main'.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
@@ -242,7 +268,7 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "discord-send-image": "Upload an image FILE from this machine into your Discord thread, so the user can see a screenshot, chart or diagram instead of reading a description of it. `path` is a path on the machine you are running on. Optional `caption` is posted with it (same 2000-character rule). Over-size images are REJECTED with the limit stated, not silently dropped. Images only — this is not a general file transfer.",
   "attach-image": "Show the user an image in THIS conversation — a screenshot you took, a chart you produced, or a picture on the web. Give `path` (a file on the machine you are running on) or `url` (http/https), not both. The picture is displayed to the USER ONLY: it is not added to your context and you will not see it, so describe in your reply whatever you need the conversation to remember about it. Prefer this over pasting a file path into your text when the point is for a human to LOOK at something.",
   "discord-disconnect": "Stop bridging yourself to Discord. The channel and its history stay in Discord; you simply stop sending and receiving there.",
-  broadcast: "Send a message to EVERY other member of your party at once. If interrupt is omitted, your member override and then the Runtime default apply. Set true to cut in or false to explicitly queue behind busy recipients.",
+  broadcast: "Send a message to EVERY other member of your party at once. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in or queue=true to explicitly wait behind busy recipients.",
 };
 
 const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = {
@@ -251,7 +277,8 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     properties: {
       to: { type: "string", description: "Recipient member name in your party." },
       content: { type: "string", description: "Message body." },
-      interrupt: { type: "boolean", description: "Explicit true cuts in; explicit false queues behind the current turn. Omit to use your member override, then the Runtime default." },
+      interrupt: { type: "boolean", description: "True forces a cut-in. False is treated as omitted for harness compatibility; use queue=true to force waiting." },
+      queue: { type: "boolean", description: "True forces this message to wait behind the recipient's current turn. False is treated as omitted." },
       force: { type: "boolean", description: "Bypass the Message Gate review and deliver even if your gate would reject. Use ONLY when the message genuinely must go through; it is surfaced as a 'forced' badge. Default false." },
       forceReason: { type: "string", description: "Why you forced past the gate (recorded and shown). Provide when force=true." },
     },
@@ -445,7 +472,8 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     type: "object",
     properties: {
       content: { type: "string", description: "Message body sent to every other member." },
-      interrupt: { type: "boolean", description: "Explicit true cuts in; explicit false queues. Omit to use your member override, then the Runtime default." },
+      interrupt: { type: "boolean", description: "True forces a cut-in for busy recipients. False is treated as omitted for harness compatibility; use queue=true to force waiting." },
+      queue: { type: "boolean", description: "True forces the message to wait behind busy recipients. False is treated as omitted." },
     },
     required: ["content"],
     additionalProperties: false,
@@ -530,11 +558,13 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       if (!to || !content) {
         return { ok: false, error: "send requires string arguments: to, content." };
       }
+      const delivery = partyToolInterruptOf(input);
+      if (delivery.error) return { ok: false, error: delivery.error };
       return bridge.send(
         identity.member,
         to,
         content,
-        typeof input.interrupt === "boolean" ? input.interrupt : undefined,
+        delivery.value,
         input.force === true,
         typeof input.forceReason === "string" ? input.forceReason : undefined,
       );
@@ -644,7 +674,9 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       if (!content) {
         return { ok: false, error: "broadcast requires string argument: content." };
       }
-      return bridge.broadcast(content, typeof input.interrupt === "boolean" ? input.interrupt : undefined);
+      const delivery = partyToolInterruptOf(input);
+      if (delivery.error) return { ok: false, error: delivery.error };
+      return bridge.broadcast(content, delivery.value);
     }
     case "discord-connect":
       return bridge.discordConnect(typeof input.channelName === "string" && input.channelName ? input.channelName : undefined);
@@ -723,16 +755,20 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
   return [
     tool(
       "send",
-      "Send a message to another member of your party. Fire-and-forget: it delivers to the recipient's live session (their reply comes back later as their own message). A recipient that is idle, not started, or SLEEPING is started or woken and keeps its conversation. Errors only if it does not exist or was explicitly closed. Omit interrupt to use your member override then Runtime default; true cuts in, false queues.",
+      "Send a message to another member of your party. Fire-and-forget: it delivers to the recipient's live session (their reply comes back later as their own message). A recipient that is idle, not started, or SLEEPING is started or woken and keeps its conversation. Errors only if it does not exist or was explicitly closed. Omit both delivery flags to use your member override then Runtime default; interrupt=true cuts in and queue=true explicitly waits.",
       {
         to: z.string().describe("Recipient member name in your party."),
         content: z.string().describe("Message body."),
-        interrupt: z.boolean().optional().describe("Explicitly stop (true) or queue behind (false) the recipient's in-flight turn. Omit to use your member override, then the Runtime default."),
+        interrupt: z.boolean().optional().describe("True forces a cut-in. False is treated as omitted for harness compatibility; use queue=true to force waiting."),
+        queue: z.boolean().optional().describe("True forces this message to wait behind the recipient's current turn. False is treated as omitted."),
         force: z.boolean().optional().describe("Bypass the Message Gate review and deliver even if your gate would reject (surfaced as a 'forced' badge). Use only when the message must go through. Default false."),
         forceReason: z.string().optional().describe("Why you forced past the gate (recorded and shown). Provide when force=true."),
       },
-      async (args: { to: string; content: string; interrupt?: boolean; force?: boolean; forceReason?: string }) =>
-        envelope(await bridge.send(identity.member, args.to, args.content, typeof args.interrupt === "boolean" ? args.interrupt : undefined, args.force === true, args.forceReason)),
+      async (args: { to: string; content: string; interrupt?: boolean; queue?: boolean; force?: boolean; forceReason?: string }) => {
+        const delivery = partyToolInterruptOf(args);
+        if (delivery.error) return envelope({ ok: false, error: delivery.error });
+        return envelope(await bridge.send(identity.member, args.to, args.content, delivery.value, args.force === true, args.forceReason));
+      },
     ),
     tool(
       "member-create",
@@ -843,12 +879,17 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     ),
     tool(
       "broadcast",
-      "Send a message to EVERY other member of your party at once. Omit interrupt to use your member override then Runtime default; true cuts in, false queues.",
+      "Send a message to EVERY other member of your party at once. Omit both delivery flags to use your member override then Runtime default; interrupt=true cuts in and queue=true explicitly waits.",
       {
         content: z.string().describe("Message body sent to every other member."),
-        interrupt: z.boolean().optional().describe("Explicitly interrupt (true) or queue (false). Omit to use your member override, then the Runtime default."),
+        interrupt: z.boolean().optional().describe("True forces a cut-in for busy recipients. False is treated as omitted for harness compatibility; use queue=true to force waiting."),
+        queue: z.boolean().optional().describe("True forces the message to wait behind busy recipients. False is treated as omitted."),
       },
-      async (args: { content: string; interrupt?: boolean }) => envelope(await bridge.broadcast(args.content, typeof args.interrupt === "boolean" ? args.interrupt : undefined)),
+      async (args: { content: string; interrupt?: boolean; queue?: boolean }) => {
+        const delivery = partyToolInterruptOf(args);
+        if (delivery.error) return envelope({ ok: false, error: delivery.error });
+        return envelope(await bridge.broadcast(args.content, delivery.value));
+      },
     ),
     tool(
       "discord-connect",
