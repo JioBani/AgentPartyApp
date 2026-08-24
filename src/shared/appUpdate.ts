@@ -187,6 +187,16 @@ export function initialUpdateStatus(currentVersion: string, channel: UpdateChann
 }
 
 /**
+ * Options for {@link UpdateService.check} / `POST /api/update/check`.
+ *
+ * `quiet` is the settings-enter path: do not flash `checking` (that would hide
+ * the titlebar pill), and skip the feed if a check settled recently.
+ */
+export interface UpdateCheckOptions {
+  quiet?: boolean;
+}
+
+/**
  * True when there is a new version the user can act on — the single predicate
  * the titlebar indicator keys off, so "is there a badge" is decided in one
  * place rather than re-derived per view.

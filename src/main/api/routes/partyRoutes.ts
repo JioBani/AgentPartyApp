@@ -221,16 +221,14 @@ export const partyRoutes: MethodRoute[] = [
     handler: async (p, ctx) => {
       // Sampled BEFORE the read, and that ordering is the whole contract.
       //
-      // These blocks are a saved copy, written at some instant T inside the
-      // read — genuinely async for a WSL workspace, which crosses a process
-      // boundary. `before ≤ T ≤ after`. A seq taken after the answer is built
-      // makes the phone skip (T, after], events the saved copy does NOT
-      // contain: loss. Taken before, it re-applies (before, T]: duplication.
-      // 01 §5.3 chose the same way for the rewind snapshot — zero loss, and
-      // duplicates are the reducer's problem to be idempotent about.
+      // The outer `seq` is the PHONE transport position, sampled before this
+      // genuinely async WSL-capable read to choose zero loss over a possible
+      // replay. The returned transcript's own cursor is captured atomically by
+      // the engine recorder and makes session-event replay idempotent; these two
+      // cursors deliberately describe different streams.
       const seq = ctx.currentSeq?.();
-      const blocks = await ctx.controller.getMemberTranscript(ctx.workspace, text(p.name), ctx.windowId);
-      return seq === undefined ? { ok: true, blocks } : { ok: true, blocks, seq };
+      const snapshot = await ctx.controller.getMemberTranscript(ctx.workspace, text(p.name), ctx.windowId);
+      return seq === undefined ? { ok: true, ...snapshot } : { ok: true, ...snapshot, seq };
     },
   },
   {

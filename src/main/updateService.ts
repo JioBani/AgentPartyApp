@@ -10,6 +10,7 @@ import {
   versionFromTag,
   type ReleaseSummary,
   type UpdateChannel,
+  type UpdateCheckOptions,
   type UpdateStatus,
 } from "../shared/appUpdate";
 
@@ -63,6 +64,8 @@ export interface UpdateServiceDeps {
 const DEFAULT_CHECK_INTERVAL_HOURS = 6;
 /** How long a fetched release list stays good. GitHub allows 60 anonymous req/hour. */
 const RELEASE_CACHE_MS = 10 * 60 * 1000;
+/** Quiet (settings-enter) checks skip the feed when a result is this fresh. */
+const AUTO_CHECK_MIN_INTERVAL_MS = 60 * 1000;
 
 /**
  * Turns an updater error into one sentence a user can act on, keeping the raw
@@ -97,6 +100,13 @@ export class UpdateService extends EventEmitter {
   private updater: AutoUpdaterLike | undefined;
   private timer: NodeJS.Timeout | undefined;
   private inFlight: Promise<UpdateStatus> | undefined;
+  /**
+   * When true, the updater's `checking-for-update` event must not overwrite an
+   * already-actionable status (available / downloading / downloaded). Settings
+   * re-checks use this so the titlebar pill does not vanish for the duration of
+   * a background probe.
+   */
+  private suppressChecking = false;
   /** Set by QA to drive the UI without a real release. */
   private mocked = false;
   private releaseCache: { at: number; releases: ReleaseSummary[] } | undefined;
@@ -167,7 +177,7 @@ export class UpdateService extends EventEmitter {
   }
 
   /** Asks the feed what the latest release is. Never throws — failures land in the status. */
-  async check(): Promise<UpdateStatus> {
+  async check(options: UpdateCheckOptions = {}): Promise<UpdateStatus> {
     if (this.mocked) {
       return this.getStatus();
     }
@@ -176,19 +186,33 @@ export class UpdateService extends EventEmitter {
       this.patch({ state: "disabled", disabledReason: blocked });
       return this.getStatus();
     }
+    // A check mid-download would paint `checking` over the progress the user is
+    // watching; a check after download would hide "재시작하여 설치".
+    if (this.status.state === "downloading" || this.status.state === "downloaded") {
+      return this.getStatus();
+    }
     if (this.inFlight) {
       return this.inFlight;
     }
+    const quiet = Boolean(options.quiet);
+    if (quiet && this.recentlySettled()) {
+      return this.getStatus();
+    }
     this.inFlight = (async () => {
+      const previousSuppress = this.suppressChecking;
+      this.suppressChecking = quiet;
       try {
         const updater = this.ensureUpdater();
-        this.patch({ state: "checking", error: undefined });
+        if (!quiet) {
+          this.patch({ state: "checking", error: undefined });
+        }
         await updater.checkForUpdates();
       } catch (error) {
         // The `error` event usually fires too, but a throw before the updater is
         // wired (bad feed config, no app-update.yml) would otherwise be silent.
         this.fail(error);
       } finally {
+        this.suppressChecking = previousSuppress;
         this.inFlight = undefined;
       }
       return this.getStatus();
@@ -370,8 +394,20 @@ export class UpdateService extends EventEmitter {
     autoUpdater.setFeedURL({ ...UPDATE_FEED });
   }
 
+  private recentlySettled(): boolean {
+    if (!this.status.checkedAt) {
+      return false;
+    }
+    const age = Date.now() - Date.parse(this.status.checkedAt);
+    return Number.isFinite(age) && age >= 0 && age < AUTO_CHECK_MIN_INTERVAL_MS;
+  }
+
   private wireUpdater(autoUpdater: AutoUpdaterLike): void {
-    autoUpdater.on("checking-for-update", () => this.patch({ state: "checking" }));
+    autoUpdater.on("checking-for-update", () => {
+      if (!this.suppressChecking) {
+        this.patch({ state: "checking" });
+      }
+    });
     autoUpdater.on("update-available", (info: { version?: string; releaseNotes?: unknown; releaseDate?: string }) => {
       const version = String(info?.version || "");
       // With allowDowngrade on, "available" can mean the feed rolled BACK.

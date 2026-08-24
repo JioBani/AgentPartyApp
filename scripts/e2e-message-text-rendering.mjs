@@ -24,6 +24,7 @@ const MIXED = [
   "설치본/포터블/blockmap/latest.yml 언급은 완료. 익명 다운로드 4개 모두 HTTP 200, latest.yml 0.2.7 및 한글 릴리스 노트 정상 확인.",
 ].join("\n");
 const MIXED_HREF = "https://github.com/JioBani/AgentParty-releases/releases/tag/v0.2.7";
+const LONG_DIAGNOSTIC = "MCP client for `readonly-db` failed to start: MCP startup failed: handshaking with MCP server failed: Send message error Transport [rmcp::transport::worker::WorkerTransport<rmcp::transport::streamable_http_client::StreamableHttpClientTransportWorker<reqwest::async_impl::client::Client>>] error: Client error: HTTP request failed: http/request failed: error sending request for url (http://127.0.0.1:18000/mcp), when send initialize request";
 
 let base = "";
 const failures = [];
@@ -43,7 +44,7 @@ async function main() {
   fs.writeFileSync(localFile, "# e2e reveal target\n");
 
   const launchedAt = Date.now();
-  const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start"], {
+  const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start", "--", "--workspace", ws], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
@@ -64,7 +65,7 @@ async function main() {
     ok(health.ok, `app is up at ${base}`);
     await assertRunningBuildIsThisWorktree();
     const windows = (await get("/api/windows")).windows || [];
-    ok(windows[0]?.workspacePath === ws, `window serves the e2e workspace (${windows[0]?.workspacePath})`);
+    ok(windows[0]?.workspacePath?.toLowerCase() === ws.toLowerCase(), `window serves the e2e workspace (${windows[0]?.workspacePath})`);
 
     await post("/api/qa/seed", {
       party: "message text rendering e2e",
@@ -74,10 +75,13 @@ async function main() {
         { name: "right", model: "claude-sonnet-4.5", role: "폭 압축" },
       ],
     });
+    await waitForMeasure(".wb-member-row");
     await post("/api/navigation", { view: "workbench" });
     await post("/api/qa/open", { panels: [["renderer"], ["left"]] });
     await post("/api/qa/window/bounds", { width: 1100, height: 800 });
-    await delay(500);
+    await delay(1200);
+    const panels = await post("/api/measure", { selector: ".wb-panel-title, .wb-tab-name", limit: 20 });
+    ok((panels.texts || []).some((text) => text.includes("renderer")), "renderer panel is open before transcript events are injected");
 
     await post("/api/qa/members/renderer/emit", {
       events: [{
@@ -86,7 +90,16 @@ async function main() {
         detail: `<channel source="agentparty" from="alice" to="renderer">\n${MIXED}\n</channel>`,
       }],
     });
-    await delay(700);
+    await post("/api/qa/members/renderer/emit", {
+      events: [{
+        type: "diagnostic",
+        severity: "error",
+        category: "MCP",
+        title: "MCP 서버 readonly-db: failed",
+        detail: LONG_DIAGNOSTIC,
+      }],
+    });
+    await waitForMeasure(".wb-channel-bubble");
 
     const bubbleWidth = await fitBubbleNear320();
     ok(bubbleWidth >= 260 && bubbleWidth <= 380, `channel bubble is ~320px class (clientWidth=${bubbleWidth})`);
@@ -130,6 +143,26 @@ async function main() {
     ok(a.containedBy?.fully === true, `B) anchor containedBy bubble (overflowRight=${a.containedBy?.overflowRight})`);
     ok(a.attributes.href === MIXED_HREF, "B) autolink href is the exact URL");
     ok(a.box.height > 20, `B) URL may wrap to multiple lines (anchor height=${a.box.height})`);
+
+    const diagnostic = await post("/api/measure", {
+      selector: ".wb-diagnostic",
+      styles: ["max-width", "min-width", "overflow-wrap"],
+      containedBy: ".wb-transcript",
+      limit: 1,
+    });
+    const diagnosticCard = diagnostic.elements[0];
+    ok(diagnosticCard.containedBy?.fully === true, `E) MCP diagnostic stays inside the transcript (overflowRight=${diagnosticCard.containedBy?.overflowRight})`);
+    ok(diagnosticCard.scrollable.horizontal === false, `E) MCP diagnostic has no horizontal overflow (scrollWidth=${diagnosticCard.scroll.width}, clientWidth=${diagnosticCard.content.width})`);
+    const diagnosticDetail = await post("/api/measure", {
+      selector: ".wb-diagnostic-detail",
+      styles: ["overflow-wrap", "word-break"],
+      containedBy: ".wb-diagnostic",
+      limit: 1,
+    });
+    const diagnosticText = diagnosticDetail.elements[0];
+    ok(diagnosticText.containedBy?.fully === true, `E) long MCP transport detail wraps inside its card (overflowRight=${diagnosticText.containedBy?.overflowRight})`);
+    ok(diagnosticText.scroll.width <= diagnosticText.content.width + 1, `E) diagnostic scrollWidth <= clientWidth+1 (${diagnosticText.scroll.width} <= ${diagnosticText.content.width}+1)`);
+    ok(diagnosticText.styles["overflow-wrap"] === "anywhere", `E) transcript card inherits overflow-wrap:anywhere (${diagnosticText.styles["overflow-wrap"]})`);
 
     const shot = path.join(shotDir, "mixed-channel-320.png");
     ok((await post("/api/capture", { path: shot })).bytes > 0, `screenshot → ${shot}`);
@@ -191,6 +224,20 @@ async function fitBubbleNear320() {
     if (last >= 280 && last <= 340) return last;
   }
   return last;
+}
+
+async function waitForMeasure(selector, timeoutMs = 8_000) {
+  const started = Date.now();
+  let lastError;
+  while (Date.now() - started < timeoutMs) {
+    try {
+      return await post("/api/measure", { selector, limit: 1 });
+    } catch (error) {
+      lastError = error;
+      await delay(200);
+    }
+  }
+  throw lastError || new Error(`Timed out waiting for ${selector}`);
 }
 
 async function assertRunningBuildIsThisWorktree() {

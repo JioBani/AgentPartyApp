@@ -354,9 +354,18 @@ list to mean failure.
 
 ### `POST /api/update/check`
 
-Re-asks the release feed. No body. Returns the same `{ ok, update }` envelope
-with the settled status — a network or feed failure comes back as
-`state: "error"` rather than a rejection, so a caller always learns the outcome.
+Re-asks the release feed. Optional body `{ "quiet": true }`. Returns the same
+`{ ok, update }` envelope with the settled status — a network or feed failure
+comes back as `state: "error"` rather than a rejection, so a caller always
+learns the outcome.
+
+`quiet` is what the settings screen uses on entry: the visible `checking` state
+is skipped (so an already-shown titlebar pill does not vanish for the duration
+of the probe), and a check that settled in the last 60 seconds is reused
+instead of hitting the feed again. Opening settings still refreshes a stale
+startup / 6-hour result. A check in flight is joined; a check while a download
+is running or an installer is waiting is skipped so progress is not overwritten.
+The 버전 tab's "업데이트 확인" button omits `quiet` and always shows the probe.
 
 ### `POST /api/update/download`
 
@@ -2678,25 +2687,34 @@ message is handled immediately. Agents reach this via the `broadcast` party tool
 
 ### `GET /api/party/members/:name/transcript`
 
-The member's persisted transcript (assembled UI blocks), restored on app/member
-reopen. The renderer saves it debounced; reopening a member resumes the harness
-thread (Claude/Codex) via the stored thread id so the model context continues too.
+The member's materialized transcript (assembled UI blocks), restored on
+app/member reopen. The main process is its single writer; reopening a member
+resumes the harness thread (Claude/Codex) via the stored thread id so the model
+context continues too. For a live member the response also includes the exact
+event cursor represented by `blocks`, allowing UI/mobile clients to discard
+already-materialized live batches without comparing text.
 
 ```json
-{ "ok": true, "blocks": [ { "kind": "user", "text": "..." }, { "kind": "assistant", "text": "..." } ] }
+{
+  "ok": true,
+  "blocks": [ { "kind": "user", "text": "..." }, { "kind": "assistant", "text": "..." } ],
+  "cursor": { "streamId": "9d81...", "seq": 42 }
+}
 ```
 
-Over the mobile link the response also carries `seq`, the event-stream position
-these blocks are consistent with; apply only events past it. HTTP callers
-receive no events and so get no `seq`.
+Over the mobile link the response also carries an outer `seq`, the position in
+the phone's global transport stream. It is separate from `cursor`, which belongs
+only to this member session. HTTP callers receive no pushed events and so get no
+outer `seq`.
 
 The value is sampled **before** the read, not after. These blocks are a saved
 copy written at some instant inside the read — genuinely async for a WSL
 workspace, which crosses a process boundary. A `seq` taken afterwards would make
 the client skip events the saved copy does not contain, which is loss; taken
 before, it re-applies a few the copy already has, which is duplication. The
-protocol makes the same trade for the rewind snapshot: zero loss, and duplicates
-are the reducer's to absorb.
+protocol makes the same trade for the rewind snapshot: zero loss. Session-event
+duplicates are absorbed by the nested `{streamId, seq}` cursor above; other
+event reducers remain responsible for their own idempotency.
 
 A screenshot a tool returned is NOT inlined in these blocks. Its bytes go to
 `<userData>/party-store/.agent_party_app/images/<sha256>.<ext>` and the block keeps a
