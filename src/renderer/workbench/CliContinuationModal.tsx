@@ -33,6 +33,7 @@ export function CliContinuationModal({ member, color, onClose }: CliContinuation
   }, [launching, onClose]);
 
   const details = result?.supported ? result : undefined;
+  const needsCwdRecovery = Boolean(details?.locationProblem);
 
   async function copy(kind: "cwd" | "command" | "both", value: string) {
     try {
@@ -79,24 +80,33 @@ export function CliContinuationModal({ member, color, onClose }: CliContinuation
 
           {details && (
             <>
-              <button type="button" className="wb-cli-option is-primary" disabled={launching} onClick={launch}>
-                <SquareTerminal size={20} />
-                <span><strong>{launching ? "터미널을 여는 중…" : "기본 터미널에서 바로 이어가기"}</strong><small><LocalizedText id="STR-1552" /></small></span>
-              </button>
+              {needsCwdRecovery ? (
+                <div className="wb-cli-location-recovery" role="status">
+                  <strong>저장된 작업 폴더를 사용할 수 없습니다.</strong>
+                  <span>{details.locationProblem?.message}: {details.cwd}</span>
+                  <small>새 작업 폴더 경로로 아래 명령의 예시 경로를 바꾼 뒤 터미널에서 실행하세요. AgentParty 세션은 종료하지 않으므로, 명령을 직접 실행하기 전 이 멤버 탭을 닫아 중복 실행을 막아야 합니다. 대기 메시지는 CLI로 옮겨지지 않고 앱 큐에 남습니다.</small>
+                </div>
+              ) : (
+                <button type="button" className="wb-cli-option is-primary" disabled={launching} onClick={launch}>
+                  <SquareTerminal size={20} />
+                  <span><strong>{launching ? "터미널을 여는 중…" : "기본 터미널에서 바로 이어가기"}</strong><small><LocalizedText id="STR-1552" /></small></span>
+                </button>
+              )}
 
               <section className="wb-cli-option is-command">
                 <div className="wb-cli-option-head">
-                  <span><Clipboard size={18} /><span><strong><LocalizedText id="STR-1554" /></strong><small><LocalizedText id="STR-1553" /></small></span></span>
+                  <span><Clipboard size={18} /><span><strong>{needsCwdRecovery ? "새 작업 폴더에서 이어가기" : <LocalizedText id="STR-1554" />}</strong><small><LocalizedText id="STR-1553" /></small></span></span>
                   <button type="button" className="wb-btn" onClick={() => copy("both", copyBundle(details))}>
                     {copied === "both" ? <Check size={13} /> : <Clipboard size={13} />} {copied === "both" ? "복사됨" : "모두 복사"}
                   </button>
                 </div>
-                <CopyRow label={details.host === "wsl" ? `cwd · WSL ${details.distro}` : "cwd"} value={details.cwd} copied={copied === "cwd"} onCopy={() => copy("cwd", details.cwd)} />
-                <CopyRow label={localized("STR-1557")} value={details.command} copied={copied === "command"} onCopy={() => copy("command", details.command)} />
+                <CopyRow label={needsCwdRecovery ? "사용 불가 cwd" : details.host === "wsl" ? `cwd · WSL ${details.distro}` : "cwd"} value={details.cwd} copied={copied === "cwd"} onCopy={() => copy("cwd", details.cwd)} />
+                <CopyRow label={needsCwdRecovery ? "새 cwd 명령 예시" : localized("STR-1557")} value={details.repairCommand || details.command} copied={copied === "command"} onCopy={() => copy("command", details.repairCommand || details.command)} />
               </section>
 
               <p className="wb-cli-warning"><LocalizedText id="STR-1558" /></p>
               <p className="wb-cli-sync-note"><LocalizedText id="STR-1559" /></p>
+              {needsCwdRecovery && <p className="wb-cli-sync-note">CLI에서 사용한 새 cwd는 AgentParty 멤버 위치에 자동 반영되지 않습니다. 이후 앱에서 다시 재개하려면 원래 경로를 복구해야 하며, 그렇지 않으면 이 대화는 CLI에서 계속 사용하세요.</p>}
             </>
           )}
 
@@ -118,6 +128,9 @@ function CopyRow({ label, value, copied, onCopy }: { label: string; value: strin
 }
 
 function copyBundle(details: CliContinuationDetails): string {
+  if (details.locationProblem && details.repairCommand) {
+    return `unavailable cwd: ${details.cwd}\nnew cwd command: ${details.repairCommand}`;
+  }
   return `cwd: ${details.cwd}\ncommand: ${details.command}`;
 }
 

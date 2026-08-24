@@ -1002,9 +1002,9 @@ export class PartyApplicationService {
       const started = this.startMember(member.name, {}, {}, this.partyIdOf(member));
       session = started.session;
       sessionId = session?.id;
-    }
-    if (!sessionId) {
-      throw new Error(`Could not start a session for member '${member.name}'.`);
+      if (!sessionId) {
+        throw new Error(started.message);
+      }
     }
     // Busy: always the app queue. `interrupt` only changes WHERE in the queue
     // and WHETHER the turn is stopped — never whether the harness is handed the
@@ -1161,6 +1161,10 @@ export class PartyApplicationService {
     this.assertNotOwnedByExternalCli(member, "deliver queued messages");
     const sessionId = member.sessionId;
     if (!sessionId || !this.deps.sessionManager.hasSession(sessionId)) {
+      const blocked = this.memberCwd(member).blocked;
+      if (blocked) {
+        throw new Error(`${blocked} 큐는 그대로 유지됩니다.`);
+      }
       throw new Error(`'${member.name}' has no live session — its queue was left untouched.`);
     }
     // The one-queue invariant, enforced where the handover happens rather than
@@ -2754,7 +2758,9 @@ export class PartyApplicationService {
     // time it starts. A missing cwd surfaces as the missing cwd rather than as
     // whatever the harness says when it cannot spawn.
     if (!directoryExists(location.cwd)) {
-      return { blocked: `멤버 '${member.name}' 의 실행 위치를 찾을 수 없습니다 — ${CWD_PROBLEM_MESSAGE.missing}: ${location.cwd}` };
+      return {
+        blocked: `멤버 '${member.name}'의 실행 위치를 찾을 수 없습니다 — ${CWD_PROBLEM_MESSAGE.missing}: ${location.cwd}. 멤버의 ⋯ 메뉴에서 'CLI로 이어가기'를 열고 새 작업 폴더용 명령을 확인하세요.`,
+      };
     }
     return { cwd: location.cwd };
   }

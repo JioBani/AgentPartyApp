@@ -58,7 +58,7 @@ import type { ApprovalIndex } from "../approvalIndex";
 import { SingleFlight } from "../singleFlight";
 import type { ApprovalDelivery, ApprovalResponseResult, PendingApproval } from "../../shared/approvals";
 import type { GatewayStatus, MobileConnectionLockKind, MobileConnectionLockStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
-import { cliContinuationArgv, formatCliContinuationCommand, type CliContinuationAction, type CliContinuationDetails, type CliContinuationResult } from "../../shared/cliContinuation";
+import { cliContinuationArgv, cliCrossCwdContinuationCommand, formatCliContinuationCommand, type CliContinuationAction, type CliContinuationDetails, type CliContinuationResult } from "../../shared/cliContinuation";
 import { processExists } from "../../core/processTree";
 import type { GuideInspect, GuideScreenInfo } from "../../shared/guide";
 import { hasConnectedAccount } from "../../shared/guideAuth";
@@ -2577,31 +2577,51 @@ export class AppController {
     if (!member?.location) {
       throw new Error(`Member '${name}' has no execution location.`);
     }
-    const resolved = action === "launch"
-      ? await engine.beginCliContinuation(name, partyId)
-      : await engine.getCliContinuationTarget(name, partyId);
-    if (!resolved.supported) {
-      return { ok: true, supported: false, member: name, reason: resolved.reason, launched: false };
+    // Check the saved location BEFORE taking writer ownership. If it vanished,
+    // closing the app adapter and then failing Set-Location would leave the user
+    // with neither an app session nor a working terminal.
+    const inspected = await engine.getCliContinuationTarget(name, partyId);
+    if (!inspected.supported) {
+      return { ok: true, supported: false, member: name, reason: inspected.reason, launched: false };
     }
     const location = parseWorkspaceLocation(member.location);
-    const argv = cliContinuationArgv(resolved.target, location.host);
+    const locationCheck = await checkCwd(parseMemberLocation(member.location));
+    const shell = location.host.kind === "wsl" ? "bash" : "powershell";
+    const argv = cliContinuationArgv(inspected.target, location.host);
     const details: CliContinuationDetails = {
       ok: true,
       supported: true,
       member: name,
-      ...resolved.target,
+      ...inspected.target,
       cwd: location.path,
       host: location.host.kind,
       ...(location.host.kind === "wsl" ? { distro: location.host.distro } : {}),
-      command: formatCliContinuationCommand(argv, location.host.kind === "wsl" ? "bash" : "powershell"),
+      command: formatCliContinuationCommand(argv, shell),
       launched: false,
+      ...(locationCheck.problem ? {
+        locationProblem: locationCheck.problem,
+        repairCommand: cliCrossCwdContinuationCommand(inspected.target, location.host, shell),
+      } : {}),
+      cwdSync: "not-automatic",
       // Resume protocols restore model context, but none of the adapters replay
       // turns created by a different interactive process into the UI event feed.
       transcriptSync: "not-automatic",
     };
-    if (action === "inspect") {
+    if (action === "inspect" || locationCheck.problem) {
       return details;
     }
+    const resolved = await engine.beginCliContinuation(name, partyId);
+    if (!resolved.supported) {
+      return { ok: true, supported: false, member: name, reason: resolved.reason, launched: false };
+    }
+    // `begin` captures the live adapter's latest thread id. A turn can finish
+    // between inspection and ownership transfer, so launch from this committed
+    // target rather than the earlier read-only snapshot.
+    const launchDetails: CliContinuationDetails = {
+      ...details,
+      ...resolved.target,
+      command: formatCliContinuationCommand(cliContinuationArgv(resolved.target, location.host), shell),
+    };
     const handoffId = "handoffId" in resolved ? String(resolved.handoffId || "") : "";
     if (!handoffId) {
       throw new Error("CLI handoff did not return an ownership id.");
@@ -2617,7 +2637,7 @@ export class AppController {
     await new Promise<void>((resolve) => setTimeout(resolve, 250));
     let terminalPid: number;
     try {
-      terminalPid = await this.deps.launchCliContinuation({ target: details, location });
+      terminalPid = await this.deps.launchCliContinuation({ target: launchDetails, location });
       await engine.recordCliContinuationProcess(name, handoffId, {
         terminalPid,
         host: location.host.kind,
@@ -2632,7 +2652,7 @@ export class AppController {
     }
     await this.broadcastParty(workspacePath);
     this.watchCliContinuation(workspacePath, name, handoffId, terminalPid, partyId);
-    return { ...details, launched: true, terminalPid };
+    return { ...launchDetails, launched: true, terminalPid };
   }
 
   private watchCliContinuation(

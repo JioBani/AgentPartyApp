@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cliContinuationArgv, cliContinuationTarget, formatCliContinuationCommand } from "../dist/shared/cliContinuation.js";
+import { cliContinuationArgv, cliContinuationTarget, cliCrossCwdContinuationCommand, formatCliContinuationCommand } from "../dist/shared/cliContinuation.js";
 import { cliContinuationSpawnSpec } from "../dist/main/cliContinuationLauncher.js";
 
 const sessionId = "019f-test-session";
@@ -11,13 +11,17 @@ assert.deepEqual(cliContinuationArgv(claude.target, { kind: "local" }), ["claude
 const codex = cliContinuationTarget({ runtime: "codex", model: "GPT-5.6 Sol", harnessSessionId: sessionId });
 assert.equal(codex.supported, true);
 assert.equal(formatCliContinuationCommand(cliContinuationArgv(codex.target, { kind: "local" }), "powershell"), `codex resume ${sessionId}`);
+assert.equal(cliCrossCwdContinuationCommand(codex.target, { kind: "local" }, "powershell"), `codex resume ${sessionId} -C C:\\new\\project\\path`);
 
 const cursorWsl = cliContinuationTarget({ runtime: "cursor", model: "Grok 4.5 Cursor", harnessSessionId: sessionId });
 assert.equal(cursorWsl.supported, true);
 assert.deepEqual(cliContinuationArgv(cursorWsl.target, { kind: "wsl", distro: "Ubuntu-22.04" }), ["agent", "--resume", sessionId]);
+assert.equal(cliCrossCwdContinuationCommand(cursorWsl.target, { kind: "wsl", distro: "Ubuntu-22.04" }, "bash"), `agent --workspace /new/project/path --resume ${sessionId}`);
 
 const grokWsl = cliContinuationTarget({ runtime: "grok", model: "Grok 4.5 xAI", harnessSessionId: sessionId });
 assert.equal(grokWsl.supported, true);
+assert.equal(cliCrossCwdContinuationCommand(grokWsl.target, { kind: "wsl", distro: "Ubuntu-22.04" }, "bash"), `grok --cwd /new/project/path --resume ${sessionId}`);
+assert.equal(cliCrossCwdContinuationCommand(claude.target, { kind: "local" }, "powershell"), `Set-Location -LiteralPath C:\\new\\project\\path; claude --resume ${sessionId}`);
 const wslSpec = cliContinuationSpawnSpec({
   target: grokWsl.target,
   location: { host: { kind: "wsl", distro: "Ubuntu-22.04" }, path: "/home/dev/project with space" },

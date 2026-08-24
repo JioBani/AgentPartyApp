@@ -1,11 +1,11 @@
 /**
- * Where a member RUNS — the one cwd it is pinned to for life.
+ * Where a member RUNS — its stable cwd inside AgentParty.
  *
- * A member's cwd is immutable after creation on purpose. Claude Code, Codex and
- * Cursor all key session discovery, settings, permissions and conversation
- * resume off the cwd, so moving a member would silently detach it from its own
- * history. The UI therefore shows the location read-only, and "I need another
- * directory" is answered by creating another member.
+ * A member's cwd is immutable during ordinary app operation on purpose: changing
+ * it also changes filesystem, permissions and tooling context. Current native
+ * CLIs can resume a harness thread from another cwd, so a disappeared directory
+ * is handled as an explicit external-CLI recovery path. AgentParty does not
+ * infer that external cwd or silently rewrite this stored location.
  *
  * The wire format is the existing `WorkspaceLocation` string (`C:\proj`, or
  * `wsl+Ubuntu-24.04:/home/dev/svc`), not a second encoding: a member's cwd and a

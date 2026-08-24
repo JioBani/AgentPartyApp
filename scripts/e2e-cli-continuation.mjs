@@ -16,6 +16,7 @@ const ws = path.join(os.tmpdir(), "ap cli continuation e2e ws");
 const userData = path.join(os.tmpdir(), "ap cli continuation e2e ud");
 const marker = path.join(os.tmpdir(), `ap-cli-continuation-${process.pid}.json`);
 const releaseMarker = path.join(os.tmpdir(), `ap-cli-continuation-release-${process.pid}`);
+const missingCwd = path.join(os.tmpdir(), `ap-cli-continuation-missing-${process.pid}`);
 const failures = [];
 const assert = (condition, message) => {
   console.log(`  ${condition ? "✓" : "✗"} ${message}`);
@@ -50,6 +51,7 @@ async function main() {
   });
   await app.prepare();
   fs.mkdirSync(fakeBin, { recursive: true });
+  fs.mkdirSync(missingCwd, { recursive: true });
   fs.rmSync(marker, { force: true });
   fs.rmSync(releaseMarker, { force: true });
   const fakeCodex = path.join(fakeBin, "fake-codex.mjs");
@@ -87,12 +89,27 @@ async function main() {
       members: [
         { name: "native", role: "CLI continuation QA", runtime: "codex", model: "GPT-5.6 Sol", autoReply: true },
         { name: "routed", role: "unsupported app-router QA", runtime: "claude-code", model: "Kimi K3", autoReply: true },
+        { name: "missing-cwd", role: "deleted cwd recovery QA", runtime: "codex", model: "GPT-5.6 Sol", location: missingCwd, autoReply: true },
       ],
     });
     await post("/api/party/members/native/message", { text: "commit a resumable mock turn" });
     await post("/api/party/members/routed/message", { text: "commit an app-routed mock turn" });
+    await post("/api/party/members/missing-cwd/message", { text: "commit a recoverable mock turn" });
     await waitForTurn(get, "native");
     await waitForTurn(get, "routed");
+    await waitForTurn(get, "missing-cwd");
+    await post("/api/qa/members/missing-cwd/emit", { status: "working" });
+    const queuedForMissing = await post("/api/party/members/missing-cwd/message", { text: "keep this queued while recovering cwd" });
+    assert(queuedForMissing.queued === true, "a message is waiting before the cwd disappears");
+    await post("/api/party/members/missing-cwd/close", {});
+    fs.rmSync(missingCwd, { recursive: true, force: true });
+
+    const missingResume = await post("/api/party/members/missing-cwd/resume", {});
+    assert(/CLI로 이어가기/.test(missingResume.message), "resume failure points to the CLI recovery workflow");
+    const missingQueueError = await postFailure(post, "/api/party/members/missing-cwd/queue", { action: "send" });
+    assert(/CLI로 이어가기/.test(missingQueueError) && /큐는 그대로 유지/.test(missingQueueError), "send-now preserves the queue and surfaces cwd recovery guidance");
+    const preservedMissingQueue = await get("/api/party/members/missing-cwd/queue");
+    assert(preservedMissingQueue.queue?.items?.length === 1, "the failed send-now leaves the queued message untouched");
 
     const spec = await get("/api/spec");
     assert(spec.endpoints.includes("POST /api/party/members/:name/cli-continuation"), "CLI continuation is published in the automation spec");
@@ -100,9 +117,17 @@ async function main() {
 
     const inspected = await post("/api/party/members/native/cli-continuation", { action: "inspect" });
     assert(inspected.supported === true, "native Codex member can be continued");
-    assert(inspected.cwd === ws, `local cwd is exact (${inspected.cwd})`);
+    const expectedNativeCwd = (await get("/api/party")).members.find((member) => member.name === "native")?.location;
+    assert(inspected.cwd === expectedNativeCwd, `local cwd matches the member's stored location (${inspected.cwd})`);
     assert(inspected.command === `codex resume ${inspected.sessionId}`, "resume command uses the harness thread id");
     assert(inspected.transcriptSync === "not-automatic", "API reports the transcript synchronization boundary");
+    assert(inspected.cwdSync === "not-automatic", "API reports the cwd synchronization boundary");
+
+    const missing = await post("/api/party/members/missing-cwd/cli-continuation", { action: "inspect" });
+    assert(missing.locationProblem?.kind === "missing", "inspection preserves a missing-cwd diagnosis");
+    assert(missing.repairCommand === `codex resume ${missing.sessionId} -C C:\\new\\project\\path`, "inspection provides a cross-cwd Codex command template");
+    const missingLaunch = await post("/api/party/members/missing-cwd/cli-continuation", { action: "launch" });
+    assert(missingLaunch.launched === false && missingLaunch.locationProblem?.kind === "missing", "launch is non-destructive when the saved cwd is gone");
 
     const routed = await post("/api/party/members/routed/cli-continuation", { action: "inspect" });
     assert(routed.supported === false && /외부 라우터/.test(routed.reason), "app-router member is explicitly refused");
@@ -114,13 +139,29 @@ async function main() {
     await click(post, ".wb-header-menu .wb-menu-item:last-child");
     const capture = await post("/api/capture", { selector: ".wb-cli-continuation" });
     assert(capture.ok && capture.path && capture.bytes > 1_000, `CLI continuation modal renders (${capture.path})`);
+    await click(post, ".wb-cli-continuation .wb-modal-head .wb-icon-btn");
+
+    await post("/api/qa/open", { panels: [["missing-cwd"]] });
+    await delay(300);
+    await click(post, ".wb-header-more");
+    await click(post, ".wb-header-menu .wb-menu-item:last-child");
+    const recoveryCapture = await post("/api/capture", { selector: ".wb-cli-continuation" });
+    assert(recoveryCapture.ok && recoveryCapture.bytes > 1_000, "missing-cwd recovery guidance renders in the real modal");
+    const recoveryState = await post("/api/capture", { selector: ".wb-cli-location-recovery" });
+    assert(recoveryState.ok && recoveryState.bytes > 100, "recovery modal explains the unavailable location");
+    await post("/api/appearance/theme", { theme: "agentparty-dark" });
+    const narrow = await post("/api/qa/window/bounds", { width: 900, height: 760 });
+    assert(narrow.bounds?.width === 1100 && narrow.bounds?.height === 760, "recovery modal is exercised at the minimum window width");
+    const darkNarrowCapture = await post("/api/capture", { selector: ".wb-cli-continuation" });
+    assert(darkNarrowCapture.ok && darkNarrowCapture.bytes > 1_000, "recovery guidance renders at narrow width in the dark theme");
+    await post("/api/appearance/theme", { theme: "agentparty-light" });
 
     const launched = await post("/api/party/members/native/cli-continuation", { action: "launch" });
     terminalPid = launched.terminalPid;
     assert(launched.launched === true, "launch action reports a spawned default-terminal process");
     await waitForFile(marker);
     const terminal = JSON.parse(fs.readFileSync(marker, "utf8").replace(/^\uFEFF/, ""));
-    assert(path.resolve(terminal.cwd) === path.resolve(ws), `detached terminal starts in member cwd (${terminal.cwd})`);
+    assert(path.resolve(terminal.cwd).toLowerCase() === path.resolve(expectedNativeCwd).toLowerCase(), `detached terminal starts in member cwd (${terminal.cwd})`);
     assert(JSON.stringify(terminal.args) === JSON.stringify(["resume", inspected.sessionId]), `terminal invoked codex with the resume id (${JSON.stringify(terminal.args)})`);
     const nativeAfter = (await get("/api/party")).members.find((member) => member.name === "native");
     assert(nativeAfter?.status === "external_cli" && nativeAfter?.externalCli?.terminalPid === terminalPid && !nativeAfter?.sessionId, "member stays visible and records external CLI ownership");
@@ -169,6 +210,7 @@ async function main() {
     fs.rmSync(marker, { force: true });
     fs.rmSync(releaseMarker, { force: true });
     fs.rmSync(fakeBin, { recursive: true, force: true });
+    fs.rmSync(missingCwd, { recursive: true, force: true });
   }
 }
 

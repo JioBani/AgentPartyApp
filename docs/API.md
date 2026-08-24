@@ -2782,6 +2782,7 @@ copyable command:
   "host": "local",
   "command": "codex resume 019f…",
   "launched": false,
+  "cwdSync": "not-automatic",
   "transcriptSync": "not-automatic"
 }
 ```
@@ -2791,6 +2792,40 @@ For WSL, `cwd` is the distro-native POSIX path and the response also includes
 command to run inside that distro; `{ "action": "launch" }` wraps it with
 `wsl.exe -d <distro> --cd <cwd>` automatically and opens the configured default
 terminal.
+
+If the saved cwd is missing, denied, or otherwise unavailable, inspection still
+returns the resumable harness thread plus an explicit cross-cwd command template:
+
+```json
+{
+  "ok": true,
+  "supported": true,
+  "member": "impl",
+  "harness": "codex",
+  "sessionId": "019f…",
+  "cwd": "C:\\Project\\deleted-worktree",
+  "host": "local",
+  "command": "codex resume 019f…",
+  "locationProblem": { "kind": "missing", "message": "폴더 없음" },
+  "repairCommand": "codex resume 019f… -C C:\\new\\project\\path",
+  "launched": false,
+  "cwdSync": "not-automatic",
+  "transcriptSync": "not-automatic"
+}
+```
+
+In this state, both `inspect` and `launch` are non-destructive and return
+`launched:false`: the app does not close its adapter or try to open a terminal
+in a directory that does not exist. The desktop modal tells the user to replace
+the example path and run the repair command manually after closing the member
+tab. Claude Code uses `Set-Location`/`cd` before `--resume`; Codex uses `-C`,
+Cursor uses `--workspace`, and Grok uses `--cwd`.
+
+`cwdSync:"not-automatic"` is an explicit consistency boundary. A cwd selected
+inside an external CLI is not observable through one common public protocol
+across the four harnesses, so AgentParty does not guess and rewrite the member's
+stored execution location. Restore the original path to resume that member in
+the app, or continue the recovered thread in the CLI.
 
 The launch action refuses a busy turn, synchronously terminates the complete
 AgentParty-owned harness process tree, marks the member `external_cli`, then

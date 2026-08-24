@@ -1,4 +1,5 @@
 import { resolveCatalogModel } from "./modelCatalog";
+import type { CwdProblem } from "./memberLocation";
 import type { MemberRuntime, PartyMember } from "./types";
 import type { WorkspaceLocation } from "./workspaceLocation";
 
@@ -19,6 +20,12 @@ export interface CliContinuationDetails extends CliContinuationTarget {
   distro?: string;
   command: string;
   launched: boolean;
+  /** The saved member location cannot currently be used by the app. */
+  locationProblem?: CwdProblem;
+  /** Copyable template for resuming the same harness thread at another cwd. */
+  repairCommand?: string;
+  /** AgentParty deliberately does not guess a new permanent member location. */
+  cwdSync: "not-automatic";
   /** Present after `launch`; useful for diagnostics and automated cleanup. */
   terminalPid?: number;
   transcriptSync: "not-automatic";
@@ -103,6 +110,29 @@ export function cliContinuationArgv(target: CliContinuationTarget, host: Workspa
 export function formatCliContinuationCommand(argv: readonly string[], shell: "powershell" | "bash"): string {
   const quote = shell === "bash" ? quoteBash : quotePowerShell;
   return argv.map(quote).join(" ");
+}
+
+/**
+ * Command template for the rare case where a member's saved cwd disappeared.
+ * Claude Code uses the shell's cwd; the other CLIs expose an explicit cwd flag.
+ */
+export function cliCrossCwdContinuationCommand(
+  target: CliContinuationTarget,
+  host: WorkspaceLocation["host"],
+  shell: "powershell" | "bash",
+): string {
+  const replacement = shell === "bash" ? "/new/project/path" : "C:\\new\\project\\path";
+  if (target.harness === "claude-code") {
+    const enter = shell === "bash"
+      ? `cd -- ${quoteBash(replacement)}`
+      : `Set-Location -LiteralPath ${quotePowerShell(replacement)}`;
+    return `${enter}${shell === "bash" ? " && " : "; "}${formatCliContinuationCommand(cliContinuationArgv(target, host), shell)}`;
+  }
+  const argv = cliContinuationArgv(target, host);
+  if (target.harness === "codex") argv.push("-C", replacement);
+  if (target.harness === "cursor") argv.splice(1, 0, "--workspace", replacement);
+  if (target.harness === "grok") argv.splice(1, 0, "--cwd", replacement);
+  return formatCliContinuationCommand(argv, shell);
 }
 
 function quotePowerShell(value: string): string {
