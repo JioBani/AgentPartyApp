@@ -52,7 +52,7 @@ import { cursorAgentLogout, inspectCursorAgent } from "../../core/cursorAgentCli
 import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
 import { AGENT_TAB_IDS, LEGACY_RUNTIME_TAB_IDS, SETTINGS_TAB_IDS, isAgentTabId, isRuntimeTabId, isSettingsTabId } from "../../shared/runtimeTabs";
-import { initialUpdateStatus, requireUpdateChannel, type ReleaseSummary, type UpdateChannel, type UpdateStatus } from "../../shared/appUpdate";
+import { initialUpdateStatus, requireUpdateChannel, type ReleaseSummary, type UpdateChannel, type UpdateCheckOptions, type UpdateStatus } from "../../shared/appUpdate";
 import type { MobileLinkService } from "../mobileLink";
 import type { ApprovalIndex } from "../approvalIndex";
 import { SingleFlight } from "../singleFlight";
@@ -199,7 +199,7 @@ export interface UpdateController {
   getChannel(): UpdateChannel;
   setChannel(channel: UpdateChannel): Promise<UpdateStatus>;
   listReleases(refresh?: boolean): Promise<ReleaseSummary[]>;
-  check(): Promise<UpdateStatus>;
+  check(options?: UpdateCheckOptions): Promise<UpdateStatus>;
   download(): Promise<UpdateStatus>;
   install(): { ok: true };
   setMockStatus(patch: Partial<UpdateStatus> | undefined): UpdateStatus;
@@ -681,8 +681,8 @@ export class AppController {
   }
 
   /** Asks the release feed for the latest version. Reports failures in the status, not by throwing. */
-  async checkForUpdate(): Promise<{ ok: true; update: UpdateStatus }> {
-    return { ok: true, update: await this.updater().check() };
+  async checkForUpdate(options: UpdateCheckOptions = {}): Promise<{ ok: true; update: UpdateStatus }> {
+    return { ok: true, update: await this.updater().check({ quiet: Boolean(options.quiet) }) };
   }
 
   /** Starts downloading the pending installer; progress arrives on the push channel. */

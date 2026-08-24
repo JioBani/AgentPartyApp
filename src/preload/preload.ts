@@ -110,7 +110,8 @@ const api = {
   listUpdateVersions: (options?: { refresh?: boolean }): Promise<{ ok: true; releases: ReleaseSummary[] }> =>
     ipcRenderer.invoke("update:versions", options || {}),
   /** Re-asks the release feed. Failures come back inside the status, not as a rejection. */
-  checkForUpdate: (): Promise<{ ok: true; update: UpdateStatus }> => ipcRenderer.invoke("update:check"),
+  checkForUpdate: (options?: { quiet?: boolean }): Promise<{ ok: true; update: UpdateStatus }> =>
+    ipcRenderer.invoke("update:check", options || {}),
   /** Downloads the pending installer; progress arrives on the status channel. */
   downloadUpdate: (): Promise<{ ok: true; update: UpdateStatus }> => ipcRenderer.invoke("update:download"),
   /** Quits the app and runs the downloaded installer. Rejects if it could not start. */

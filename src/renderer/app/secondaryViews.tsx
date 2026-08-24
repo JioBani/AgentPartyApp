@@ -1273,7 +1273,24 @@ function VersionsCard({ active }: { active: boolean }) {
     void loadReleases(false);
     // Same push the titlebar listens to, so this tab cannot go stale while open.
     const off = window.agentParty.onUpdateStatus?.((payload) => setStatus(payload));
-    return () => { off?.(); };
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await window.agentParty.checkForUpdate?.({ quiet: true });
+        if (cancelled) {
+          return;
+        }
+        if (res?.update) {
+          setStatus(res.update);
+        }
+        await loadReleases(true);
+      } catch (error) {
+        if (!cancelled) {
+          setListError(ipcErrorMessage(error));
+        }
+      }
+    })();
+    return () => { cancelled = true; off?.(); };
   }, [active, loadReleases]);
 
   async function check() {
@@ -1385,7 +1402,7 @@ function VersionsCard({ active }: { active: boolean }) {
           {status?.state === "error" && <span className="set-ver-note is-error">{status.error}</span>}
         </div>
         <div className="set-diag-actions">
-          <button type="button" className="set-btn-soft" data-ver="check" disabled={checking} onClick={() => void check()}>
+          <button type="button" className="set-btn-soft" data-ver="check" disabled={checking || status?.state === "downloading" || status?.state === "downloaded"} onClick={() => void check()}>
             <RefreshCw size={14} className={checking ? "wb-spin" : undefined} />  <LocalizedText id="STR-1157" />
           </button>
           <button type="button" className="set-btn-soft" data-ver="open-dialog" onClick={openUpdateDialog}><LocalizedText id="STR-1158" /></button>
@@ -1830,6 +1847,13 @@ export function SettingsView({ automationApi, logs, router, settings, onToggleDe
   useEffect(() => {
     if (!mobileEnabled && tab === "mobile") setTab("general");
   }, [mobileEnabled, tab]);
+  // Re-ask the feed whenever this screen mounts so the titlebar pill and the
+  // 버전 tab are not stuck on the startup / 6-hour result. Quiet: do not flash
+  // `checking` (that hides an already-visible pill) and skip a check that just
+  // settled. Status arrives on the same `update:status` push App already listens to.
+  useEffect(() => {
+    void window.agentParty.checkForUpdate?.({ quiet: true }).catch(() => undefined);
+  }, []);
 
   function copySpec() {
     void navigator.clipboard?.writeText(automationApi?.spec || "");

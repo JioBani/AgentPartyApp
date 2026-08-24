@@ -354,9 +354,18 @@ list to mean failure.
 
 ### `POST /api/update/check`
 
-Re-asks the release feed. No body. Returns the same `{ ok, update }` envelope
-with the settled status — a network or feed failure comes back as
-`state: "error"` rather than a rejection, so a caller always learns the outcome.
+Re-asks the release feed. Optional body `{ "quiet": true }`. Returns the same
+`{ ok, update }` envelope with the settled status — a network or feed failure
+comes back as `state: "error"` rather than a rejection, so a caller always
+learns the outcome.
+
+`quiet` is what the settings screen uses on entry: the visible `checking` state
+is skipped (so an already-shown titlebar pill does not vanish for the duration
+of the probe), and a check that settled in the last 60 seconds is reused
+instead of hitting the feed again. Opening settings still refreshes a stale
+startup / 6-hour result. A check in flight is joined; a check while a download
+is running or an installer is waiting is skipped so progress is not overwritten.
+The 버전 tab's "업데이트 확인" button omits `quiet` and always shows the probe.
 
 ### `POST /api/update/download`
 
