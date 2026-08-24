@@ -57,6 +57,13 @@ import { PartyRepository, StoredPartyState } from "../partyRepository";
 import { getSettings } from "../settings";
 import { applyEvents, buildTranscriptSave } from "../../shared/transcriptEvents";
 import type { TranscriptBlock } from "../../shared/transcript";
+import {
+  hasSessionEventGap,
+  sessionEventCursor,
+  type SessionEventBatch,
+  type SessionEventCursor,
+  type TranscriptSnapshot,
+} from "../../shared/sessionEventStream";
 import { idleSleepTimeoutMs, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
 import { layoutsEqual, sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import type { SessionManager, SessionPartyBinding } from "../sessionManager";
@@ -196,6 +203,8 @@ export class PartyApplicationService {
    * append instead of behind it.
    */
   private readonly recordedPersisted = new Map<string, TranscriptBlock[]>();
+  /** Highest accepted event batch represented by each in-memory transcript. */
+  private readonly recordedCursors = new Map<string, SessionEventCursor>();
   private readonly recordFlushTimers = new Map<string, NodeJS.Timeout>();
   /** Debounce: long enough to batch a streaming reply, short enough to survive a kill. */
   private static readonly RECORD_FLUSH_MS = 1_500;
@@ -209,11 +218,11 @@ export class PartyApplicationService {
     // its conversation on the next start. Quitting or closing right after a turn
     // lost it for the same reason. Owning the fact here makes all three cases the
     // same case. See #19.
-    this.deps.sessionManager.on("events", (payload: { sessionId?: string; workspace?: string; events?: { type?: string }[] }) => {
+    this.deps.sessionManager.on("events", (payload: SessionEventBatch<{ type?: string }>) => {
       if (!payload?.sessionId || !payload.events?.length || !this.ownsSessionEvent(payload.workspace)) {
         return;
       }
-      this.recordTranscriptEvents(payload.sessionId, payload.events);
+      this.recordTranscriptEvents(payload);
       if (!payload.events.some((event) => event?.type === "turn_complete")) {
         return;
       }
@@ -288,7 +297,8 @@ export class PartyApplicationService {
    * RESUMED session appends to its history instead of replacing it — the same
    * reason the renderer seeded from the restored copy before it appended.
    */
-  private recordTranscriptEvents(sessionId: string, events: unknown[]): void {
+  private recordTranscriptEvents(payload: SessionEventBatch): void {
+    const { sessionId, events } = payload;
     const owner = this.memberOwningSession(sessionId);
     if (!owner) {
       // Not a party member's session (the background usage poller), or the
@@ -300,8 +310,32 @@ export class PartyApplicationService {
       this.recordedBlocks.set(sessionId, stored);
       this.recordedPersisted.set(sessionId, stored);
     }
+    const cursor = sessionEventCursor(payload);
+    const previousCursor = this.recordedCursors.get(sessionId);
+    if (cursor && previousCursor?.streamId === cursor.streamId && cursor.seq <= previousCursor.seq) {
+      log("debug", "party", "duplicate transcript event batch ignored", {
+        sessionId,
+        streamId: cursor.streamId,
+        seq: cursor.seq,
+      });
+      return;
+    }
+    if (hasSessionEventGap(previousCursor, cursor)) {
+      // SessionManager emits synchronously and in order. A gap here is a real
+      // invariant violation, so keep the newest data but leave a diagnostic.
+      const sameStream = previousCursor?.streamId === cursor?.streamId;
+      log("error", "party", "transcript event stream gap detected", {
+        sessionId,
+        streamId: cursor?.streamId,
+        expectedSeq: sameStream ? previousCursor!.seq + 1 : 1,
+        receivedSeq: cursor?.seq,
+      });
+    }
     const before = this.recordedBlocks.get(sessionId) || [];
     const folded = applyEvents({ [sessionId]: before }, sessionId, events as any[])[sessionId] || before;
+    if (cursor) {
+      this.recordedCursors.set(sessionId, cursor);
+    }
     if (folded === before) {
       return;
     }
@@ -374,6 +408,7 @@ export class PartyApplicationService {
     }
     this.recordedBlocks.delete(sessionId);
     this.recordedPersisted.delete(sessionId);
+    this.recordedCursors.delete(sessionId);
   }
 
   /** The member this session is bound to, or undefined for a non-member session. */
@@ -1316,15 +1351,35 @@ export class PartyApplicationService {
   }
 
   /**
-   * The persisted transcript (assembled UI blocks) for a member, restored on load.
+   * An atomic transcript snapshot (assembled UI blocks plus its live-event cursor).
    * Locating the member uses the CACHED composed state (no extra disk parse), so
    * restoring every member of a party on a switch no longer recomposes the whole
    * store per member — the dominant redundant cost this path used to pay.
    */
-  getMemberTranscript(name: string, partyId?: string): unknown[] {
+  getMemberTranscript(name: string, partyId?: string): TranscriptSnapshot<TranscriptBlock> {
     const state = this.readState();
     const member = this.requireMember(state, name, partyId);
-    return this.repository.readTranscript(this.workspacePath(), this.partyIdOf(member), member.name);
+    const stored = this.repository.readTranscript(this.workspacePath(), this.partyIdOf(member), member.name) as TranscriptBlock[];
+    if (!member.sessionId) {
+      return { blocks: stored };
+    }
+
+    // The recorder and cursor live in this same process/event loop, so these
+    // values are one logical snapshot. Returning the in-memory materialization
+    // also avoids waiting for the 1.5s disk debounce before a renderer can know
+    // which queued live batches are already represented.
+    const recorded = this.recordedBlocks.get(member.sessionId);
+    const cursor = this.recordedCursors.get(member.sessionId);
+    if (recorded && cursor) {
+      return { blocks: recorded, cursor: { ...cursor } };
+    }
+
+    // A newly started session may not have emitted anything yet. The zero
+    // cursor safely establishes its epoch without claiming any event is saved.
+    const liveCursor = this.deps.sessionManager.sessionEventCursor(member.sessionId);
+    return liveCursor?.seq === 0
+      ? { blocks: stored, cursor: liveCursor }
+      : { blocks: stored };
   }
 
   /**

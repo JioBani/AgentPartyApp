@@ -2535,7 +2535,7 @@ export class AppController {
     return this.deps.discord;
   }
 
-  getMemberTranscript(workspacePath: string, name: string, windowId?: string, partyId?: string): Promise<unknown[]> {
+  getMemberTranscript(workspacePath: string, name: string, windowId?: string, partyId?: string) {
     return this.partyEngine(workspacePath).getMemberTranscript(name, partyId || this.partyForWindow(windowId));
   }
 
