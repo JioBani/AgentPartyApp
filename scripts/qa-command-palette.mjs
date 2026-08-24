@@ -244,10 +244,15 @@ assert(liveRoot.querySelector(".wb-cmd-preview-title .wb-mono")?.textContent ===
 
 const codexBuilt = buildPalette("codex", [
   { name: "review-agent", source: "skill", description: "Review changes" },
+  { name: "disabled-review", source: "skill", description: "Old review skill", disabledReason: "비활성화된 skill" },
   { name: "github", source: "plugin", description: "GitHub plugin" },
+  { name: "diff", source: "built-in", description: "Show working-tree diff" },
 ]);
-assert(codexBuilt.commands.find((c) => c.id === "review-agent")?.disabledReason === "AgentParty에서는 지원하지 않는 스킬입니다.", "unsupported skill uses the AgentParty skill message");
-assert(codexBuilt.commands.find((c) => c.id === "github")?.disabledReason === "AgentParty에서는 지원하지 않는 플러그인입니다.", "unsupported plugin uses the AgentParty plugin message");
+assert(!codexBuilt.commands.find((c) => c.id === "review-agent")?.disabledReason, "newly registered skill is allowed by default");
+assert(codexBuilt.commands.find((c) => c.id === "review-agent")?.run.type === "insert", "allowed skill keeps the native insertion path");
+assert(codexBuilt.commands.find((c) => c.id === "disabled-review")?.disabledReason === "비활성화된 skill", "harness-disabled skill remains blocked with its reason");
+assert(!codexBuilt.commands.find((c) => c.id === "github")?.disabledReason, "newly registered plugin is allowed by default");
+assert(codexBuilt.commands.find((c) => c.id === "diff")?.disabledReason === "AgentParty에서는 지원하지 않는 명령입니다.", "explicitly unsupported built-in remains blocklisted");
 assert(codexBuilt.commands.find((c) => c.id === "member-create")?.disabledReason === "AgentParty에서는 지원하지 않는 명령입니다.", "unsupported command uses the AgentParty command message");
 
 console.log(failures.length ? `\nCOMMAND PALETTE FAILED (${failures.length})` : "\nCOMMAND PALETTE PASSED");

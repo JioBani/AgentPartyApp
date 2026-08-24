@@ -104,13 +104,6 @@ export const CATEGORY_ORDER: { key: PaletteCategory; label: string }[] = [
 const SLASH = "/";
 const UNSUPPORTED_COMMAND = "AgentParty에서는 지원하지 않는 명령입니다.";
 
-/** User-facing wording stays about AgentParty, never the underlying harness transport. */
-function unsupportedReason(source: PaletteSource | undefined): string {
-  if (source === "skill") return "AgentParty에서는 지원하지 않는 스킬입니다.";
-  if (source === "plugin") return "AgentParty에서는 지원하지 않는 플러그인입니다.";
-  return UNSUPPORTED_COMMAND;
-}
-
 /**
  * Existing AgentParty capabilities that can safely replace a terminal-only
  * slash command. Keeping this mapping here makes the palette inventory and its
@@ -270,14 +263,11 @@ function discoveredToCommand(discovered: DiscoveredCommand, prefix: string, know
     ? { ...known }
     : { id: name, trigger: prefix + name, title: name, description: "", category, source, run: { type: "insert" } };
   const action = appActionFor(harness, name);
-  // Claude's initializationResult is itself the SDK's executable inventory.
-  // It does not preserve skill provenance, so disabling an unknown simple name
-  // would incorrectly block valid project/user skills. Cursor's ACP command
-  // notification has the same contract. Codex is the exception: its inventory
-  // is skills/plugins metadata, not an app-server slash dispatcher.
-  const nativeAllowed = harness === "claude-code" || harness === "cursor";
-  const unsupported = action || name === "compact" || nativeAllowed ? undefined : unsupportedReason(source);
-  const disabledReason = discovered.disabledReason ? unsupportedReason(source) : unsupported || base.disabledReason;
+  // Discovery is authoritative for availability. Treat disabled reasons as a
+  // blocklist: a newly registered skill/plugin is usable unless the harness or
+  // an explicit static entry says otherwise. An allowlist of known names makes
+  // every newly installed skill look unsupported until AgentParty ships again.
+  const disabledReason = discovered.disabledReason || base.disabledReason;
   const badges = disabledReason
     ? [...(base.badges || []).filter((b) => b !== "disabled"), "disabled" as PaletteBadge]
     : (base.badges || []).filter((b) => b !== "disabled");
