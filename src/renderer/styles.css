@@ -6794,6 +6794,11 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   list-style: none;
 }
 
+.wb-filechange-file summary > .wb-diff-stat {
+  flex: none;
+  white-space: nowrap;
+}
+
 .wb-filechange-file summary::-webkit-details-marker {
   display: none;
 }
@@ -6806,10 +6811,12 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  flex: none;
   padding: 1px 5px;
   border-radius: var(--radius-badge);
   background: var(--bg-3);
   color: var(--text-2);
+  white-space: nowrap;
 }
 
 .wb-filechange-kind.is-add {
@@ -6822,6 +6829,8 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 
 .wb-filechange-path {
   color: var(--text-1);
+  flex: 1 1 0;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -26,6 +26,7 @@ const MIXED = [
 const MIXED_HREF = "https://github.com/JioBani/AgentParty-releases/releases/tag/v0.2.7";
 const LONG_DIAGNOSTIC = "MCP client for `readonly-db` failed to start: MCP startup failed: handshaking with MCP server failed: Send message error Transport [rmcp::transport::worker::WorkerTransport<rmcp::transport::streamable_http_client::StreamableHttpClientTransportWorker<reqwest::async_impl::client::Client>>] error: Client error: HTTP request failed: http/request failed: error sending request for url (http://127.0.0.1:18000/mcp), when send initialize request";
 const LONG_TOOL_PATH = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -Command Get-ChildItem C:\\Project\\AgentPartyApp\\src\\renderer\\workbench";
+const LONG_FILE_PATH = "C:\\Project\\AgentPartyApp\\src\\renderer\\workbench\\components\\transcript\\VeryLongFileChangeComponentName.tsx";
 
 let base = "";
 const failures = [];
@@ -89,6 +90,13 @@ async function main() {
         type: "status",
         status: "sent",
         detail: `<channel source="agentparty" from="alice" to="renderer">\n${MIXED}\n</channel>`,
+      }],
+    });
+    await post("/api/qa/members/renderer/emit", {
+      events: [{
+        type: "file_change",
+        status: "completed",
+        changes: [{ kind: "add", path: LONG_FILE_PATH, added: 0, removed: 0, diff: "" }],
       }],
     });
     await post("/api/qa/members/renderer/emit", {
@@ -195,6 +203,27 @@ async function main() {
     ok(toolArg.box.width >= 32 && toolArg.box.height < 24, `F) long path owns the remaining row and stays one line (${Math.round(toolArg.box.width)}x${Math.round(toolArg.box.height)})`);
     ok(toolArg.styles["text-overflow"] === "ellipsis", `F) long path is ellipsis-clipped (${toolArg.styles["text-overflow"]})`);
     ok(toolParts.elements.every((part) => part.containedBy?.fully === true), "F) tool name, source and path are all contained by the summary row");
+
+    const fileChange = await post("/api/measure", {
+      selector: ".wb-filechange",
+      containedBy: ".wb-transcript",
+      limit: 1,
+    });
+    const fileChangeCard = fileChange.elements[0];
+    ok(fileChangeCard.containedBy?.fully === true, `G) file-change card stays inside the narrow transcript (overflowRight=${fileChangeCard.containedBy?.overflowRight})`);
+    ok(fileChangeCard.scrollable.horizontal === false, `G) file-change card has no horizontal overflow (scrollWidth=${fileChangeCard.scroll.width}, clientWidth=${fileChangeCard.content.width})`);
+    const fileChangeParts = await post("/api/measure", {
+      selector: ".wb-filechange-kind, .wb-filechange-path, .wb-filechange-file summary > .wb-diff-stat",
+      styles: ["white-space", "overflow", "text-overflow", "flex-shrink"],
+      containedBy: ".wb-filechange-file summary",
+      limit: 3,
+    });
+    const [fileKind, filePath, fileStats] = fileChangeParts.elements;
+    ok(fileKind.text === "add" && fileKind.box.height < 24 && fileKind.box.width > 25, `G) ADD badge stays on one line (${Math.round(fileKind.box.width)}x${Math.round(fileKind.box.height)})`);
+    ok(filePath.box.width >= 32 && filePath.box.height < 24, `G) long file path owns the remaining row and stays one line (${Math.round(filePath.box.width)}x${Math.round(filePath.box.height)})`);
+    ok(filePath.styles["text-overflow"] === "ellipsis", `G) long file path is ellipsis-clipped (${filePath.styles["text-overflow"]})`);
+    ok(fileStats.box.height < 24 && fileStats.box.width > 25, `G) file diff stats stay on one line (${Math.round(fileStats.box.width)}x${Math.round(fileStats.box.height)})`);
+    ok(fileChangeParts.elements.every((part) => part.containedBy?.fully === true), "G) file kind, path and stats are all contained by the summary row");
 
     for (const theme of ["agentparty-light", "agentparty-dark"]) {
       const appliedTheme = await post("/api/appearance/theme", { theme });
