@@ -31,9 +31,50 @@ async function load(entry, name) {
 }
 
 const { buildTranscriptSave, applyEvents, appendBlock } = await load("src/shared/transcriptEvents.ts", "transcript-events.mjs");
+const stream = await load("src/shared/sessionEventStream.ts", "session-event-stream.mjs");
+const subagents = await load("src/renderer/app/subagentEvents.ts", "subagent-event-projection.mjs");
 const { PartyRepository } = await load("src/main/partyRepository.ts", "party-repo-append.mjs");
 
 const block = (id, text) => ({ id, kind: "assistant", text });
+
+// ============ 0) restore/live event overlap ================================
+console.log("\ntranscript snapshot cursor:");
+{
+  const cursor = { streamId: "stream-a", seq: 2 };
+  const batches = [
+    { sessionId: "s1", streamId: "stream-a", seq: 1, events: [{ text: "already saved 1" }] },
+    { sessionId: "s1", streamId: "stream-a", seq: 2, events: [{ text: "already saved 2" }] },
+    { sessionId: "s1", streamId: "stream-a", seq: 3, events: [{ text: "new" }] },
+  ];
+  const uncovered = stream.batchesAfterSessionEventCursor(batches, cursor);
+  assert(uncovered.length === 1 && uncovered[0].seq === 3, "restore drops only batches already materialized in its cursor");
+  assert(stream.cursorCoversBatch(cursor, batches[1]), "the same delivered batch is idempotent");
+  assert(!stream.cursorCoversBatch(cursor, { ...batches[1], streamId: "stream-b" }), "a new stream epoch is never mistaken for a duplicate");
+  assert(stream.hasSessionEventGap({ streamId: "stream-a", seq: 3 }, { streamId: "stream-a", seq: 5 }), "a missing ordered batch is surfaced as a gap");
+  assert(stream.hasSessionEventGap(undefined, { streamId: "stream-b", seq: 2 }), "a stream first observed after batch one is also surfaced as a gap");
+}
+
+console.log("\nindependent event projections:");
+{
+  // A transcript snapshot can cover a batch that the non-persisted subagent
+  // projection has never seen. Give each projection its own cursor: apply the
+  // subagent once, then absorb a duplicate without duplicating detail blocks.
+  const batch = {
+    sessionId: "s-projection", streamId: "stream-p", seq: 1,
+    events: [{ type: "subagent", agentId: "child", block: { kind: "assistant", text: "once" } }],
+  };
+  const transcriptCursor = { streamId: "stream-p", seq: 1 };
+  let subagentCursor;
+  let projection = {};
+  for (const delivered of [batch, batch]) {
+    if (!stream.cursorCoversBatch(subagentCursor, delivered)) {
+      projection = subagents.applySubagentEvents(projection, delivered.sessionId, delivered.events);
+      subagentCursor = stream.advanceSessionEventCursor(subagentCursor, stream.sessionEventCursor(delivered));
+    }
+  }
+  assert(stream.cursorCoversBatch(transcriptCursor, batch), "transcript snapshot independently covers the shared batch");
+  assert(projection[batch.sessionId][0].blocks.length === 1, "subagent projection applies a snapshot-covered batch once and absorbs its duplicate");
+}
 
 // ============ 1) renderer-side delta ============
 console.log("\nbuildTranscriptSave (renderer delta):");

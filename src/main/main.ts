@@ -1140,7 +1140,7 @@ function registerIpc(): void {
   handle("update:channel:get", async () => controller().getUpdateChannel());
   handle("update:channel:set", async (_event, channel: unknown) => controller().setUpdateChannel(channel));
   handle("update:versions", async (_event, options: { refresh?: boolean } = {}) => controller().listReleaseVersions(options || {}));
-  handle("update:check", async () => controller().checkForUpdate());
+  handle("update:check", async (_event, options?: { quiet?: boolean }) => controller().checkForUpdate(options || {}));
   handle("update:download", async () => controller().downloadUpdate());
   handle("update:install", async () => controller().installUpdate());
   handle("tokenUsage:get", async (event, query: unknown) => controller().getTokenUsage(senderWorkspace(event), query as any));

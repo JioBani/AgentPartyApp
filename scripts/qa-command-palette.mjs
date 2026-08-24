@@ -71,12 +71,12 @@ const expectedActions = {
     model: "runtime", compact: "compact", status: "status", usage: "usage",
     permissions: "permissions", plan: "permissions", effort: "runtime",
     autocompact: "auto-compact", stop: "interrupt", doctor: "environment",
-    mcp: "mcp", resume: "sessions",
+    mcp: "mcp",
   },
   codex: {
     model: "runtime", permissions: "permissions", approvals: "permissions",
     new: "restart", compact: "compact", status: "status", usage: "usage",
-    mcp: "mcp", resume: "sessions", stop: "interrupt",
+    mcp: "mcp", stop: "interrupt",
     autocompact: "auto-compact", doctor: "environment",
   },
 };
@@ -86,6 +86,10 @@ for (const [harness, actions] of Object.entries(expectedActions)) {
     const command = palette.commands.find((candidate) => candidate.id === id);
     assert(command?.run.type === "action" && command.run.action === action, `${harness} /${id} is wired to ${action}`);
   }
+}
+for (const harness of ["claude-code", "codex"]) {
+  const resume = getHarnessPalette(harness).commands.find((command) => command.id === "resume");
+  assert(resume?.disabledReason === "AgentParty에서는 지원하지 않는 명령입니다.", `${harness} /resume remains visible but disabled`);
 }
 assert(codex.commands.every((command) => command.run.type === "action" || Boolean(command.disabledReason)), "every Codex fallback command is app-backed or visibly disabled");
 assert(cc.commands.filter((command) => command.source === "agentparty").every((command) => command.disabledReason), "unimplemented AgentParty pseudo-commands remain visible but disabled");
@@ -244,10 +248,15 @@ assert(liveRoot.querySelector(".wb-cmd-preview-title .wb-mono")?.textContent ===
 
 const codexBuilt = buildPalette("codex", [
   { name: "review-agent", source: "skill", description: "Review changes" },
+  { name: "disabled-review", source: "skill", description: "Old review skill", disabledReason: "비활성화된 skill" },
   { name: "github", source: "plugin", description: "GitHub plugin" },
+  { name: "diff", source: "built-in", description: "Show working-tree diff" },
 ]);
-assert(codexBuilt.commands.find((c) => c.id === "review-agent")?.disabledReason === "AgentParty에서는 지원하지 않는 스킬입니다.", "unsupported skill uses the AgentParty skill message");
-assert(codexBuilt.commands.find((c) => c.id === "github")?.disabledReason === "AgentParty에서는 지원하지 않는 플러그인입니다.", "unsupported plugin uses the AgentParty plugin message");
+assert(!codexBuilt.commands.find((c) => c.id === "review-agent")?.disabledReason, "newly registered skill is allowed by default");
+assert(codexBuilt.commands.find((c) => c.id === "review-agent")?.run.type === "insert", "allowed skill keeps the native insertion path");
+assert(codexBuilt.commands.find((c) => c.id === "disabled-review")?.disabledReason === "비활성화된 skill", "harness-disabled skill remains blocked with its reason");
+assert(!codexBuilt.commands.find((c) => c.id === "github")?.disabledReason, "newly registered plugin is allowed by default");
+assert(codexBuilt.commands.find((c) => c.id === "diff")?.disabledReason === "AgentParty에서는 지원하지 않는 명령입니다.", "explicitly unsupported built-in remains blocklisted");
 assert(codexBuilt.commands.find((c) => c.id === "member-create")?.disabledReason === "AgentParty에서는 지원하지 않는 명령입니다.", "unsupported command uses the AgentParty command message");
 
 console.log(failures.length ? `\nCOMMAND PALETTE FAILED (${failures.length})` : "\nCOMMAND PALETTE PASSED");

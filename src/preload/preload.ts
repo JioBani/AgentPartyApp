@@ -11,6 +11,8 @@ import type { ApprovalDelivery, ApprovalResponseResult } from "../shared/approva
 import type { CliContinuationAction, CliContinuationResult } from "../shared/cliContinuation";
 import type { GuideScreenInfo } from "../shared/guide";
 import type { GuideHostApi } from "../shared/guideHost";
+import type { TranscriptBlock } from "../shared/transcript";
+import type { TranscriptSnapshot } from "../shared/sessionEventStream";
 
 const appearanceBoot = parseAppearanceBootArgs(process.argv)
   || ipcRenderer.sendSync("appearance:boot");
@@ -110,7 +112,8 @@ const api = {
   listUpdateVersions: (options?: { refresh?: boolean }): Promise<{ ok: true; releases: ReleaseSummary[] }> =>
     ipcRenderer.invoke("update:versions", options || {}),
   /** Re-asks the release feed. Failures come back inside the status, not as a rejection. */
-  checkForUpdate: (): Promise<{ ok: true; update: UpdateStatus }> => ipcRenderer.invoke("update:check"),
+  checkForUpdate: (options?: { quiet?: boolean }): Promise<{ ok: true; update: UpdateStatus }> =>
+    ipcRenderer.invoke("update:check", options || {}),
   /** Downloads the pending installer; progress arrives on the status channel. */
   downloadUpdate: (): Promise<{ ok: true; update: UpdateStatus }> => ipcRenderer.invoke("update:download"),
   /** Quits the app and runs the downloaded installer. Rejects if it could not start. */
@@ -207,7 +210,8 @@ const api = {
   setPartyGate: (partyId: string, gate: unknown) => ipcRenderer.invoke("party:partyGate", partyId, gate),
   getPartyLayout: (): Promise<WorkbenchLayout | undefined> => ipcRenderer.invoke("party:layout:get"),
   setPartyLayout: (layout: WorkbenchLayout) => ipcRenderer.invoke("party:layout:set", layout),
-  getMemberTranscript: (name: string, partyId?: string) => ipcRenderer.invoke("party:transcript:get", name, partyId),
+  getMemberTranscript: (name: string, partyId?: string): Promise<TranscriptSnapshot<TranscriptBlock>> =>
+    ipcRenderer.invoke("party:transcript:get", name, partyId),
   saveMemberTranscript: (name: string, save: TranscriptSave): Promise<TranscriptSaveResult> => ipcRenderer.invoke("party:transcript:save", name, save),
   /** Bytes for one screenshot a transcript references, fetched only when shown. */
   getTranscriptImage: (file: string): Promise<{ ok: true; dataUrl: string; bytes: number }> => ipcRenderer.invoke("party:transcript:image", file),

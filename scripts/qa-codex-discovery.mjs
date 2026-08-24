@@ -100,6 +100,9 @@ const legacy = palette.commands.find((c) => c.id === "legacy");
 assert(legacy.badges?.includes("disabled") && legacy.disabledReason === "비활성화된 skill", "disabled skill → disabled badge + reason");
 const deepDive = palette.commands.find((c) => c.id === "deep-dive");
 assert(deepDive.source === "skill" && deepDive.category === "skill", "explicit source drives category + badge");
+assert(!deepDive.disabledReason && deepDive.run.type === "insert", "enabled discovered skill is allowed without a name allowlist");
+const formatter = palette.commands.find((c) => c.id === "formatter");
+assert(!formatter.disabledReason && formatter.run.type === "insert", "available discovered plugin is allowed without a name allowlist");
 
 // ---- Layer 3: CommandPalette DOM --------------------------------------------
 const { CommandPalette } = await bundle("src/renderer/workbench/CommandPalette.tsx", "codex-cmd-palette.mjs", ["react", "react-dom", "react-dom/client", "react/jsx-runtime"]);

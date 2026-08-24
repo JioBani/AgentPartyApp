@@ -17,9 +17,16 @@ try {
   await app.prepare();
   await app.launch();
   const spec = await app.get("/api/spec");
-  for (const endpoint of ["GET /api/update/channel", "POST /api/update/channel"]) {
+  for (const endpoint of ["GET /api/update/channel", "POST /api/update/channel", "POST /api/update/check"]) {
     if (!spec.endpoints.includes(endpoint)) throw new Error(`${endpoint} is not registered`);
   }
+
+  const quiet = await app.post("/api/update/check", { quiet: true });
+  if (!quiet?.ok || !quiet.update?.state) {
+    throw new Error(`quiet check did not return a status: ${JSON.stringify(quiet)}`);
+  }
+  await app.post("/api/navigation", { view: "settings", tab: "general" });
+  await delay(400);
 
   const initial = await app.get("/api/update/channel");
   if (initial.channel !== "stable") throw new Error(`new installs must default stable: ${JSON.stringify(initial)}`);

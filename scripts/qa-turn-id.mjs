@@ -34,7 +34,11 @@ rmSync(path.join(workspace, ".agent_party_app"), { recursive: true, force: true 
 
 const host = createEngineHost({ storageDir: workspace, router: { preferredPort: 0, authToken: "engine", openRouterApiKey: "" } });
 const events = [];
-host.sessionManager.on("events", (p) => { for (const e of p.events || []) events.push({ ...e, sessionId: p.sessionId }); });
+const batches = [];
+host.sessionManager.on("events", (p) => {
+  batches.push(p);
+  for (const e of p.events || []) events.push({ ...e, sessionId: p.sessionId });
+});
 
 const engine = host.engineRegistry.forWorkspace(workspace);
 await engine.qaSeed({ members: [{ name: "alice", autoReply: false }, { name: "bob", autoReply: true }] });
@@ -65,6 +69,17 @@ assert(new Set(ids).size === ids.length, `every completed turn has a distinct id
 // DISCARDS a real turn's cost — an undercount, which hides better than an
 // overcount.
 assert(afterSecond[afterSecond.length - 1].turnId !== afterFirst[0].turnId, "the newest turn does not reuse the first turn's id");
+
+console.log("\nand event batches carry one contiguous stream cursor:");
+const bobBatches = batches.filter((batch) => batch.sessionId === bob.sessionId);
+assert(bobBatches.length > 1, "the session emitted several delivery batches");
+assert(bobBatches.every((batch) => typeof batch.streamId === "string" && batch.streamId.length > 0), "every batch names its stream epoch");
+assert(new Set(bobBatches.map((batch) => batch.streamId)).size === 1, "one live session keeps one stream epoch");
+assert(bobBatches.every((batch, index) => batch.seq === index + 1), `batch sequence is contiguous (${bobBatches.map((batch) => batch.seq).join(", ")})`);
+const bobTranscript = await engine.getMemberTranscript("bob");
+const lastBobBatch = bobBatches[bobBatches.length - 1];
+assert(Array.isArray(bobTranscript.blocks) && bobTranscript.blocks.length > 0, "active transcript snapshot carries its materialized blocks");
+assert(bobTranscript.cursor?.streamId === lastBobBatch.streamId && bobTranscript.cursor?.seq === lastBobBatch.seq, "active transcript cursor exactly matches the batches represented by its blocks");
 
 host.dispose?.();
 console.log(failures.length ? `\nTURN ID FAILED (${failures.length})` : "\nTURN ID PASSED");

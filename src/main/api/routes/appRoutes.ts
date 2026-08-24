@@ -79,7 +79,7 @@ export const appRoutes: MethodRoute[] = [
   {
     name: "update.check",
     http: "POST /api/update/check",
-    handler: (_p, ctx) => ctx.controller.checkForUpdate(),
+    handler: (p, ctx) => ctx.controller.checkForUpdate({ quiet: flag(p.quiet) }),
   },
   {
     name: "update.download",
