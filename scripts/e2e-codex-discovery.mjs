@@ -1,12 +1,14 @@
 /*
  * Full-process e2e for Codex `/` palette discovery (Item 4) AND live model
  * catalog discovery, driven by the fake codex app-server. Launches the REAL app
- * on the LEFT monitor, creates a Codex session, and asserts that:
+ * on the LEFT monitor, creates a Codex member, and asserts that:
  *   - the adapter queried skills/list + plugin/installed and merged the results
  *     (with source + disabled reason) into the session snapshot's slashCommands;
  *   - model/list discovery populated GET /api/models with every visible fake
- *     model as a codex route (default first, hidden dropped), replacing the
- *     single static fallback.
+ *     model as a codex route (default first, hidden dropped), alongside the
+ *     bundled Codex routes;
+ *   - the real command palette allows a newly discovered skill while keeping a
+ *     harness-disabled skill blocked.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -32,6 +34,7 @@ async function main() {
     env: {
       ...process.env,
       AGENTPARTY_ALLOW_MULTI_INSTANCE: "1",
+      AGENTPARTY_QA: "1",
       AGENTPARTY_AUTOMATION_PORT: String(port),
       AGENTPARTY_USER_DATA: userData,
       AGENTPARTY_WINDOW_DISPLAY: "left",
@@ -55,26 +58,29 @@ async function main() {
     // Account-catalog routes (from model/list) are the openai-provider codex
     // routes; codex OpenRouter routes (Phase 2) carry providerId openrouter.
     const accountRoutes = catalog.modelRoutes.filter((route) => route.harnessId === "codex" && route.providerId === "openai");
-    assert(accountRoutes.length === 2, "both visible fake models are account codex routes (hidden one dropped)");
+    assert(accountRoutes.some((route) => route.model === "fake-5.5"), "default visible fake model is an account codex route");
+    assert(accountRoutes.some((route) => route.model === "fake-5.4"), "second visible fake model is an account codex route");
+    assert(!accountRoutes.some((route) => route.model === "hidden-model"), "hidden fake model is dropped");
     assert(accountRoutes[0].model === "fake-5.5", "the account-default model is first");
     assert(accountRoutes[0].capabilities?.effort?.options?.length === 4, "effort options come from the model's supportedReasoningEfforts");
-    assert(!accountRoutes.some((route) => route.model === "gpt-5.4"), "the static fallback route is replaced by the live catalog");
     const orRoutes = catalog.modelRoutes.filter((route) => route.harnessId === "codex" && route.modelProvider === "openrouter");
     assert(orRoutes.length >= 10, "OpenRouter catalog models are also exposed as codex routes (Phase 2)");
 
-    const session = await post("/api/sessions", {
-      workspacePath: ws,
-      selectedHarnessId: "codex",
-      selectedProviderId: "openai",
+    await post("/api/parties", { name: "skill blocklist e2e" });
+    await post("/api/party/members", {
+      name: "codey",
+      requirement: "verify Codex skill discovery",
+      runtime: "codex",
       model: "gpt-5.4-mini",
-      permissionMode: "default",
+      codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false },
     });
-    assert(session.id, "codex session created");
+    await post("/api/party/members/codey/open", {});
 
     // Thread start (which triggers skills/plugin discovery) happens on first turn.
-    await post(`/api/sessions/${session.id}/send`, { text: "KIND=items 안녕" });
+    await post("/api/party/members/codey/message", { text: "KIND=items 안녕" });
 
-    const commands = await waitForDiscovery(session.id);
+    const { sessionId, commands } = await waitForDiscovery("codey");
+    assert(sessionId, "codex member owns a live session");
     const byName = Object.fromEntries(commands.map((c) => [c.name, c]));
     assert(byName.model?.source === "built-in", "built-in command reported with source");
     assert(byName["deep-dive"]?.source === "skill", "discovered skill merged into slashCommands with source=skill");
@@ -82,7 +88,35 @@ async function main() {
     assert(byName.formatter?.source === "plugin", "installed plugin merged with source=plugin");
     assert(byName["blocked-plugin"]?.disabledReason, "admin-disabled plugin carries a disabled reason");
 
-    await post(`/api/sessions/${session.id}/close`, {});
+    // Drive the user-visible workflow through the same local automation API a
+    // QA agent uses: open the real panel, type into the real composer, and read
+    // the rendered palette rather than importing its model in isolation.
+    await post("/api/navigation", { view: "workbench" });
+    await post("/api/qa/open", { panels: [["codey"]] });
+    await delay(800);
+    const editor = ".wb-composer-editor";
+    await post("/api/qa/input", { selector: editor, text: "/deep" });
+    await delay(300);
+    const enabledRows = await post("/api/measure", {
+      selector: ".wb-cmd-row",
+      attributes: ["aria-disabled", "title"],
+    });
+    const deepDive = enabledRows.elements.find((row) => row.text.startsWith("/deep-dive"));
+    assert(deepDive?.attributes?.["aria-disabled"] === "false", "newly discovered skill is selectable in the real palette");
+    const selected = await post("/api/qa/input", { selector: editor, key: "Enter" });
+    assert(selected.draft === "/deep-dive ", `selecting the skill inserts it into the real composer (${JSON.stringify(selected.draft)})`);
+
+    await post("/api/qa/input", { selector: editor, text: "/legacy" });
+    await delay(300);
+    const blockedRows = await post("/api/measure", {
+      selector: ".wb-cmd-row",
+      attributes: ["aria-disabled", "title"],
+    });
+    const legacy = blockedRows.elements.find((row) => row.text.startsWith("/legacy-skill"));
+    assert(legacy?.attributes?.["aria-disabled"] === "true", "harness-disabled skill remains blocked in the real palette");
+    assert(legacy?.attributes?.title === "비활성화된 skill", "blocked skill shows the harness reason");
+
+    await post("/api/party/members/codey/close", {});
     await post("/api/window/close", {});
     await waitForExit(child);
     console.log("CODEX DISCOVERY E2E PASSED");
@@ -110,14 +144,15 @@ async function waitForModelCatalog() {
 }
 
 /** Waits until the session snapshot's slashCommands include the discovered skill. */
-async function waitForDiscovery(sessionId) {
+async function waitForDiscovery(memberName) {
   const started = Date.now();
   while (Date.now() - started < 20000) {
     const st = await getJson("/api/state");
-    const s = st.sessions.find((x) => x.id === sessionId);
+    const member = st.party?.members?.find((candidate) => candidate.name === memberName);
+    const s = st.sessions.find((candidate) => candidate.id === member?.sessionId);
     const commands = s?.snapshot?.slashCommands || [];
     if (commands.some((c) => c.name === "deep-dive")) {
-      return commands;
+      return { sessionId: s.id, commands };
     }
     if (s?.snapshot?.status === "error") {
       throw new Error(s.snapshot.lastError || "session errored");
