@@ -344,6 +344,7 @@ assert(/AgentParty/.test(primer), "primer introduces the AgentParty app");
 assert(primer.includes("reviewer") && primer.includes("team-qa") && primer.includes("Code reviewer"), "primer states the member's identity (party + name + role)");
 assert(primer.includes("mcp__agentparty-app__send") && primer.includes("mcp__agentparty-app__member-create"), "primer names the agentparty-app tool surface");
 assert(primer.includes("mcp__agentparty-app__broadcast") && primer.includes("mcp__agentparty-app__member-status") && primer.includes("mcp__agentparty-app__interrupt"), "primer teaches the coordination tools (broadcast/status/interrupt)");
+assert(primer.includes("Do not poll member status") && primer.includes("do not repeat unchanged status checks"), "primer forbids wasteful repeated member-status polling");
 assert(primer.includes("mcp__agentparty-app__member-permission"), "primer teaches agents how to change another member's permission");
 assert(/Message Gate/.test(primer) && /reject/i.test(primer) && /force: true/.test(primer), "primer explains the Message Gate (review of outgoing messages, reject→rewrite, force escape hatch)");
 assert(primer.includes("mcp__agentparty-app__gate-set"), "primer names the gate-set tool");

@@ -295,7 +295,7 @@ export function createFakeAgentParty(): FakeAgentParty {
     setPartyGate: () => Promise.resolve(refusedParty()),
     getPartyLayout: () => Promise.resolve(current().layout),
     setPartyLayout: () => refused(),
-    getMemberTranscript: (name: string) => Promise.resolve(current().transcripts[name] || []),
+    getMemberTranscript: (name: string) => Promise.resolve({ blocks: current().transcripts[name] || [] }),
     saveMemberTranscript: () => Promise.resolve({ applied: false, reason: GUIDE_REFUSED }),
     getTranscriptImage: () => refused(),
     getHarnessOriginal: () => Promise.resolve({ ok: true as const, original: null }),

@@ -92,6 +92,7 @@ const PROTOCOL_BODY = [
   `- To reply or initiate, call \`${tool("send")}\` with the recipient's member name. Replies are asynchronous: the other member's response arrives later as its own incoming message.`,
   '- **Turn timing (read this to avoid "tangled" turns).** Each member handles ONE turn at a time. A message you send lands in the recipient\'s queue and is only read when their CURRENT turn ends — for a Codex member, at its next tool call. So right after you send: they have NOT seen it yet if they were busy, and a slow reply means they are still finishing earlier work, not that your message was dropped. It will be handled in order once their turn completes.',
   `- Before assuming a message was missed, check \`${tool("member-status")}\` (or \`${tool("list")}\`) to see if the member is busy. When a message genuinely cannot wait for their current turn, use \`interrupt: true\` on \`${tool("send")}\`/\`${tool("broadcast")}\`, or call \`${tool("interrupt")}\` — this stops their turn so your message is seen immediately.`,
+  `- **Do not poll member status.** After assigning work, wait for the member's asynchronous reply. Call \`${tool("member-status")}\` only when its answer changes what you will do next; do not repeat unchanged status checks merely to watch progress.`,
 ].join("\n");
 
 const DISCIPLINE_BODY = [

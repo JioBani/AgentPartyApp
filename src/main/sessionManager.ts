@@ -1,5 +1,6 @@
 import type { GateFailureLayer } from "../shared/messageGate";
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { ClaudeAdapter } from "../core/claudeAdapter";
@@ -34,6 +35,7 @@ import { log } from "./logger";
 import { executionModelFor } from "../shared/modelIdentity";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import type { ApprovalDelivery } from "../shared/approvals";
+import type { SessionEventCursor } from "../shared/sessionEventStream";
 
 /**
  * Status strings that begin or end a turn. Used only by idle sleep's
@@ -50,6 +52,9 @@ interface ManagedSession {
    *  usage poller reuse a live session instead of spawning a duplicate. */
   provider?: UsageProviderId;
   queuedEvents: ClaudeNormalizedEvent[];
+  /** Epoch + contiguous batch position for idempotent transcript consumers. */
+  eventStreamId: string;
+  eventBatchSeq: number;
   flushTimer?: NodeJS.Timeout;
   closed?: boolean;
   /** Stall watchdog bookkeeping (harness-general; see {@link SessionManager.scanForStalls}). */
@@ -745,7 +750,22 @@ export class SessionManager extends EventEmitter {
   }
 
   private registerSession(id: string, workspace: string, adapter: HarnessSession, provider?: UsageProviderId, identity?: PartyIdentity): SessionView {
-    const session: ManagedSession = { id, workspace, adapter, provider, identity, queuedEvents: [], lastActivityAt: Date.now(), lastTurnActivityAt: Date.now(), turnActive: false, turnSeq: 0, awaitingUser: false, stallNotified: false };
+    const session: ManagedSession = {
+      id,
+      workspace,
+      adapter,
+      provider,
+      identity,
+      queuedEvents: [],
+      eventStreamId: randomUUID(),
+      eventBatchSeq: 0,
+      lastActivityAt: Date.now(),
+      lastTurnActivityAt: Date.now(),
+      turnActive: false,
+      turnSeq: 0,
+      awaitingUser: false,
+      stallNotified: false,
+    };
     this.sessions.set(id, session);
     this.bind(session);
     this.ensureWatchdog();
@@ -1298,6 +1318,12 @@ export class SessionManager extends EventEmitter {
     return Array.from(this.sessions.values()).map((session) => this.toView(session));
   }
 
+  /** Current cursor for an active session, including the zero-event position. */
+  sessionEventCursor(id: string): SessionEventCursor | undefined {
+    const session = this.sessions.get(id);
+    return session ? { streamId: session.eventStreamId, seq: session.eventBatchSeq } : undefined;
+  }
+
   dispose(): void {
     if (this.watchdog) {
       clearInterval(this.watchdog);
@@ -1616,7 +1642,13 @@ export class SessionManager extends EventEmitter {
     }
     const events = compactEvents(session.queuedEvents);
     session.queuedEvents = [];
-    this.emit("events", { sessionId: session.id, workspace: session.workspace, events });
+    this.emit("events", {
+      sessionId: session.id,
+      workspace: session.workspace,
+      streamId: session.eventStreamId,
+      seq: ++session.eventBatchSeq,
+      events,
+    });
   }
 
   private toView(session: ManagedSession): SessionView {

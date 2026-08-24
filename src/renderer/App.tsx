@@ -52,6 +52,16 @@ import type { AppLocale } from "../shared/appLocale";
 import { localized } from "./i18n/I18nProvider";
 import { mergeRendererSessions, updateRendererSessionSnapshot } from "./app/sessionRenderState";
 import { nextTranscriptRestore, nextTranscriptReveal } from "./app/transcriptRestorePlan";
+import {
+  advanceSessionEventCursor,
+  batchesAfterSessionEventCursor,
+  cursorCoversBatch,
+  hasSessionEventGap,
+  sessionEventCursor,
+  type SessionEventBatch,
+  type SessionEventCursor,
+  type TranscriptSnapshot,
+} from "../shared/sessionEventStream";
 
 /**
  * Stable per-member identity for renderer-side caches (restored transcripts).
@@ -154,12 +164,18 @@ export function App() {
   membersRef.current = members;
   const restoredRef = useRef(restoredByMember);
   restoredRef.current = restoredByMember;
+  /** Cursor captured atomically with each restored member transcript. */
+  const restoredCursorByMemberRef = useRef<Record<string, SessionEventCursor | undefined>>({});
   // A session may emit before the party broadcast binds its id to a member, or
   // before that member's WSL transcript read completes. Keep those events in
   // memory until the persisted history has been merged. Only sessions recorded
   // in `transcriptOwnerBySessionRef` are allowed onto the persistence path.
-  const pendingEventsBySessionRef = useRef<Record<string, any[]>>({});
+  const pendingEventsBySessionRef = useRef<Record<string, SessionEventBatch<any>[]>>({});
   const transcriptOwnerBySessionRef = useRef<Map<string, string>>(new Map());
+  /** Highest accepted batch per session, whether queued during restore or live. */
+  const appliedTranscriptCursorBySessionRef = useRef<Map<string, SessionEventCursor>>(new Map());
+  /** Subagent projection is not part of a transcript snapshot, so it owns a cursor. */
+  const appliedSubagentCursorBySessionRef = useRef<Map<string, SessionEventCursor>>(new Map());
 
   // Publish the composer preferences to the input, which sits two layers down
   // (Workbench → Panel → Composer) and is the only consumer. App stays the sole
@@ -377,16 +393,45 @@ export function App() {
       if (!sessionId || !events.length) {
         return;
       }
-      // Subagent state is independent of transcript restoration, so fold it
-      // immediately even while the parent member's conversation is gated.
-      setSubagentsBySession((current) => applySubagentEvents(current, sessionId, events));
+      const batch: SessionEventBatch<any> = { ...payload, sessionId, events };
+      // The snapshot cursor below describes transcript blocks, not the
+      // independent subagent projection. Fold subagent events before a covered
+      // transcript batch returns so startup replay cannot hide a subagent that
+      // is absent from the transcript snapshot.
+      const incomingCursor = sessionEventCursor(batch);
+      const subagentCursor = appliedSubagentCursorBySessionRef.current.get(sessionId);
+      if (!cursorCoversBatch(subagentCursor, batch)) {
+        setSubagentsBySession((current) => applySubagentEvents(current, sessionId, events));
+        const advancedSubagentCursor = advanceSessionEventCursor(subagentCursor, incomingCursor);
+        if (advancedSubagentCursor) {
+          appliedSubagentCursorBySessionRef.current.set(sessionId, advancedSubagentCursor);
+        }
+      }
+      const appliedCursor = appliedTranscriptCursorBySessionRef.current.get(sessionId);
+      if (cursorCoversBatch(appliedCursor, batch)) {
+        return;
+      }
+      if (hasSessionEventGap(appliedCursor, incomingCursor)) {
+        // IPC and the WSL stdout transport are ordered. A gap means the UI can
+        // no longer prove its transcript complete, so make the invariant breach
+        // visible while still applying the data that did arrive.
+        const sameStream = appliedCursor?.streamId === incomingCursor?.streamId;
+        const expectedSeq = sameStream ? appliedCursor!.seq + 1 : 1;
+        const detail = `${sessionId}: expected ${expectedSeq}, received ${incomingCursor?.seq}`;
+        console.error("session event stream gap", detail);
+        setPartyNotice(`실시간 대화 이벤트 일부가 누락되었습니다 (${detail}). 멤버를 다시 열어 기록을 동기화하세요.`);
+      }
+      const advancedCursor = advanceSessionEventCursor(appliedCursor, incomingCursor);
+      if (advancedCursor) {
+        appliedTranscriptCursorBySessionRef.current.set(sessionId, advancedCursor);
+      }
       // Do not assemble an unowned live transcript. If it were saved after the
       // party update attached this session to a member, it could replace that
       // member's not-yet-restored history with only these new events.
       if (!transcriptOwnerBySessionRef.current.has(sessionId)) {
         pendingEventsBySessionRef.current[sessionId] = [
           ...(pendingEventsBySessionRef.current[sessionId] || []),
-          ...events,
+          batch,
         ];
         return;
       }
@@ -550,8 +595,9 @@ export function App() {
     return wanted;
   }, [visibleMembers, members]);
 
-  // Restore each needed member's persisted transcript from disk once, so a
-  // reopened app (or a closed member) shows its past conversation. Visible
+  // Restore each needed member's materialized transcript snapshot once (disk
+  // for inactive members, the main recorder for live ones), so a reopened app
+  // or closed member shows its past conversation. Visible
   // members are fetched FIRST, one per event-loop yield, before any non-visible
   // live sessions that still need an event/persistence owner.
   // The old loop fired every IPC read at once; React then batched several large
@@ -587,8 +633,18 @@ export function App() {
     const timer = window.setTimeout(() => {
       const key = memberKey(member);
       restoreRequestedRef.current.add(key);
+      // A failed attempt may have left an older snapshot cursor behind. The
+      // retry owns a fresh request/result pair; until it resolves there is no
+      // cursor that may be used to classify newly queued batches as covered.
+      delete restoredCursorByMemberRef.current[key];
       void window.agentParty.getMemberTranscript?.(member.name, member.partyId)?.then((raw) => {
-        const blocks = Array.isArray(raw) ? normalizeTranscriptBlocks(raw as TranscriptBlock[]) : [];
+        const snapshot: TranscriptSnapshot<TranscriptBlock> = Array.isArray(raw)
+          ? { blocks: raw as TranscriptBlock[] }
+          : raw && Array.isArray(raw.blocks)
+            ? raw as TranscriptSnapshot<TranscriptBlock>
+            : { blocks: [] };
+        const blocks = normalizeTranscriptBlocks(snapshot.blocks);
+        restoredCursorByMemberRef.current[key] = snapshot.cursor;
         // Always record the result (even empty): it marks the restore as done.
         setRestoredByMember((current) => ({ ...current, [key]: blocks }));
       }).catch(() => {
@@ -603,7 +659,7 @@ export function App() {
   }, [members, visibleMembers, transcriptMembers, restoredByMember, revealedMembers, restoreRetryNonce]);
 
   // This is the single transition that makes a session transcript writable:
-  // member identity is known AND its persisted transcript read has settled.
+  // member identity is known AND its transcript snapshot read has settled.
   // It also flushes events that arrived before either condition became true.
   useEffect(() => {
     for (const member of members) {
@@ -1153,11 +1209,25 @@ export function App() {
     // Updaters may run more than once in Strict Mode and therefore must stay pure.
     const pending = pendingEventsBySessionRef.current[sessionId] || [];
     delete pendingEventsBySessionRef.current[sessionId];
+    const snapshotCursor = restoredCursorByMemberRef.current[ownerKey];
+    const uncovered = batchesAfterSessionEventCursor(pending, snapshotCursor);
+    const pendingEvents = uncovered.flatMap((batch) => batch.events);
     setLogsBySession((current) => {
       const merged = mergeRestoredTranscript(restored, current[sessionId] || []);
       const seeded = current[sessionId] === merged ? current : { ...current, [sessionId]: merged };
-      return pending.length ? applyEvents(seeded, sessionId, pending) : seeded;
+      return pendingEvents.length ? applyEvents(seeded, sessionId, pendingEvents) : seeded;
     });
+    let representedCursor = snapshotCursor;
+    for (const batch of uncovered) {
+      representedCursor = advanceSessionEventCursor(representedCursor, sessionEventCursor(batch));
+    }
+    const acceptedCursor = advanceSessionEventCursor(
+      appliedTranscriptCursorBySessionRef.current.get(sessionId),
+      representedCursor,
+    );
+    if (acceptedCursor) {
+      appliedTranscriptCursorBySessionRef.current.set(sessionId, acceptedCursor);
+    }
     // JavaScript cannot interleave another event handler before this line, and
     // React applies subsequent setLogsBySession calls after the queued merge.
     // Persistence runs only after that state commits, so opening the gate here

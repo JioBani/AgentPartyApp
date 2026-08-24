@@ -10,6 +10,8 @@ import type { ApprovalDelivery, ApprovalResponseResult } from "../shared/approva
 import type { CliContinuationAction, CliContinuationResult } from "../shared/cliContinuation";
 import type { GuideScreenInfo } from "../shared/guide";
 import type { GuideHostApi } from "../shared/guideHost";
+import type { TranscriptBlock } from "../shared/transcript";
+import type { TranscriptSnapshot } from "../shared/sessionEventStream";
 
 const api = {
   /**
@@ -179,7 +181,8 @@ const api = {
   setPartyGate: (partyId: string, gate: unknown) => ipcRenderer.invoke("party:partyGate", partyId, gate),
   getPartyLayout: (): Promise<WorkbenchLayout | undefined> => ipcRenderer.invoke("party:layout:get"),
   setPartyLayout: (layout: WorkbenchLayout) => ipcRenderer.invoke("party:layout:set", layout),
-  getMemberTranscript: (name: string, partyId?: string) => ipcRenderer.invoke("party:transcript:get", name, partyId),
+  getMemberTranscript: (name: string, partyId?: string): Promise<TranscriptSnapshot<TranscriptBlock>> =>
+    ipcRenderer.invoke("party:transcript:get", name, partyId),
   saveMemberTranscript: (name: string, save: TranscriptSave): Promise<TranscriptSaveResult> => ipcRenderer.invoke("party:transcript:save", name, save),
   /** Bytes for one screenshot a transcript references, fetched only when shown. */
   getTranscriptImage: (file: string): Promise<{ ok: true; dataUrl: string; bytes: number }> => ipcRenderer.invoke("party:transcript:image", file),

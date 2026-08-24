@@ -153,7 +153,7 @@ export interface EngineConnection {
   removeMember(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["removeMember"]>>;
   /** Dispatches one of the named party actions (HTTP `/api/party/members/:name/:action`). */
   partyAction(name: string, action: string, body: any, partyId?: string): Promise<PartyMutationResult>;
-  /** The member's persisted transcript (assembled UI blocks), restored on load. */
+  /** Atomic materialized transcript snapshot, including a live-event cursor when active. */
   getMemberTranscript(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getMemberTranscript"]>>;
   /**
    * One screenshot a transcript references, as a data URL. Transcripts store
