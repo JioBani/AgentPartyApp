@@ -1,6 +1,6 @@
 /*
  * Full-process E2E for member-message interrupt inheritance. Runs the real
- * Electron app and drives the same HTTP controller paths used by the UI.
+ * Electron app and drives member sends through the shipped stdio MCP relay.
  * Run after `npm run build`.
  */
 import { spawn } from "node:child_process";
@@ -48,6 +48,8 @@ async function main() {
 
     const unicodeSend = await callPartyMcpAs("그록", seeded.currentPartyId, "한글-수신자", "한글 발신자와 수신자");
     assert(unicodeSend.ok === true, "standalone party MCP sends between Korean member names without a ByteString header failure");
+    // This case intentionally stays on direct HTTP: it verifies byte-split UTF-8
+    // request parsing, not the member tool contract.
     const splitMessage = "청크 경계에서도 한글과 🚀가 보존됩니다";
     const split = await postUtf8Split("/api/party/messages", {
       from: "그록", to: "target-split", content: splitMessage,
@@ -61,7 +63,7 @@ async function main() {
     let sent = await callPartyMcpAs("sender", seeded.currentPartyId, "target-runtime", "runtime-default", { interrupt: false });
     let queued = await get("/api/party/members/target-runtime/queue");
     let queuedItem = queued.queue?.items?.find((item) => item.text === "runtime-default");
-    assert(sent.data?.queued === true && queuedItem?.cutIn === true, "legacy false from the member tool inherits Runtime and cuts in");
+    assert(sent.data?.queued === true && sent.data?.cutIn === true && queuedItem?.cutIn === true, "legacy false from the member tool inherits Runtime and cuts in");
 
     await post("/api/settings", { memberMessaging: { interruptOnSend: false } });
     let override = await post("/api/party/members/sender/outbound-interrupt", { outboundInterrupt: true });
@@ -70,13 +72,13 @@ async function main() {
     sent = await callPartyMcpAs("sender", seeded.currentPartyId, "target-member", "member-interrupt", { interrupt: false });
     queued = await get("/api/party/members/target-member/queue");
     queuedItem = queued.queue?.items?.find((item) => item.text === "member-interrupt");
-    assert(sent.data?.queued === true && queuedItem?.cutIn === true, "legacy false from the member tool inherits the per-member interrupt override");
+    assert(sent.data?.queued === true && sent.data?.cutIn === true && queuedItem?.cutIn === true, "legacy false from the member tool inherits the per-member interrupt override");
 
     await workingTarget("target-queue");
     sent = await callPartyMcpAs("sender", seeded.currentPartyId, "target-queue", "explicit-queue", { queue: true });
     queued = await get("/api/party/members/target-queue/queue");
     queuedItem = queued.queue?.items?.find((item) => item.text === "explicit-queue");
-    assert(sent.data?.queued === true && Boolean(queuedItem) && queuedItem.cutIn !== true, "explicit queue beats the per-member interrupt override");
+    assert(sent.data?.queued === true && sent.data?.cutIn === false && Boolean(queuedItem) && queuedItem.cutIn !== true, "explicit queue beats the per-member interrupt override");
 
     override = await post("/api/party/members/sender/outbound-interrupt", { outboundInterrupt: false });
     assert(override.member?.outboundInterrupt === false, "member queue override persists");
@@ -84,8 +86,10 @@ async function main() {
     sent = await callPartyMcpAs("sender", seeded.currentPartyId, "target-explicit", "explicit", { interrupt: true });
     queued = await get("/api/party/members/target-explicit/queue");
     queuedItem = queued.queue?.items?.find((item) => item.text === "explicit");
-    assert(sent.data?.queued === true && queuedItem?.cutIn === true, "explicit interrupt beats the member queue override");
+    assert(sent.data?.queued === true && sent.data?.cutIn === true && queuedItem?.cutIn === true, "explicit interrupt beats the member queue override");
 
+    // This case intentionally stays on direct HTTP: it locks the compatibility
+    // endpoint's explicit-false semantics independently of the MCP tool.
     await post("/api/settings", { memberMessaging: { interruptOnSend: true } });
     await workingTarget("target-http-queue");
     sent = await post("/api/party/messages", { from: "sender", to: "target-http-queue", content: "http-explicit-queue", interrupt: false });
@@ -94,17 +98,17 @@ async function main() {
     // An interrupt preference is a conditional policy, not an instruction to
     // stop the turn this message itself creates. Idle, sleeping and unstarted
     // targets have no arrival-time turn and must never be interrupted.
-    sent = await post("/api/party/messages", { from: "sender", to: "target-idle", content: "idle-direct", interrupt: true });
-    assert(sent.partyMessage?.delivered === true && sent.queued !== true, "explicit interrupt sends normally when the target is idle");
+    sent = await callPartyMcpAs("sender", seeded.currentPartyId, "target-idle", "idle-direct", { interrupt: true });
+    assert(sent.ok === true && sent.data?.queued !== true, "explicit interrupt sends normally when the target is idle");
 
     const slept = await post("/api/party/members/target-sleeping/sleep", {});
     assert(slept.member?.status === "sleeping", "idle target enters sleeping state for the wake-up check");
-    sent = await post("/api/party/messages", { from: "sender", to: "target-sleeping", content: "wake-without-stop", interrupt: true });
-    assert(sent.queued === true && sent.queue?.items?.find((item) => item.text === "wake-without-stop")?.cutIn !== true, "sleeping target wakes with a normal queued message, never an interrupt");
+    sent = await callPartyMcpAs("sender", seeded.currentPartyId, "target-sleeping", "wake-without-stop", { interrupt: true });
+    assert(sent.data?.queued === true && sent.data?.cutIn === false, "sleeping target wakes with a normal queued message, never an interrupt");
 
     await post("/api/party/members", { name: "target-unstarted", requirement: "unstarted e2e target" });
-    sent = await post("/api/party/messages", { from: "sender", to: "target-unstarted", content: "start-without-stop", interrupt: true });
-    assert(sent.partyMessage?.delivered === true && sent.queued !== true, "unstarted target starts and receives without being interrupted");
+    sent = await callPartyMcpAs("sender", seeded.currentPartyId, "target-unstarted", "start-without-stop", { interrupt: true });
+    assert(sent.ok === true && sent.data?.queued !== true, "unstarted target starts and receives without being interrupted");
 
     const inherited = await post("/api/party/members/sender/outbound-interrupt", { outboundInterrupt: null });
     assert(inherited.member && !("outboundInterrupt" in inherited.member), "null clears the override back to inherit");
@@ -149,44 +153,8 @@ function killTree(pid) {
 }
 
 function callPartyMcpAs(member, party, to, content, delivery = {}) {
-  return new Promise((resolve, reject) => {
-    const relay = spawn(process.execPath, [path.join(root, "scripts", "agentparty-codex-mcp-server.mjs")], {
-      cwd: root,
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-      env: {
-        ...process.env,
-        AGENTPARTY_AUTOMATION_BASE_URL: base,
-        AGENTPARTY_MEMBER: member,
-        AGENTPARTY_PARTY: party,
-      },
-    });
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => finish(new Error(`party MCP timed out: ${stderr}`)), 10_000);
-    const finish = (error, value) => {
-      clearTimeout(timer);
-      relay.kill();
-      if (error) reject(error); else resolve(value);
-    };
-    relay.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
-    relay.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-      const lineEnd = stdout.indexOf("\n");
-      if (lineEnd < 0) return;
-      try {
-        const response = JSON.parse(stdout.slice(0, lineEnd));
-        if (response.error) return finish(new Error(response.error.message));
-        const text = response.result?.content?.find((item) => item.type === "text")?.text;
-        finish(undefined, JSON.parse(text || "{}"));
-      } catch (error) {
-        finish(error);
-      }
-    });
-    relay.once("exit", (code) => {
-      if (code && code !== 0) finish(new Error(`party MCP exited ${code}: ${stderr}`));
-    });
-    relay.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "send", arguments: { to, content, ...delivery } } })}\n`);
+  return post(`/api/parties/${encodeURIComponent(party)}/members/${encodeURIComponent(member)}/mcp-tools/send`, {
+    arguments: { to, content, ...delivery },
   });
 }
 

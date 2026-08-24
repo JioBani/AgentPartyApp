@@ -3066,7 +3066,8 @@ export class PartyApplicationService {
    *   delivered when it was not;
    * - every call returned the UI's whole command result — the party list, every
    *   member record and up to 200 messages. Measured on a real party: 297KB,
-   *   roughly 74,000 tokens, per `send`. The correct answer is 36 bytes.
+   *   roughly 74,000 tokens, per `send`. The correct answer is a compact
+   *   delivery result.
    *
    * `invokePartyTool` is the one place that decides what a tool returns, so both
    * harnesses now go through it and there is no second copy to drift.
@@ -3093,7 +3094,10 @@ export class PartyApplicationService {
           // (and anything that retries on !ok) duplicate a message that was
           // already safely parked — the same class of bug #22 fixed for broadcast.
           if (result.queued || result.partyMessage?.error === "queued_for_busy_member") {
-            return { ok: true, data: { queued: true } };
+            const queuedItem = result.queuedItemId
+              ? result.queue?.items.find((item) => item.id === result.queuedItemId)
+              : undefined;
+            return { ok: true, data: { queued: true, cutIn: queuedItem?.cutIn === true } };
           }
           if (!result.partyMessage?.delivered) {
             // A gate rejection carries its reason in `error` — surface it verbatim

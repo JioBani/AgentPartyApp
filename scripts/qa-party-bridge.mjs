@@ -348,7 +348,7 @@ let inheritedToolSend = await invokePartyTool(bridge, mainBinding.identity, `${P
   to: "buddy", content: "legacy-false-inherits-runtime", interrupt: false,
 });
 let buddyQueue = svc.getMemberQueue("buddy", partyId);
-assert(inheritedToolSend.ok && interrupted.length === beforeToolInterrupt + 1 && buddyQueue.items[0]?.cutIn === true, "legacy tool interrupt:false inherits the Runtime true default");
+assert(inheritedToolSend.ok && inheritedToolSend.data?.cutIn === true && interrupted.length === beforeToolInterrupt + 1 && buddyQueue.items[0]?.cutIn === true, "legacy tool interrupt:false inherits the Runtime true default");
 
 svc.clearMemberQueue("buddy", partyId);
 svc.setMemberMessaging({ interruptOnSend: false });
@@ -358,7 +358,7 @@ inheritedToolSend = await invokePartyTool(bridge, mainBinding.identity, `${PARTY
   to: "buddy", content: "legacy-false-inherits-member", interrupt: false,
 });
 buddyQueue = svc.getMemberQueue("buddy", partyId);
-assert(inheritedToolSend.ok && interrupted.length === beforeToolInterrupt + 1 && buddyQueue.items[0]?.cutIn === true, "legacy tool interrupt:false inherits a per-member true override");
+assert(inheritedToolSend.ok && inheritedToolSend.data?.cutIn === true && interrupted.length === beforeToolInterrupt + 1 && buddyQueue.items[0]?.cutIn === true, "legacy tool interrupt:false inherits a per-member true override");
 
 svc.clearMemberQueue("buddy", partyId);
 beforeToolInterrupt = interrupted.length;
@@ -366,7 +366,7 @@ const forcedQueue = await invokePartyTool(bridge, mainBinding.identity, `${PARTY
   to: "buddy", content: "explicit-tool-queue", queue: true,
 });
 buddyQueue = svc.getMemberQueue("buddy", partyId);
-assert(forcedQueue.ok && interrupted.length === beforeToolInterrupt && buddyQueue.items[0]?.cutIn !== true, "queue:true explicitly queues even when the member override is true");
+assert(forcedQueue.ok && forcedQueue.data?.cutIn === false && interrupted.length === beforeToolInterrupt && buddyQueue.items[0]?.cutIn !== true, "queue:true explicitly queues even when the member override is true");
 
 svc.clearMemberQueue("buddy", partyId);
 svc.setMemberOutboundInterrupt("main", false, partyId);
@@ -375,7 +375,7 @@ const forcedInterrupt = await invokePartyTool(bridge, mainBinding.identity, `${P
   to: "buddy", content: "explicit-tool-interrupt", interrupt: true,
 });
 buddyQueue = svc.getMemberQueue("buddy", partyId);
-assert(forcedInterrupt.ok && interrupted.length === beforeToolInterrupt + 1 && buddyQueue.items[0]?.cutIn === true, "interrupt:true explicitly cuts in even when the member override is false");
+assert(forcedInterrupt.ok && forcedInterrupt.data?.cutIn === true && interrupted.length === beforeToolInterrupt + 1 && buddyQueue.items[0]?.cutIn === true, "interrupt:true explicitly cuts in even when the member override is false");
 const conflictingDelivery = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, {
   to: "buddy", content: "ambiguous", interrupt: true, queue: true,
 });

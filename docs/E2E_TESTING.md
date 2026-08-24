@@ -700,7 +700,7 @@ endpoints return 403 otherwise. (`npm run qa:seed` runs a canned scenario via
 | `POST /api/qa/members` `{name, role, model, effort, autoReply}` | add **one** mock member — also exercises the live member-list `party:update` |
 | `POST /api/qa/members/:name/emit` `{events:[…], status}` | inject conversation I/O into a member's transcript (see event shapes below) |
 | `POST /api/qa/members/:name/interaction` `{questions}` | inject an `AskUserQuestion` choice card |
-| `POST /api/party/messages` `{to, from, content}` | **simulate an inter-member message** — `from` (any name) → `to` (a mock member). Recorded in party state and rendered in the receiver's transcript; an `autoReply` member also bounces a response back. This is how you QA "a member messaged another" with no real session. |
+| `POST /api/parties/:partyId/members/:name/mcp-tools/send` `{arguments:{to,content}}` | **exercise an inter-member message through the real stdio MCP transport** — the named mock member sends to another member without spending a model turn. This is the default way to QA "a member messaged another" because it covers MCP schema, identity, framing, and host routing. Use direct `POST /api/party/messages` only for fixture setup or an explicit HTTP-contract regression, and record that reason. |
 | `POST /api/qa/members/:name/subagents` `{scenario}` | inject a named **subagent** scenario (`claude-test-shards` / `codex-call-tracer` / `codex-web-research` in `src/shared/subagentScenarios.ts`) as `subagent` normalized events — drives the dock + detail through the real fold with no real subagent spawned |
 | `POST /api/qa/members/:name/subagents/open` `{subId}` | open a subagent's drill-in detail (`subId` = the subagent id, or `"first"`) |
 | `POST /api/qa/gate/open` `{kind:"member"\|"party", member}` | open a **Message Gate** modal over HTTP (member editor for `member`, or party manager for `member`=partyId) so an agent can drive the real UI route + `/api/capture` it |
@@ -940,12 +940,16 @@ Scan that dir, pick a live entry (`scripts/lib/discovery.mjs` → `firstBaseUrl(
 for a WSL workspace pass the `wsl+<distro>:/path` URI — the file resolves via the
 `\\wsl$` UNC view). Poll `GET <baseUrl>/api/health` until `ok`.
 
-### 4. Drive it exactly like an external QA agent — over HTTP only
-Every capability is on the automation API (`src/shared/apiSpec.ts`, `docs/API.md`),
-routed through the same `AppController` methods as the UI. Examples:
+### 4. Drive it exactly like an external QA agent — through the automation API
+Every capability is on the automation API (`src/shared/apiSpec.ts`, `docs/API.md`).
+When acting as a party member, use the member-scoped MCP transport endpoint so
+the request crosses the shipped stdio relay instead of bypassing it. Direct HTTP
+action routes are for HTTP-contract tests, fixture setup or inspection,
+human-only actions, and capabilities with no MCP tool. Examples:
 ```
 POST /api/party/members/main/start   { model, effort, permissionMode }
-POST /api/party/messages             { to, from, content }    # deliver a user turn
+POST /api/parties/<partyId>/members/<sender>/mcp-tools/send
+                                     { arguments: { to, content } }
 GET  /api/party                      # members + messages (poll for results)
 POST /api/party/members/<name>/remove
 ```

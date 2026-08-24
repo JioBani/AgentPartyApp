@@ -2885,6 +2885,13 @@ API, and on WSL crosses the engine host channel back to the Windows-global
 `AppController`. It does not shortcut directly to the party service and does
 not spend a model turn.
 
+This is the default automation/QA entry point whenever a party member uses a
+capability exposed as an AgentParty MCP tool. Use a lower-level HTTP action route
+only when the test intentionally targets that HTTP contract, performs fixture
+setup or state inspection, drives a human-only action, or covers a capability
+with no MCP tool. Record that exception in the test or validation notes so an
+HTTP/MCP mismatch cannot be mistaken for product coverage.
+
 The party is explicit in the path so a focused window cannot change test scope.
 Tool arguments belong under `arguments`:
 
@@ -2893,7 +2900,7 @@ Tool arguments belong under `arguments`:
   "arguments": {
     "to": "windows-worker",
     "content": "MCP transport probe",
-    "interrupt": false
+    "queue": true
   }
 }
 ```
@@ -2918,6 +2925,12 @@ rejection). A broken relay, JSON-RPC framing error, unreachable host-local API,
 or host-channel failure is an HTTP error instead, so transport failures cannot
 masquerade as an ordinary tool refusal. This endpoint is desktop-local and is
 not published to the mobile RPC table.
+
+For `send`, a queued success includes compact delivery metadata:
+`{ "ok": true, "data": { "queued": true, "cutIn": true|false }, ... }`.
+`cutIn` is the persisted mode of this specific queue row, so an MCP E2E can
+verify inheritance and explicit overrides even if the recipient wakes and
+auto-drains the row before a follow-up queue read.
 
 ### `GET /api/parties/:partyId/members/:name/mcp-tools`
 
