@@ -25,6 +25,7 @@ const MIXED = [
 ].join("\n");
 const MIXED_HREF = "https://github.com/JioBani/AgentParty-releases/releases/tag/v0.2.7";
 const LONG_DIAGNOSTIC = "MCP client for `readonly-db` failed to start: MCP startup failed: handshaking with MCP server failed: Send message error Transport [rmcp::transport::worker::WorkerTransport<rmcp::transport::streamable_http_client::StreamableHttpClientTransportWorker<reqwest::async_impl::client::Client>>] error: Client error: HTTP request failed: http/request failed: error sending request for url (http://127.0.0.1:18000/mcp), when send initialize request";
+const LONG_TOOL_PATH = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -Command Get-ChildItem C:\\Project\\AgentPartyApp\\src\\renderer\\workbench";
 
 let base = "";
 const failures = [];
@@ -99,6 +100,16 @@ async function main() {
         detail: LONG_DIAGNOSTIC,
       }],
     });
+    await post("/api/qa/members/renderer/emit", {
+      events: [{
+        type: "tool_call",
+        id: "narrow-tool-summary",
+        name: "Shell",
+        source: "shell",
+        status: "completed",
+        input: { command: LONG_TOOL_PATH },
+      }],
+    });
     await waitForMeasure(".wb-channel-bubble");
 
     const bubbleWidth = await fitBubbleNear320();
@@ -163,6 +174,35 @@ async function main() {
     ok(diagnosticText.containedBy?.fully === true, `E) long MCP transport detail wraps inside its card (overflowRight=${diagnosticText.containedBy?.overflowRight})`);
     ok(diagnosticText.scroll.width <= diagnosticText.content.width + 1, `E) diagnostic scrollWidth <= clientWidth+1 (${diagnosticText.scroll.width} <= ${diagnosticText.content.width}+1)`);
     ok(diagnosticText.styles["overflow-wrap"] === "anywhere", `E) transcript card inherits overflow-wrap:anywhere (${diagnosticText.styles["overflow-wrap"]})`);
+
+    const tool = await post("/api/measure", {
+      selector: ".wb-tool",
+      containedBy: ".wb-transcript",
+      limit: 1,
+    });
+    const toolCard = tool.elements[0];
+    ok(toolCard.containedBy?.fully === true, `F) tool card stays inside the narrow transcript (overflowRight=${toolCard.containedBy?.overflowRight})`);
+    ok(toolCard.scrollable.horizontal === false, `F) tool card has no horizontal overflow (scrollWidth=${toolCard.scroll.width}, clientWidth=${toolCard.content.width})`);
+    const toolParts = await post("/api/measure", {
+      selector: ".wb-tool-name, .wb-tool-source, .wb-tool-arg",
+      styles: ["white-space", "overflow", "text-overflow", "flex-shrink"],
+      containedBy: ".wb-tool > summary",
+      limit: 3,
+    });
+    const [toolName, toolSource, toolArg] = toolParts.elements;
+    ok(toolName.text === "Shell" && toolName.box.height < 24 && toolName.box.width > 25, `F) tool name stays on one line (${Math.round(toolName.box.width)}x${Math.round(toolName.box.height)})`);
+    ok(toolSource.text === "shell" && toolSource.box.height < 24 && toolSource.box.width > 25, `F) source badge stays on one line (${Math.round(toolSource.box.width)}x${Math.round(toolSource.box.height)})`);
+    ok(toolArg.box.width >= 32 && toolArg.box.height < 24, `F) long path owns the remaining row and stays one line (${Math.round(toolArg.box.width)}x${Math.round(toolArg.box.height)})`);
+    ok(toolArg.styles["text-overflow"] === "ellipsis", `F) long path is ellipsis-clipped (${toolArg.styles["text-overflow"]})`);
+    ok(toolParts.elements.every((part) => part.containedBy?.fully === true), "F) tool name, source and path are all contained by the summary row");
+
+    for (const theme of ["agentparty-light", "agentparty-dark"]) {
+      const appliedTheme = await post("/api/appearance/theme", { theme });
+      await delay(300);
+      const themedShot = path.join(shotDir, `narrow-tool-${theme}.png`);
+      const captured = await post("/api/capture", { path: themedShot });
+      ok(appliedTheme.applied === theme && captured.bytes > 0, `F) ${theme} tool-layout screenshot → ${themedShot}`);
+    }
 
     const shot = path.join(shotDir, "mixed-channel-320.png");
     ok((await post("/api/capture", { path: shot })).bytes > 0, `screenshot → ${shot}`);
