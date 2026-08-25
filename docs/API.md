@@ -763,6 +763,12 @@ is `%23`. Malformed URLs fail with `Not a readable file URL`.
 The response says what actually happened, because "opened" and "the file manager
 came up instead" are different outcomes:
 
+Model/editor citations may append a source location (`report.md:45` or
+`report.ts:45:12`). The controller first checks that spelling as a real filename;
+only when it does not exist does it retry the underlying file without the
+numeric line/column suffix. This preserves legal POSIX filenames containing
+`:` while making transcript citations openable through both UI and HTTP.
+
 ```json
 { "ok": true, "action": "opened", "path": "C:\\work\\docs\\API.md" }
 ```
@@ -2035,11 +2041,14 @@ queues, layouts, transcripts, images, and party-attributed usage live under
 at its immutable execution `location`, which may be a Windows path or a
 `wsl+<distro>:` path.
 
-When a former workspace is explicitly opened, its `.agent_party_app` (or older
-`.agentparty`) party store is copied into the Windows-global store before the
-window hydrates. The source is left untouched, ids and group filing are
-preserved, and `<userData>/party-store/.agent_party_app/workspace-imports.json`
-makes the import resumable and idempotent.
+At startup, every former workspace already named by the durable party-group
+registry, plus the workspace being opened, has its `.agent_party_app` (or older
+`.agentparty`) party store copied into the Windows-global store before the
+window hydrates. This is a bounded registry migration, not a filesystem scan.
+The source is left untouched, ids and group filing are preserved, and
+`<userData>/party-store/.agent_party_app/workspace-imports.json` makes the
+import resumable and idempotent. Consequently a Windows Search launch does not
+need each old WSL cwd to be opened once before its parties appear.
 
 ```json
 {
@@ -2131,8 +2140,8 @@ case-insensitive, while the POSIX path inside a distro remains case-sensitive.
 Every group and every party already present in the Windows-global store. A party
 summary carries `memberCount`, `runningCount` and the `windowsCount`/`wslCount`
 split. Its `workspacePath` is the internal global-store identity, not an owner
-cwd. Legacy registry rows stay hidden until their former workspace is opened
-and imported.
+cwd. Registered legacy rows are imported automatically during startup rather
+than remaining hidden until their former workspace is opened.
 
 ### `POST /api/party-groups`
 
@@ -2145,9 +2154,11 @@ transcripts are untouched — a group is a folder, not a location.
 
 ### `POST /api/party-groups/migrate`
 
-Imports party data from only the explicitly supplied former workspaces. The app
-calls this automatically for the cwd used to open or switch a window; it never
-scans every known folder. Windows paths are read directly and WSL paths through
+Imports party data from the explicitly supplied former workspaces and every
+former workspace already recorded in the durable party-group registry. The app
+calls this automatically before a window hydrates. It never scans the
+filesystem for stores: candidates are limited to locations the user previously
+opened and registered. Windows paths are read directly and WSL paths through
 their `\\wsl.localhost\<distro>\...` filesystem view.
 
 The source is never removed or rewritten. Party ids, group filing, members,

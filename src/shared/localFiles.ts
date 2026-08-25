@@ -51,6 +51,24 @@ export function normalizeLocalFileTarget(value: string, platform: string): strin
 }
 
 /**
+ * Removes an editor-style source location from a filesystem target.
+ *
+ * Models commonly cite files as `path/to/file.ts:45` or
+ * `path/to/file.ts:45:12`. The suffix identifies a line (and optionally a
+ * column); it is not part of the filename that `fs.stat` or `shell.openPath`
+ * can read. Callers must try the original path first and use this only as a
+ * missing-file fallback, because `:` is legal in a POSIX filename.
+ */
+export function withoutLocalFileSourceLocation(value: string): string | undefined {
+  const input = String(value || "");
+  const match = /^(.*?):(\d+)(?::(\d+))?$/.exec(input);
+  if (!match || !match[1] || Number(match[2]) < 1 || (match[3] !== undefined && Number(match[3]) < 1)) {
+    return undefined;
+  }
+  return match[1];
+}
+
+/**
  * Where a link's target actually lives, as a path THIS host can open.
  *
  * The case this exists for: a member working in a WSL workspace writes

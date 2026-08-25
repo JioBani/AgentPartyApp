@@ -32,6 +32,10 @@ assert(local.normalizeLocalFileTarget("\\\\server\\share\\발표.html", "win32")
 assert(local.isWindowsDrivePath("C:/Project/a.html") && local.isWindowsDrivePath("/C:/Project/a.html"), "plain and URL-shaped drive paths are classified as files");
 assert(local.isWindowsDrivePath("C:%5CProject%5Ca.txt"), "markdown-encoded backslash drive path is classified as a file");
 assert(local.decodeLocalFileTarget("C:%5CProject%5Ca.txt") === "C:\\Project\\a.txt", "markdown-encoded backslashes are restored before filesystem resolution");
+assert(local.withoutLocalFileSourceLocation("/home/dev/report.md:45") === "/home/dev/report.md", "line suffix is separated from a POSIX path");
+assert(local.withoutLocalFileSourceLocation("C:\\Project\\report.ts:45:12") === "C:\\Project\\report.ts", "line and column suffix are separated from a Windows path");
+assert(local.withoutLocalFileSourceLocation("/home/dev/report.md:0") === undefined, "zero is not treated as a source line");
+assert(local.withoutLocalFileSourceLocation("/home/dev/report.md:label") === undefined, "a non-numeric colon suffix remains a filename");
 
 // --- which host owns a link's target (the WSL bug: `/home/…` read as `C:\home\…`) ---
 const wslWindow = "wsl+Ubuntu-20.04:/home/me/proj";

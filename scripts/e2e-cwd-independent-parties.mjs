@@ -13,6 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const token = `agentparty-cwd-independent-${process.pid}-${Date.now()}`;
 const workspace = path.join(os.tmpdir(), `${token}-source`);
 const otherWorkspace = path.join(os.tmpdir(), `${token}-other`);
+const unopenedLegacyWorkspace = path.join(os.tmpdir(), `${token}-unopened-legacy`);
 const userData = path.join(os.tmpdir(), `${token}-user-data`);
 const recentCwd = path.join(workspace, "fresh-recent-cwd");
 const port = 45500 + Math.floor(Math.random() * 1000);
@@ -65,10 +66,47 @@ try {
   await app.prepare();
   fs.mkdirSync(otherWorkspace, { recursive: true });
   fs.mkdirSync(recentCwd, { recursive: true });
+  const legacyPartyId = "legacy-unopened-party";
+  const legacyGroupId = "default";
+  const legacyPartyDir = path.join(unopenedLegacyWorkspace, ".agent_party_app", "parties", legacyPartyId);
+  const now = new Date().toISOString();
+  fs.mkdirSync(legacyPartyDir, { recursive: true });
+  fs.writeFileSync(path.join(unopenedLegacyWorkspace, ".agent_party_app", "parties.json"), JSON.stringify({
+    version: 2,
+    parties: [{ id: legacyPartyId, name: "UNOPENED-LEGACY-PARTY", createdAt: now, updatedAt: now }],
+    lastActivePartyId: legacyPartyId,
+  }, null, 2));
+  fs.writeFileSync(path.join(legacyPartyDir, "party.json"), JSON.stringify({ version: 2, members: [], messages: [] }, null, 2));
+  fs.writeFileSync(path.join(userData, "party-groups.json"), JSON.stringify({
+    version: 1,
+    groups: [{ id: legacyGroupId, name: "Default Group", kind: "default", createdAt: now, updatedAt: now }],
+    parties: [{
+      id: legacyPartyId,
+      groupId: legacyGroupId,
+      name: "UNOPENED-LEGACY-PARTY",
+      memberCount: 0,
+      runningCount: 0,
+      windowsCount: 0,
+      wslCount: 0,
+      updatedAt: now,
+      workspacePath: unopenedLegacyWorkspace,
+    }],
+  }, null, 2));
   await app.launch();
 
   const firstWindow = (await windows())[0]?.id;
   await waitFor(() => renderedWorkspace(firstWindow), (value) => sameWindowsPath(value, workspace));
+
+  console.log("\nGlobal migration from a registered, unopened cwd:");
+  const importedGroups = await waitFor(
+    () => app.get("/api/party-groups"),
+    (value) => value.parties?.some((party) => party.id === legacyPartyId),
+  );
+  const importedLegacy = importedGroups.parties?.find((party) => party.id === legacyPartyId);
+  assert(Boolean(importedLegacy), "a party from a registered legacy cwd is visible without opening that cwd");
+  assert(importedLegacy?.groupId === legacyGroupId, "automatic global import preserves the party's group filing");
+  const globalIndex = JSON.parse(fs.readFileSync(path.join(userData, "party-store", ".agent_party_app", "parties.json"), "utf8"));
+  assert(globalIndex.parties.some((party) => party.id === legacyPartyId), "the unopened legacy party was copied into the global store");
 
   console.log("\nLive cwd preferences:");
   const sourceGroup = (await app.post("/api/party-groups", { name: "SOURCE-BOTTOM" })).group;
@@ -204,7 +242,7 @@ try {
 } finally {
   cdp?.close();
   await app.close().catch(() => app.kill());
-  for (const target of [workspace, otherWorkspace, userData]) {
+  for (const target of [workspace, otherWorkspace, unopenedLegacyWorkspace, userData]) {
     await removePath(target).catch(() => {});
   }
 }

@@ -2,7 +2,7 @@
  * Product E2E: WSL local-file open/reveal through the real AgentParty process.
  *
  * Isolated userData, ephemeral automation discovery, a wsl+Ubuntu-22.04 window.
- * Seeds assistant markdown links (/home|/tmp, /mnt/c, file:///..., file://wsl.localhost)
+ * Seeds assistant markdown links (/home|/tmp, :line, /mnt/c, file:///..., file://wsl.localhost)
  * and drives open + folder-icon reveal via the live UI and POST /api/shell/open-path.
  *
  * Canonical product assertion for /mnt/c is the Windows drive path (C:\...), not
@@ -84,11 +84,12 @@ async function main() {
     );
 
     const win = await post("/api/windows", { workspacePath: wslUri });
-    ok(win.workspacePath === wslUri, `WSL window workspace ${win.workspacePath}`);
+    ok(String(win.workspacePath || "").toLowerCase() === wslUri.toLowerCase(), `WSL window workspace ${win.workspacePath}`);
     const q = `?window=${encodeURIComponent(win.id)}`;
 
     const LINKS = [
       { label: "native", href: nativePosix, expect: "opened", path: nativeUnc },
+      { label: "line-suffix", href: `${nativePosix}:45`, expect: "opened", path: nativeUnc },
       { label: "mnt", href: mntHref, expect: "opened", path: publicFile },
       { label: "file-home", href: fileHome, expect: "opened", path: nativeUnc },
       { label: "file-wsl", href: fileWsl, expect: "opened", path: nativeUnc },

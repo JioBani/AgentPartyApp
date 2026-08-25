@@ -1,7 +1,13 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { decodeLocalFileTarget, isLaunchable, localFileHostPath, normalizeLocalFileTarget } from "../../shared/localFiles";
+import {
+  decodeLocalFileTarget,
+  isLaunchable,
+  localFileHostPath,
+  normalizeLocalFileTarget,
+  withoutLocalFileSourceLocation,
+} from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import { invokePartyToolFromExecutionHost, type PartyToolResult } from "../../core/partyBridge";
@@ -1787,16 +1793,22 @@ export class AppController {
   // was opened from, which is the entire point of the feature.
 
   /**
-   * Copies pre-existing party data from one explicitly opened former cwd into
-   * the Windows-global store and backfills missing member locations.
+   * Copies pre-existing party data from registered or explicitly opened former
+   * cwds into the Windows-global store and backfills missing member locations.
    *
-   * Desktop-global mode looks only at workspaces it is TOLD about. Scanning the
-   * disk or the old registry would sweep up backups and unopened projects.
+   * Desktop-global mode imports the former workspaces already named by the
+   * durable group registry, plus explicitly supplied workspaces. This is not a
+   * filesystem scan: every candidate is a location the user previously opened
+   * and registered. Importing all of them is what makes a Windows-search launch
+   * show the same party list as a launch from one particular WSL cwd.
    */
   async migratePartyGroups(extraWorkspaces: string[] = []): Promise<MigrationReport> {
     if (this.globalPartyMode()) {
       const target = this.deps.partyStorageWorkspace as string;
-      const workspaces = [...new Set(extraWorkspaces.filter(Boolean))];
+      const workspaces = [...new Set([
+        ...this.partyGroups.knownWorkspaces(),
+        ...extraWorkspaces.filter(Boolean),
+      ])];
       const report: MigrationReport = {
         ok: true,
         workspaces,
@@ -2932,11 +2944,24 @@ export class AppController {
     if (!raw) {
       throw new Error("open-path requires a 'path'.");
     }
-    const resolved = this.resolveLocalPath(windowId, raw);
+    let resolved = this.resolveLocalPath(windowId, raw);
     try {
       await fs.stat(resolved);
     } catch {
-      throw new Error(`No such file: '${resolved}'. A relative link resolves against the window's workspace.`);
+      // Model-authored citations often use `file.md:45` / `file.md:45:12`.
+      // Preserve a real POSIX filename containing `:` by trying it first; only
+      // when it is absent do we interpret the numeric tail as source location.
+      const withoutLocation = withoutLocalFileSourceLocation(raw);
+      if (!withoutLocation) {
+        throw new Error(`No such file: '${resolved}'. A relative link resolves against the window's workspace.`);
+      }
+      const candidate = this.resolveLocalPath(windowId, withoutLocation);
+      try {
+        await fs.stat(candidate);
+        resolved = candidate;
+      } catch {
+        throw new Error(`No such file: '${resolved}'. A relative link resolves against the window's workspace.`);
+      }
     }
     // `reveal` is the caller asking for the file manager outright — the folder
     // icon next to a file link. It shares this method (rather than getting its

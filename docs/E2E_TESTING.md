@@ -294,6 +294,13 @@ selecting a party persists `lastActivePartyId`; and after an app RESTART the
 parties restore with `currentPartyId` back at the last-active party (proving
 `currentPartyId` is per-process runtime seeded from the persisted hint).
 
+`node scripts/e2e-cwd-independent-parties.mjs` also pre-seeds a legacy party in
+a cwd that the test never opens, records that cwd only in the global group
+registry, and boots the real app from a different workspace. It asserts the
+party is copied into the Windows-global store, remains filed in its group, and
+is immediately returned by `GET /api/party-groups`. This is the regression for
+Windows Search launches previously showing an empty WSL-backed group.
+
 `node scripts/e2e-usage-limits.mjs` (or `npm run test:e2e:usage-limits`) boots the
 real app on an isolated userData + temp workspace (offline — mock member, no
 model) and proves the usage-limit indicator end-to-end: provider usage injected
