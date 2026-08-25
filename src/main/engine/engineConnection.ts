@@ -44,8 +44,6 @@ export type PartyMutationResult = ReturnType<PartyApplicationService["sendMessag
 export interface QaMemberSpec {
   name: string;
   role?: string;
-  /** Explicit immutable execution location for cross-window file-link E2E. */
-  location?: string;
   /**
    * Harness the mock member belongs to. Mock members used to be forced to
    * `claude-code` while still being given the other harness's model, so a QA

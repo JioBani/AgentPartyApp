@@ -133,7 +133,10 @@ try {
   console.log("\nLong-list party drag:");
   await app.post(`/api/navigation?window=${encodeURIComponent(firstWindow)}`, { view: "workbench" });
   await waitFor(
-    () => measure(firstWindow, ".wb-party-group"),
+    // Navigation and the 18-group broadcast commit independently. A missing
+    // selector during that handoff is "not rendered yet", not a failed API
+    // request; keep probing until the actual groups mount.
+    () => maybeMeasure(firstWindow, ".wb-party-group"),
     (result) => result.count >= 18,
   );
   const scrollAtBottom = await measure(firstWindow, ".wb-party-scroll", {
