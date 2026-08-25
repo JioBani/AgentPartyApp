@@ -99,9 +99,11 @@ async function main() {
     const md = LINKS.map((link) => `[${link.label}](${link.href})`).join("\n\n");
     const seed = await post(`/api/qa/seed${q}`, {
       party: "wsl-file",
-      members: [{ name: "linker", role: "writes links", model: "sonnet", status: "idle", blocks: [{ type: "assistant_text_delta", text: md }] }],
+      members: [{ name: "linker", role: "writes links", location: wslUri, model: "sonnet", status: "idle", blocks: [{ type: "assistant_text_delta", text: md }] }],
     });
     ok(seed?.ok === true, "qa seed created the member");
+    ok(seed?.members?.find((member) => member.name === "linker")?.location === wslUri, "member keeps its explicit WSL execution location");
+    await post(`/api/parties/${encodeURIComponent(seed.currentPartyId)}/select${q}`, {});
     await post(`/api/navigation${q}`, { view: "workbench" });
     await post(`/api/qa/open${q}`, { panels: [["linker"]] });
     await delay(1200);
@@ -148,13 +150,45 @@ async function main() {
       ok(latest?.kind === link.expect, `${link.label}: UI ${link.expect} (got ${latest?.kind} — ${latest?.target})`);
       ok(samePath(latest?.target, link.path), `${link.label}: UI path ${link.path} (got ${latest?.target})`);
 
-      const api = await post(`/api/shell/open-path${q}`, { path: link.href }).catch((error) => ({ ok: false, error: String(error) }));
+      const api = await post(`/api/shell/open-path${q}`, { path: link.href, sourceLocation: wslUri }).catch((error) => ({ ok: false, error: String(error) }));
       ok(api?.ok === true && api?.action === "opened", `${link.label}: HTTP opened (got ${api?.action || api?.error})`);
       ok(samePath(api?.path, link.path), `${link.label}: HTTP path matches UI (${api?.path})`);
-      const revealedApi = await post(`/api/shell/open-path${q}`, { path: link.href, reveal: true }).catch((error) => ({ ok: false, error: String(error) }));
+      const revealedApi = await post(`/api/shell/open-path${q}`, { path: link.href, reveal: true, sourceLocation: wslUri }).catch((error) => ({ ok: false, error: String(error) }));
       ok(revealedApi?.ok === true && revealedApi?.action === "revealed", `${link.label}: HTTP reveal`);
       ok(samePath(revealedApi?.path, link.path), `${link.label}: HTTP reveal path matches open`);
     }
+
+    // Render the same member-authored transcript content in a native Windows
+    // workspace. The click must still resolve against linker's immutable WSL
+    // location, not this new window's workspace.
+    const localTranscriptWin = await post("/api/windows", { workspacePath: launchWs });
+    const localTranscriptQ = `?window=${encodeURIComponent(localTranscriptWin.id)}`;
+    const localSeed = await post(`/api/qa/seed${localTranscriptQ}`, {
+      party: "windows-view-of-wsl-member",
+      members: [{ name: "linker", role: "writes links", location: wslUri, model: "sonnet", status: "idle", blocks: [{ type: "assistant_text_delta", text: md }] }],
+    });
+    ok(localSeed?.members?.find((member) => member.name === "linker")?.location === wslUri, "Windows window keeps the member's WSL execution location");
+    await post(`/api/parties/${encodeURIComponent(localSeed.currentPartyId)}/select${localTranscriptQ}`, {});
+    await post(`/api/navigation${localTranscriptQ}`, { view: "workbench" });
+    await post(`/api/qa/open${localTranscriptQ}`, { panels: [["linker"]] });
+    await delay(1000);
+    const localAnchors = await post(`/api/measure${localTranscriptQ}`, { selector: ".wb-md-link a", limit: 20 });
+    ok(localAnchors.ok && localAnchors.count === LINKS.length, `same transcript content rendered in Windows window (${localAnchors.count || 0} links)`);
+    const beforeLocalClick = fileDecisions().length;
+    const localClick = await post(`/api/capture${localTranscriptQ}`, {
+      path: path.join(shotDir, "windows-window-native-link.png"),
+      click: `.wb-md-link a[href="${nativePosix}"]`,
+    }).catch((error) => ({ ok: false, error: String(error) }));
+    ok(localClick?.ok === true, `clicked WSL-authored link from Windows window (${localClick?.error || "ok"})`);
+    await delay(700);
+    const localDecision = fileDecisions().slice(beforeLocalClick).at(-1);
+    ok(localDecision?.kind === "opened", `Windows window UI opened member link (got ${localDecision?.kind})`);
+    ok(samePath(localDecision?.target, nativeUnc), `Windows window UI used member location (${localDecision?.target})`);
+    const localApi = await post(`/api/shell/open-path${localTranscriptQ}`, { path: nativePosix, sourceLocation: wslUri });
+    ok(samePath(localApi?.path, nativeUnc), `Windows window HTTP used the same member location (${localApi?.path})`);
+    const invalidContext = await post(`/api/shell/open-path${localTranscriptQ}`, { path: nativePosix, sourceLocation: "relative/workspace" })
+      .catch((error) => ({ error: String(error?.message || error) }));
+    ok(/Invalid sourceLocation/.test(String(invalidContext?.error || "")), "invalid source location is rejected instead of falling back to the window");
 
     const windows = (await get("/api/windows")).windows || [];
     const localWin = windows.find((w) => String(w.workspacePath || "").replace(/\//g, "\\").toLowerCase() === launchWs.replace(/\//g, "\\").toLowerCase());

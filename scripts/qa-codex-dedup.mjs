@@ -64,6 +64,27 @@ function driveAccountSequence() {
   return emits;
 }
 
+// Newer app-server builds can ignore the initialize opt-out and send both live
+// deltas and the full completed item. This is the SEL-6958/imweb-api sequence.
+function driveDeltaAndCompletedSequence() {
+  const adapter = new CodexAdapter({ id: "t", cwd: process.cwd(), model: "gpt-5.4-mini", effort: "medium", debugEnabled: false });
+  const emits = [];
+  const statuses = [];
+  adapter.on("event", (e) => {
+    if (e.type === "assistant_text_delta") emits.push(e.text);
+    if (e.type === "status") statuses.push(e.status);
+  });
+  const line = (method, params) => adapter.readMessage(JSON.stringify({ method, params }));
+  line("item/started", { item: { id: "msg_3", type: "agentMessage", text: "" } });
+  line("item/agentMessage/delta", { itemId: "msg_3", delta: FULL.slice(0, 20) });
+  line("item/agentMessage/delta", { itemId: "msg_3", delta: FULL.slice(20) });
+  line("item/completed", { item: { id: "msg_3", type: "agentMessage", text: FULL } });
+  line("thread/status/changed", { status: { type: "active" } });
+  line("turn/started", { turn: { id: "turn_3" } });
+  adapter.dispose();
+  return { emits, statuses };
+}
+
 console.log("\nAdapter normalizeItem (real):");
 const orEmits = driveOpenRouterSequence();
 assert(orEmits.length === 1, `OpenRouter sequence emits assistant text exactly once (got ${orEmits.length})`);
@@ -72,6 +93,11 @@ assert((orEmits.join("").match(new RegExp(SENTINEL, "g")) || []).length === 1, "
 
 const acctEmits = driveAccountSequence();
 assert(acctEmits.length === 1, `account (GPT) sequence still emits exactly once (got ${acctEmits.length})`);
+
+const streamed = driveDeltaAndCompletedSequence();
+assert(streamed.emits.join("") === FULL, "delta + completed sequence contributes the completed text exactly once");
+assert((streamed.emits.join("").match(new RegExp(SENTINEL, "g")) || []).length === 1, "delta + completed sequence contains one sentinel");
+assert(streamed.statuses.filter((status) => status === "responding").length === 1, "active thread + turn start produces one responding status");
 
 console.log("\nFull pipeline (adapter emits → renderer applyEvents):");
 // Feed the adapter's real emitted events through the real renderer reducer.

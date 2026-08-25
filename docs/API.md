@@ -731,16 +731,21 @@ Opens a local file the way the desktop would. The same controller method as a
 clicked file link in the transcript.
 
 ```json
-{ "path": "./docs/API.md" }
+{ "path": "./docs/API.md", "sourceLocation": "wsl+Ubuntu-20.04:/home/me/project" }
 ```
 
-A relative path resolves against the **calling window's workspace** — not the
-app bundle — so the same string a member wrote in a message resolves the way the
-user reads it. `file://` URLs and absolute paths are taken as given. On Windows,
+A transcript click supplies the immutable execution location of the member that
+authored the link as `sourceLocation`. A relative path resolves against that
+location, so opening the same transcript from a Windows window or a WSL window
+produces the same file. Direct and legacy callers may omit `sourceLocation`;
+only then does resolution fall back to the **calling window's workspace**. The
+source location must be absolute (`C:\…`, `/…`, or `wsl+<distro>:/…`);
+malformed context is rejected rather than silently switching hosts. `file://`
+URLs and absolute paths are taken as given. On Windows,
 markdown/URL-shaped drive paths such as `/C:/work/report.html` are restored to
 `C:\work\report.html` before resolution; UNC paths are left unchanged.
 
-**A window on a WSL workspace resolves into that distro.** Its members write
+**A WSL source location resolves into that distro.** Its members write
 POSIX paths (`/home/me/proj/설계.md`), and those files live on the distro's ext4,
 so the path is resolved in POSIX space and returned as the Windows UNC view —
 `\\wsl$\<distro>\home\me\proj\설계.md` — which is what `shell.openPath` and
@@ -750,7 +755,7 @@ is the distro's view of a Windows drive, not a file on ext4, so it becomes
 `C:\…` rather than `\\wsl$\<distro>\mnt\c\…`. A Windows drive path (`C:\…`,
 `/C:/…`) stays Windows even in a WSL window. A path that names its own distro
 (`wsl+<distro>:/p`, `\\wsl$\<distro>\…`, `\\wsl.localhost\<distro>\…`) is
-honoured over the window's. A local Windows window does not guess a distro for
+honoured over the source location. A local Windows source does not guess a distro for
 an anonymous `/home` path. Inside the headless WSL engine the same POSIX path is
 already native and is left alone.
 

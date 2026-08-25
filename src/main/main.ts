@@ -1190,8 +1190,11 @@ function registerIpc(): void {
     return { ok: false, error: "Only http(s) URLs can be opened." };
   });
   // A clicked file link. Same AppController method as POST /api/shell/open-path.
-  handle("shell:openPath", async (event, target: string, options?: { reveal?: boolean }) =>
-    controller().openLocalPath(senderWindowId(event), String(target || ""), { reveal: options?.reveal === true }));
+  handle("shell:openPath", async (event, target: string, options?: { reveal?: boolean; sourceLocation?: string }) =>
+    controller().openLocalPath(senderWindowId(event), String(target || ""), {
+      reveal: options?.reveal === true,
+      sourceLocation: options?.sourceLocation,
+    }));
   // Same AppController method as POST /api/clipboard/image — one route for the
   // thumbnail's copy button and for an agent driving it.
   handle("clipboard:writeImage", async (_event, image: unknown) => controller().writeImageToClipboard((image || {}) as { dataBase64?: string; mediaType?: string }));

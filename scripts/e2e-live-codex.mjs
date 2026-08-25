@@ -10,6 +10,7 @@ const qaUserData = path.join(os.tmpdir(), "agentparty-live-codex-e2e-user-data")
 const automationPort = Number(process.env.AGENTPARTY_LIVE_E2E_PORT || "") || 48932;
 const codexJs = process.env.AGENTPARTY_CODEX_JS || "C:\\Users\\Dev\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js";
 const model = process.env.AGENTPARTY_LIVE_CODEX_MODEL || "gpt-5.4-mini";
+const effort = process.env.AGENTPARTY_LIVE_CODEX_EFFORT || "medium";
 
 async function main() {
   await removeQaWorkspace();
@@ -49,10 +50,12 @@ async function main() {
       selectedHarnessId: "codex",
       selectedProviderId: "openai",
       model,
+      effort,
       permissionMode: "plan",
     });
     assert(session.id, "live codex session created");
     assert(session.snapshot?.model === model, `live codex model is ${model}`);
+    assert(session.snapshot?.effort === effort, `live codex effort is ${effort}`);
     assert(session.snapshot?.slashCommands?.some((command) => command.name === "approvals"), "codex slash commands exposed");
 
     await postJson(`${baseUrl}/api/sessions/${session.id}/send`, {

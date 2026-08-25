@@ -63,7 +63,7 @@ const md = [
 ].join("\n");
 
 const view = {
-  name: "reviewer", color: "#888", member: { name: "reviewer", partyId: "p1", status: "idle", runtime: "claude-code", role: "QA" },
+  name: "reviewer", color: "#888", member: { name: "reviewer", partyId: "p1", status: "idle", runtime: "claude-code", role: "QA", location: "wsl+Ubuntu-20.04:/home/qa/project" },
   status: "idle", unread: 0, pendingApproval: false, busy: false, model: "sonnet", effort: "medium", permissionMode: "default",
   transcript: [
     { id: "a1", kind: "assistant", text: md, at: "10:00" },
@@ -96,10 +96,12 @@ console.log("\nLinks open in the OS browser (P-3.5):");
 const opened = [];
 const openedPaths = [];
 const revealed = [];
+const openedContexts = [];
+const revealedContexts = [];
 window.agentParty = {
   openExternal: (url) => { opened.push(url); return Promise.resolve({ ok: true }); },
-  openPath: (file) => { openedPaths.push(file); return Promise.resolve({ ok: true, action: "opened", path: file }); },
-  revealPath: (file) => { revealed.push(file); return Promise.resolve({ ok: true }); },
+  openPath: (file, sourceLocation) => { openedPaths.push(file); openedContexts.push(sourceLocation); return Promise.resolve({ ok: true, action: "opened", path: file }); },
+  revealPath: (file, sourceLocation) => { revealed.push(file); revealedContexts.push(sourceLocation); return Promise.resolve({ ok: true }); },
 };
 globalThis.window.agentParty = window.agentParty;
 const clickEvent = new window.MouseEvent("click", { bubbles: true, cancelable: true });
@@ -120,6 +122,7 @@ assert(openedPaths.some((value) => /^\/C:\/Project/.test(value)), "URL-shaped /C
 assert(openedPaths.some((value) => /^C:\/Project/i.test(value)), `bare C:/ markdown link is not mistaken for a foreign URI scheme (href=${windowsDriveLink?.getAttribute("href")}, opened=${openedPaths.join(" | ")})`);
 assert(openedPaths.some((value) => /^C:%5CProject/i.test(value)), `encoded-backslash drive link is handed to the local-file controller (href=${encodedBackslashLink?.getAttribute("href")}, opened=${openedPaths.join(" | ")})`);
 assert(openedPaths.some((value) => /^C:\/Project\/novel\/%5B4060182%5D%20title\/file\.pdf$/i.test(value)), `a separator before a bracketed folder survives markdown parsing (href=${bracketFolderLink?.getAttribute("href")}, opened=${openedPaths.join(" | ")})`);
+assert(openedContexts.every((value) => value === view.member.location), "assistant file links carry the authoring member's execution location");
 const driveReveal = windowsDriveLink?.closest(".wb-md-link")?.querySelector(".wb-md-link-reveal");
 assert(Boolean(driveReveal), "a local-file link carries a reveal control");
 assert(Boolean(encodedBackslashLink?.closest(".wb-md-link")?.querySelector(".wb-md-link-reveal")), "an encoded-backslash drive link carries a reveal control");
@@ -127,6 +130,7 @@ assert(Boolean(bracketFolderLink?.closest(".wb-md-link")?.querySelector(".wb-md-
 driveReveal?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
 await new Promise((res) => setTimeout(res, 20));
 assert(revealed.some((value) => /^C:\/Project/i.test(value)), "the reveal control hands the file path to revealPath");
+assert(revealedContexts.every((value) => value === view.member.location), "assistant reveal controls carry the authoring member's execution location");
 const linkCopy = body?.querySelector(".wb-md-link .wb-copy-btn");
 assert(Boolean(linkCopy), "a copy control sits next to the link");
 const copied = [];

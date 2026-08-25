@@ -209,6 +209,7 @@ export const Transcript = memo(TranscriptView, (previous, next) => (
   && previous.view.transcript === next.view.transcript
   && previous.view.model === next.view.model
   && previous.view.member.runtime === next.view.member.runtime
+  && previous.view.member.location === next.view.member.location
 ));
 
 interface BlockProps {
@@ -284,7 +285,7 @@ const Block = memo(function TranscriptBlock({ block, view, density, actions, det
                 back into an editor or another member, not the rendered HTML. */}
             {block.text && <CopyButton text={block.text} title={localized("STR-2161")} className="wb-assistant-copy" />}
           </div>
-          <div className="wb-assistant-body"><AssistantMarkdown text={block.text} live={live} /></div>
+          <div className="wb-assistant-body"><AssistantMarkdown text={block.text} live={live} sourceLocation={view.member.location} /></div>
         </div>
       );
     case "tool":
@@ -327,7 +328,7 @@ const Block = memo(function TranscriptBlock({ block, view, density, actions, det
     case "environment":
       return <EnvironmentBlock block={block} view={view} actions={actions} />;
     case "plan":
-      return <PlanBlock block={block} />;
+      return <PlanBlock block={block} sourceLocation={view.member.location} />;
     case "fileChange":
       return <FileChangeBlock block={block} density={density} />;
     case "diagnostic":
@@ -348,7 +349,11 @@ export function sameBlockProps(previous: BlockProps, next: BlockProps): boolean 
   // These cards name their owning member even when their immutable block did
   // not change. Approval also shows the live runtime/model in its origin label.
   if (previous.block.kind === "assistant" || previous.block.kind === "channel" || previous.block.kind === "gate") {
-    return previous.view.name === next.view.name;
+    return previous.view.name === next.view.name
+      && previous.view.member.location === next.view.member.location;
+  }
+  if (previous.block.kind === "plan") {
+    return previous.view.member.location === next.view.member.location;
   }
   if (previous.block.kind === "sessionSpawn") {
     return previous.view.name === next.view.name;
@@ -379,7 +384,7 @@ const LIVE_MARKDOWN_PLAIN_TEXT_THRESHOLD = 30 * 1024;
  * characters. Keep small live answers responsive at a human-scale cadence and
  * stop parsing large answers altogether until the turn commits.
  */
-function AssistantMarkdown({ text: latestText, live }: { text: string; live: boolean }) {
+function AssistantMarkdown({ text: latestText, live, sourceLocation }: { text: string; live: boolean; sourceLocation?: string }) {
   const [throttledText, setThrottledText] = useState(latestText);
   const latestTextRef = useRef(latestText);
   const liveRef = useRef(live);
@@ -425,11 +430,11 @@ function AssistantMarkdown({ text: latestText, live }: { text: string; live: boo
 
   // The committed value bypasses throttled state so live -> false always
   // produces the final complete markdown in that render.
-  if (!live) return <Markdown text={latestText} />;
+  if (!live) return <Markdown text={latestText} sourceLocation={sourceLocation} />;
   if (latestText.length > LIVE_MARKDOWN_PLAIN_TEXT_THRESHOLD) {
     return <div className="wb-md wb-md-live-plain">{latestText}</div>;
   }
-  return <Markdown text={throttledText} />;
+  return <Markdown text={throttledText} sourceLocation={sourceLocation} />;
 }
 
 const GATE_META = {
@@ -714,7 +719,7 @@ function ChannelBlock({ block, view }: { block: Extract<TranscriptBlock, { kind:
           {block.at && <span className="wb-mono wb-time">{block.at}</span>}
         </span>
       </div>
-      {block.text && <div className="wb-channel-bubble"><ExpandableText text={block.text} title={`${from || "?"} → ${to || "?"}`} markdown /></div>}
+      {block.text && <div className="wb-channel-bubble"><ExpandableText text={block.text} title={`${from || "?"} → ${to || "?"}`} markdown sourceLocation={incoming ? undefined : view.member.location} /></div>}
       {failed && <div className="wb-channel-failed"><LocalizedText id="STR-2185" />{block.error ? ` — ${block.error}` : " — 상대가 실행 중이 아닙니다."}</div>}
     </div>
   );
@@ -944,7 +949,7 @@ const PLAN_ICON: Record<string, JSX.Element> = {
 };
 
 /** Codex plan/TODO card: a checklist with per-step status (pending/in-progress/done). */
-function PlanBlock({ block }: { block: Extract<TranscriptBlock, { kind: "plan" }> }) {
+function PlanBlock({ block, sourceLocation }: { block: Extract<TranscriptBlock, { kind: "plan" }>; sourceLocation?: string }) {
   const done = block.steps.filter((s) => s.status === "completed").length;
   return (
     <div className="wb-block wb-plan">
@@ -963,7 +968,7 @@ function PlanBlock({ block }: { block: Extract<TranscriptBlock, { kind: "plan" }
           ))}
         </ol>
       ) : (
-        block.explanation && <p className="wb-plan-text"><Markdown text={block.explanation} /></p>
+        block.explanation && <p className="wb-plan-text"><Markdown text={block.explanation} sourceLocation={sourceLocation} /></p>
       )}
     </div>
   );
@@ -1144,13 +1149,13 @@ function AnsweredQuestion({ questions, answers, density }: { questions: ParsedQu
   );
 }
 
-export function ExpandableText({ text, title, markdown, chips }: { text: string; title: string; markdown?: boolean; chips?: boolean }) {
+export function ExpandableText({ text, title, markdown, chips, sourceLocation }: { text: string; title: string; markdown?: boolean; chips?: boolean; sourceLocation?: string }) {
   const [full, setFull] = useState(false);
   const members = usePartyMembers();
   const clip = needsClip(text);
   const shown = clip ? previewOf(text) : text;
   const body = (value: string) =>
-    markdown ? <Markdown text={value} /> : chips
+    markdown ? <Markdown text={value} sourceLocation={sourceLocation} /> : chips
       ? <span className="wb-expandable-text"><MessageText text={value} members={members} /></span>
       : <span className="wb-expandable-text">{value}</span>;
   return (
@@ -1165,7 +1170,7 @@ export function ExpandableText({ text, title, markdown, chips }: { text: string;
         <DetailModal title={title} onClose={() => setFull(false)}>
           {/* The full view stays literal: this is where someone goes to read the
               exact string that was sent, paths and all. */}
-          {markdown ? <Markdown text={text} /> : <pre className="wb-pre wb-expandable-full">{text}</pre>}
+          {markdown ? <Markdown text={text} sourceLocation={sourceLocation} /> : <pre className="wb-pre wb-expandable-full">{text}</pre>}
         </DetailModal>
       )}
     </>
