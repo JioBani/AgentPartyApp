@@ -52,6 +52,30 @@ console.log("\ntranscript snapshot cursor:");
   assert(!stream.cursorCoversBatch(cursor, { ...batches[1], streamId: "stream-b" }), "a new stream epoch is never mistaken for a duplicate");
   assert(stream.hasSessionEventGap({ streamId: "stream-a", seq: 3 }, { streamId: "stream-a", seq: 5 }), "a missing ordered batch is surfaced as a gap");
   assert(stream.hasSessionEventGap(undefined, { streamId: "stream-b", seq: 2 }), "a stream first observed after batch one is also surfaced as a gap");
+
+  const lateWindow = stream.reconcileSessionEventBatches(
+    [{ sessionId: "s1", streamId: "stream-a", seq: 9, events: [{ text: "live 9" }] }],
+    { streamId: "stream-a", seq: 8 },
+  );
+  assert(!lateWindow.gap && lateWindow.cursor?.seq === 9, "a late window reconciles live seq 9 after snapshot seq 8 without a false gap");
+
+  const alreadyCovered = stream.reconcileSessionEventBatches(
+    [{ sessionId: "s1", streamId: "stream-a", seq: 9, events: [{ text: "live 9" }] }],
+    { streamId: "stream-a", seq: 10 },
+  );
+  assert(alreadyCovered.batches.length === 0 && !alreadyCovered.gap, "a newer snapshot absorbs an earlier buffered batch");
+
+  const bufferedFromStart = stream.reconcileSessionEventBatches(
+    Array.from({ length: 9 }, (_, index) => ({ sessionId: "s1", streamId: "stream-b", seq: index + 1, events: [] })),
+    undefined,
+  );
+  assert(!bufferedFromStart.gap && bufferedFromStart.cursor?.seq === 9, "pre-owner batches observed from seq 1 establish a complete stream without a snapshot cursor");
+
+  const realGap = stream.reconcileSessionEventBatches(
+    [{ sessionId: "s1", streamId: "stream-a", seq: 10, events: [] }],
+    { streamId: "stream-a", seq: 8 },
+  );
+  assert(realGap.gap?.expectedSeq === 9 && realGap.gap?.receivedSeq === 10, "a gap that remains after snapshot reconciliation is still surfaced");
 }
 
 console.log("\nindependent event projections:");

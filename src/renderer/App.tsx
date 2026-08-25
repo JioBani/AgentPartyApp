@@ -67,9 +67,9 @@ import { DEFAULT_SIDEBAR_DRAWERS, type SidebarDrawerId, type SidebarDrawerState 
 import { clearComposerDraftsForMember, clearComposerDraftsForParty } from "./workbench/composerDraftStore";
 import {
   advanceSessionEventCursor,
-  batchesAfterSessionEventCursor,
   cursorCoversBatch,
   hasSessionEventGap,
+  reconcileSessionEventBatches,
   sessionEventCursor,
   type SessionEventBatch,
   type SessionEventCursor,
@@ -745,6 +745,18 @@ export function App() {
         }
       }
       const appliedCursor = appliedTranscriptCursorBySessionRef.current.get(sessionId);
+      // Until the member transcript snapshot establishes a base cursor, a
+      // first-seen seq > 1 is not evidence of loss: a newly opened window can
+      // subscribe after those earlier batches were already materialized by the
+      // main recorder. Buffer first; activation reconciles against the atomic
+      // snapshot cursor and reports only a gap that remains after that boundary.
+      if (!transcriptOwnerBySessionRef.current.has(sessionId)) {
+        pendingEventsBySessionRef.current[sessionId] = [
+          ...(pendingEventsBySessionRef.current[sessionId] || []),
+          batch,
+        ];
+        return;
+      }
       if (cursorCoversBatch(appliedCursor, batch)) {
         return;
       }
@@ -761,16 +773,6 @@ export function App() {
       const advancedCursor = advanceSessionEventCursor(appliedCursor, incomingCursor);
       if (advancedCursor) {
         appliedTranscriptCursorBySessionRef.current.set(sessionId, advancedCursor);
-      }
-      // Do not assemble an unowned live transcript. If it were saved after the
-      // party update attached this session to a member, it could replace that
-      // member's not-yet-restored history with only these new events.
-      if (!transcriptOwnerBySessionRef.current.has(sessionId)) {
-        pendingEventsBySessionRef.current[sessionId] = [
-          ...(pendingEventsBySessionRef.current[sessionId] || []),
-          batch,
-        ];
-        return;
       }
       setLogsBySession((current) => {
         return applyEvents(current, sessionId, events);
@@ -1657,20 +1659,21 @@ export function App() {
     const pending = pendingEventsBySessionRef.current[sessionId] || [];
     delete pendingEventsBySessionRef.current[sessionId];
     const snapshotCursor = restoredCursorByMemberRef.current[ownerKey];
-    const uncovered = batchesAfterSessionEventCursor(pending, snapshotCursor);
-    const pendingEvents = uncovered.flatMap((batch) => batch.events);
+    const reconciliation = reconcileSessionEventBatches(pending, snapshotCursor);
+    const pendingEvents = reconciliation.batches.flatMap((batch) => batch.events);
     setLogsBySession((current) => {
       const merged = mergeRestoredTranscript(restored, current[sessionId] || []);
       const seeded = current[sessionId] === merged ? current : { ...current, [sessionId]: merged };
       return pendingEvents.length ? applyEvents(seeded, sessionId, pendingEvents) : seeded;
     });
-    let representedCursor = snapshotCursor;
-    for (const batch of uncovered) {
-      representedCursor = advanceSessionEventCursor(representedCursor, sessionEventCursor(batch));
+    if (reconciliation.gap) {
+      const detail = `${sessionId}: expected ${reconciliation.gap.expectedSeq}, received ${reconciliation.gap.receivedSeq}`;
+      console.error("session event stream gap after transcript restore", detail);
+      setPartyNotice(`실시간 대화 이벤트 일부가 누락되었습니다 (${detail}). 멤버를 다시 열어 기록을 동기화하세요.`);
     }
     const acceptedCursor = advanceSessionEventCursor(
       appliedTranscriptCursorBySessionRef.current.get(sessionId),
-      representedCursor,
+      reconciliation.cursor,
     );
     if (acceptedCursor) {
       appliedTranscriptCursorBySessionRef.current.set(sessionId, acceptedCursor);

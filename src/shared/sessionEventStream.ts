@@ -30,6 +30,21 @@ export interface TranscriptSnapshot<TBlock = unknown> {
   cursor?: SessionEventCursor;
 }
 
+export interface SessionEventGap {
+  streamId: string;
+  expectedSeq: number;
+  receivedSeq: number;
+}
+
+export interface SessionEventReconciliation<TEvent = unknown> {
+  /** Pending batches not already materialized in the snapshot. */
+  batches: SessionEventBatch<TEvent>[];
+  /** Highest position represented by snapshot + accepted pending batches. */
+  cursor?: SessionEventCursor;
+  /** First proven gap after the snapshot boundary, if any. */
+  gap?: SessionEventGap;
+}
+
 /** Returns a usable cursor only for a fully stamped live batch. */
 export function sessionEventCursor(batch: Pick<SessionEventBatch, "streamId" | "seq"> | null | undefined): SessionEventCursor | undefined {
   return typeof batch?.streamId === "string"
@@ -73,4 +88,33 @@ export function hasSessionEventGap(previous: SessionEventCursor | undefined, inc
     return incoming.seq > 1;
   }
   return incoming.seq > previous.seq + 1;
+}
+
+/**
+ * Reconciles live batches buffered while a transcript snapshot was loading.
+ *
+ * A newly opened window may first observe live batch 9, then receive a snapshot
+ * that already contains batches 1–8. Calling `hasSessionEventGap(undefined, 9)`
+ * before that snapshot arrives is therefore a false positive. Gap detection is
+ * valid only after the atomic snapshot cursor establishes the base position.
+ */
+export function reconcileSessionEventBatches<TEvent>(
+  batches: SessionEventBatch<TEvent>[],
+  snapshotCursor: SessionEventCursor | undefined,
+): SessionEventReconciliation<TEvent> {
+  const uncovered = batchesAfterSessionEventCursor(batches, snapshotCursor);
+  let cursor = snapshotCursor;
+  let gap: SessionEventGap | undefined;
+  for (const batch of uncovered) {
+    const incoming = sessionEventCursor(batch);
+    if (!gap && hasSessionEventGap(cursor, incoming) && incoming) {
+      gap = {
+        streamId: incoming.streamId,
+        expectedSeq: cursor?.streamId === incoming.streamId ? cursor.seq + 1 : 1,
+        receivedSeq: incoming.seq,
+      };
+    }
+    cursor = advanceSessionEventCursor(cursor, incoming);
+  }
+  return { batches: uncovered, cursor, gap };
 }
