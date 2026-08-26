@@ -526,24 +526,20 @@ export function App() {
     document.documentElement.style.setProperty("--wb-font-scale", String(fontScale));
   }, [fontScale]);
 
-  // Ctrl+wheel over a transcript grows/shrinks its text. Handled at the window
-  // (non-passive) so we can preventDefault the browser's native ctrl+wheel zoom.
+  // Ctrl+wheel over a transcript grows/shrinks its text. The raw wheel event is
+  // handled by each transcript scroller itself (Transcript registers the only
+  // non-passive wheel listener, scoped to its own node — a window-level
+  // non-passive listener would disable compositor scrolling for the whole
+  // document) and arrives here as a "wb-font-zoom" event with direction ±1.
   // The value is a persisted, HTTP-drivable setting (survives restart), applied
   // locally at once for a responsive feel and persisted debounced.
   useEffect(() => {
     const MIN = 0.6;
     const MAX = 2.0;
     const STEP = 0.1;
-    const onWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey) {
-        return;
-      }
-      const target = event.target as HTMLElement | null;
-      if (!target?.closest?.(".wb-transcript")) {
-        return;
-      }
-      event.preventDefault();
-      const delta = event.deltaY < 0 ? STEP : -STEP;
+    const onFontZoom = (event: Event) => {
+      const direction = (event as CustomEvent<number>).detail;
+      const delta = direction > 0 ? STEP : -STEP;
       const next = Math.round(Math.min(MAX, Math.max(MIN, fontScaleRef.current + delta)) * 100) / 100;
       if (next === fontScaleRef.current) {
         return;
@@ -554,8 +550,8 @@ export function App() {
       clearTimeout(fontScalePersist.current);
       fontScalePersist.current = setTimeout(() => { void window.agentParty.updateSettings?.({ transcriptFontScale: next }); }, 400);
     };
-    window.addEventListener("wheel", onWheel, { passive: false });
-    return () => window.removeEventListener("wheel", onWheel);
+    window.addEventListener("wb-font-zoom", onFontZoom);
+    return () => window.removeEventListener("wb-font-zoom", onFontZoom);
   }, []);
 
   const selectedParty = useMemo(
@@ -880,6 +876,12 @@ export function App() {
     });
     const offWorkspaceChoose = window.agentParty.onWorkspaceChoose(() => { void chooseWorkspace(); });
     const offNewSession = window.agentParty.onNewSession(() => { void createParty(); setCurrentView("workbench"); });
+    // Minimized/hidden windows keep painting (backgroundThrottling is off for
+    // /api/capture), so pause the infinite decorations via a root class while
+    // nobody can see them — they otherwise hold the renderer at full frame rate.
+    const offWindowRenderState = window.agentParty.onWindowRenderState?.(({ occluded }) => {
+      document.documentElement.classList.toggle("wb-occluded", occluded);
+    });
     return () => {
       offEvents();
       offSnapshot();
@@ -895,6 +897,7 @@ export function App() {
       offNativeCliAuthProgress?.();
       offUsageUpdate?.();
       offUpdateStatus?.();
+      offWindowRenderState?.();
       offQaLayout();
       offQaOpenSub();
       offQaOpenGate?.();

@@ -261,6 +261,14 @@ const api = {
     ipcRenderer.on("settings:update", listener);
     return () => ipcRenderer.off("settings:update", listener);
   },
+  /** Window minimized/hidden state. backgroundThrottling is off (for /api/capture),
+      so the page's visibilityState never leaves "visible" and the renderer cannot
+      detect this on its own; the main process forwards the window events. */
+  onWindowRenderState: (callback: (payload: { occluded: boolean }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { occluded: boolean }) => callback(payload);
+    ipcRenderer.on("window:render-state", listener);
+    return () => ipcRenderer.off("window:render-state", listener);
+  },
   onAppearanceUpdate: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("appearance:update", listener);

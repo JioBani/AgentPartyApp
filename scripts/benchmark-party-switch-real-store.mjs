@@ -139,7 +139,7 @@ async function waitReady(partyId, partyName, panelCount, windowId, timeoutMs, st
       selector: ".wb-root", limit: 1, styles: [], attributes: ["data-layout-party"],
     }).catch(() => ({}));
     const contents = await post(`/api/measure${query}`, {
-      selector: ".wb-transcript > .wb-block:last-child, .wb-transcript > .wb-transcript-empty",
+      selector: ".wb-transcript-scale > .wb-block:last-child, .wb-transcript-scale > .wb-transcript-empty",
       limit: 32,
       styles: [],
       attributes: [],

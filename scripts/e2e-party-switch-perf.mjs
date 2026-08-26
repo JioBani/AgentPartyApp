@@ -131,8 +131,8 @@ async function main() {
     assert(backgroundTabMs <= MAX_INTERACTIVE_MS, `a previously unloaded background tab becomes usable in ${backgroundTabMs}ms <= ${MAX_INTERACTIVE_MS}ms`);
     assert(!appStderr.includes("party:transcript:get failed"), "rapid party switches never restore a previous party member through the new party scope");
 
-    await waitForCount(".wb-transcript > .wb-block", VISIBLE_PANELS * 150, windowId, 5_000);
-    const rendered = await post(`/api/measure${query}`, { selector: ".wb-transcript > .wb-block", limit: 1 });
+    await waitForCount(".wb-transcript-scale > .wb-block", VISIBLE_PANELS * 150, windowId, 5_000);
+    const rendered = await post(`/api/measure${query}`, { selector: ".wb-transcript-scale > .wb-block", limit: 1 });
     const older = await post(`/api/measure${query}`, { selector: ".wb-transcript-older", limit: VISIBLE_PANELS });
     assert(rendered.count === VISIBLE_PANELS * 150, `all six panels retain the established 150-block tail (${rendered.count})`);
     assert(older.count === VISIBLE_PANELS, `all ${VISIBLE_PANELS} panels retain the older-history control`);
@@ -147,7 +147,7 @@ async function main() {
     assert(imageAfterOpen.count === 1, "opening an image-bearing tool mounts its image on demand");
 
     const capture = await post(`/api/capture${query}`, { path: shot, click: ".wb-transcript-older" });
-    const expanded = await post(`/api/measure${query}`, { selector: ".wb-transcript > .wb-block", limit: 1 });
+    const expanded = await post(`/api/measure${query}`, { selector: ".wb-transcript-scale > .wb-block", limit: 1 });
     assert(capture.applied?.clicked, "older-history control is clickable in the real workbench");
     assert(expanded.count === VISIBLE_PANELS * 150 + 150, `one panel reveals a 150-block older page without expanding the others (${expanded.count})`);
     assert(capture.ok && capture.bytes > 0, `captured switched workbench (${capture.bytes || 0} bytes)`);
@@ -260,7 +260,7 @@ async function waitForPartyReady(partyId, windowId, timeoutMs, started) {
         attributes: ["data-layout-party"],
       });
       const contents = await post(`/api/measure${query}`, {
-        selector: ".wb-transcript > .wb-assistant:last-child, .wb-transcript > .wb-transcript-empty",
+        selector: ".wb-transcript-scale > .wb-assistant:last-child, .wb-transcript-scale > .wb-transcript-empty",
         limit: VISIBLE_PANELS,
         styles: [],
         attributes: [],
@@ -308,7 +308,7 @@ async function waitForMemberReady(panelId, member, partyId, windowId, timeoutMs,
       selector: `[data-panel-id="${panelId}"] .wb-tab.is-active .wb-tab-name`, limit: 1,
     }).catch(() => ({}));
     const tail = await post(`/api/measure${query}`, {
-      selector: `[data-panel-id="${panelId}"] .wb-transcript > .wb-assistant:last-child, [data-panel-id="${panelId}"] .wb-transcript > .wb-transcript-empty`,
+      selector: `[data-panel-id="${panelId}"] .wb-transcript-scale > .wb-assistant:last-child, [data-panel-id="${panelId}"] .wb-transcript-scale > .wb-transcript-empty`,
       limit: 1,
       styles: [],
       attributes: [],

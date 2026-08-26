@@ -132,7 +132,28 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
   };
 
   // New content keeps the bottom pinned (only if the user hasn't scrolled up).
-  useLayoutEffect(stickToBottom, [view.transcript.length, lastText]);
+  // Depend on the last block's text LENGTH, not its content: the pin only needs
+  // to run when the block grew, and the full string as a dep would make React
+  // compare the whole streamed text on every render.
+  useLayoutEffect(stickToBottom, [view.transcript.length, lastText.length]);
+
+  // Ctrl+wheel adjusts the transcript font scale. The listener must be
+  // non-passive (preventDefault suppresses scrolling while zooming), and it is
+  // registered on this one scroller on purpose: a window-level non-passive
+  // wheel listener disables compositor ("threaded") scrolling for the entire
+  // document, serializing every wheel tick behind main-thread work. App owns
+  // the scale setting and listens for this event.
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const onWheelZoom = (event: WheelEvent) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      window.dispatchEvent(new CustomEvent("wb-font-zoom", { detail: event.deltaY < 0 ? 1 : -1 }));
+    };
+    node.addEventListener("wheel", onWheelZoom, { passive: false });
+    return () => node.removeEventListener("wheel", onWheelZoom);
+  }, []);
 
   // When the scroll area resizes (e.g. the composer auto-grows and shrinks this
   // pane), re-pin to the bottom so the whole conversation appears to scroll up
@@ -145,6 +166,12 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
     }
     const observer = new ResizeObserver(() => stickToBottom());
     observer.observe(node);
+    // Also observe the scale wrapper: a font-scale change (or late content
+    // growth such as an image finishing) changes the CONTENT height without
+    // resizing the scroller, which would otherwise silently unpin the bottom.
+    if (node.firstElementChild) {
+      observer.observe(node.firstElementChild);
+    }
     return () => observer.disconnect();
   }, []);
 
@@ -157,6 +184,11 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
 
   return (
     <div className={"wb-transcript density-" + density} ref={scrollRef} onScroll={onScroll}>
+      {/* Font scaling lives on this inner wrapper as a transform. The scroller
+          itself must stay unscaled: CSS `zoom` on it forced every animation in
+          the subtree onto the main thread (60fps style recalc + paint of the
+          whole transcript), while a transform keeps descendants compositable. */}
+      <div className="wb-transcript-scale">
       {view.transcriptLoading ? (
         <div className="wb-transcript-empty wb-transcript-loading" role="status" aria-live="polite">
           <LoaderCircle size={17} className="wb-spin" />
@@ -189,6 +221,7 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
         />
       ))}
       {!view.transcriptLoading && view.busy && <TypingIndicator />}
+      </div>
     </div>
   );
 }
