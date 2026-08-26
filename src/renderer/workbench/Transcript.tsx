@@ -864,6 +864,10 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
   // as "done, fine", so a refusal and a clean run must not share a glyph.
   const outcome = toolOutcomeOf(block);
   const failed = isToolProblem(outcome);
+  // This is presentation metadata only. Each harness keeps its original tool
+  // name, input and result; the renderer merely gives known file-mutating tools
+  // the same visual treatment as Codex's native fileChange card.
+  const fileChange = isFileChangeToolName(block.name);
   const openFull = (event: { preventDefault(): void; stopPropagation(): void }) => { event.preventDefault(); event.stopPropagation(); setFull(true); };
   // Pictures returned by a tool are evidence the agent consumed, not a message
   // to the user. Even a native image_view in a wide workbench stays collapsed.
@@ -879,7 +883,8 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
   return (
     <>
       <details
-      className={"wb-block wb-tool density-" + density}
+      className={"wb-block wb-tool density-" + density + (fileChange ? " is-file-change" : "")}
+      data-tool-visual={fileChange ? "file-change" : undefined}
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
@@ -892,6 +897,7 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
         >
           {outcome === "denied" ? <Ban size={11} /> : outcome === "failed" ? <X size={11} /> : outcome === "running" ? <Loader size={11} /> : <Check size={11} />}
         </span>
+        {fileChange && <span className="wb-tool-kind-icon" aria-hidden="true"><FileDiff size={12} /></span>}
         {/* A failed call already has an unmistakable red X plus a textual
             tooltip/aria-label. Keep a visible word only for denial, whose Ban
             mark describes a different outcome rather than a fault. */}
@@ -908,8 +914,8 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
       {(open || full) && (
         <>
           {meta && <div className="wb-tool-meta">{meta}</div>}
-          {fullInput && <pre className="wb-pre wb-tool-cmd">{previewOf(fullInput)}</pre>}
-          {result && <pre className={"wb-pre wb-tool-result" + (failed ? " is-failed" : "")}>{previewOf(result)}</pre>}
+          {fullInput && <pre className={"wb-pre wb-tool-cmd" + (fileChange ? " wb-filechange-input" : "")}>{previewOf(fullInput)}</pre>}
+          {result && <pre className={"wb-pre wb-tool-result" + (failed ? " is-failed" : "") + (fileChange ? " wb-filechange-result" : "")}>{previewOf(result)}</pre>}
           {images.map((image) => <ToolImage key={image.key} image={image} />)}
         </>
       )}
@@ -921,6 +927,31 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
       {full && <ToolDetailModal name={block.name} command={fullInput} result={result} onClose={() => setFull(false)} />}
     </>
   );
+}
+
+/**
+ * Explicit native tool-name aliases supported across Claude Code, Cursor and Grok.
+ * Deliberately no input inspection, substring guessing or diff synthesis: an
+ * unknown tool stays an ordinary tool card until its harness names it clearly.
+ */
+const FILE_CHANGE_TOOL_NAMES = new Set([
+  "edit",
+  "write",
+  "multiedit",
+  "notebookedit",
+  "applypatch",
+  "strreplace",
+  "searchreplace",
+  "editfile",
+  "writefile",
+  "createfile",
+  "deletefile",
+  "movefile",
+  "renamefile",
+]);
+
+export function isFileChangeToolName(name: string): boolean {
+  return FILE_CHANGE_TOOL_NAMES.has(name.trim().toLowerCase().replace(/[^a-z0-9]/g, ""));
 }
 
 /** Compact meta line for a tool: cwd, exit code, duration. */
@@ -970,31 +1001,61 @@ function PlanBlock({ block }: { block: Extract<TranscriptBlock, { kind: "plan" }
   );
 }
 
-/** Codex fileChange item: each affected file with +/- stats and a collapsible diff. */
+/** Native structured fileChange item: each affected file with +/- stats and a collapsible diff. */
 function FileChangeBlock({ block, density }: { block: Extract<TranscriptBlock, { kind: "fileChange" }>; density: PanelDensity }) {
   const total = block.changes.reduce((acc, c) => ({ added: acc.added + c.added, removed: acc.removed + c.removed }), { added: 0, removed: 0 });
+  // Old persisted blocks may not carry status. Do not claim success when the
+  // source never reported an outcome.
+  const outcome = block.status ? toolOutcomeOf(block) : undefined;
   return (
-    <div className={"wb-block wb-filechange density-" + density}>
+    <div
+      className={"wb-block wb-filechange density-" + density + (outcome ? " is-" + outcome : "")}
+      aria-label={outcome ? `${localized("STR-2196")}: ${localized(TOOL_OUTCOME_STR[outcome])}` : localized("STR-2196")}
+    >
       <div className="wb-filechange-head">
-        <FileDiff size={14} />
+        <span className="wb-filechange-icon" aria-hidden="true"><FileDiff size={14} /></span>
         <strong><LocalizedText id="STR-2196" /></strong>
         <span className="wb-chip">{block.changes.length}<LocalizedText id="STR-2197" /></span>
         <span className="wb-diff-stat"><span className="wb-diff-add">+{total.added}</span> <span className="wb-diff-del">-{total.removed}</span></span>
-        {block.status && <span className="wb-mono wb-filechange-status">{block.status}</span>}
+        {outcome && (
+          <span className={"wb-filechange-state is-" + outcome}>
+            {outcome === "denied" ? <Ban size={11} /> : outcome === "failed" ? <X size={11} /> : outcome === "running" ? <Loader size={11} className="wb-spin" /> : <Check size={11} />}
+            <LocalizedText id={TOOL_OUTCOME_STR[outcome]} />
+          </span>
+        )}
       </div>
       {block.changes.map((change, i) => (
         <details key={i} className="wb-filechange-file" open={density === "wide" && block.changes.length === 1}>
-          <summary>
+          <summary title={change.path}>
             <ChevronRight size={12} className="wb-caret" />
             <span className={"wb-filechange-kind is-" + change.kind}>{change.kind}</span>
             <span className="wb-mono wb-filechange-path">{change.path}</span>
             <span className="wb-diff-stat"><span className="wb-diff-add">+{change.added}</span> <span className="wb-diff-del">-{change.removed}</span></span>
           </summary>
-          {change.diff && <pre className="wb-pre wb-approval-diff">{change.diff}</pre>}
+          {change.diff && <FileChangeDiff diff={change.diff} />}
         </details>
       ))}
     </div>
   );
+}
+
+function FileChangeDiff({ diff }: { diff: string }) {
+  const lines = diff.split(/\r?\n/);
+  return (
+    <pre className="wb-pre wb-approval-diff wb-filechange-diff">
+      {lines.map((line, index) => (
+        <span key={index} className={"wb-filechange-diff-line " + diffLineClass(line)}>{line}</span>
+      ))}
+    </pre>
+  );
+}
+
+function diffLineClass(line: string): string {
+  if (line.startsWith("@@")) return "is-hunk";
+  if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("diff ") || line.startsWith("index ")) return "is-meta";
+  if (line.startsWith("+")) return "is-add";
+  if (line.startsWith("-")) return "is-delete";
+  return "is-context";
 }
 
 const DIAGNOSTIC_ICON: Record<string, JSX.Element> = {
@@ -2020,7 +2081,7 @@ function summarizeArg(input: unknown): string {
   }
   if (typeof input === "object") {
     const record = input as Record<string, unknown>;
-    const candidate = record.path ?? record.file ?? record.command ?? record.pattern ?? record.query;
+    const candidate = record.path ?? record.file_path ?? record.filePath ?? record.file ?? record.command ?? record.pattern ?? record.query;
     if (typeof candidate === "string") {
       return candidate;
     }

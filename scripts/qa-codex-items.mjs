@@ -1,13 +1,15 @@
 /*
- * Codex transcript item coverage (Item 3). Three layers:
+ * Structured transcript and cross-harness file-edit presentation coverage.
+ * Three layers:
  *   1. codexItems (pure): diff stats, fileChange normalization, plan steps,
  *      tool source (mcp:<server>/plugin/namespace) — verified against the
  *      app-server ThreadItem field names.
  *   2. transcriptEvents (event pipeline): plan events upsert ONE evolving card;
  *      command output deltas APPEND (not replace); cwd/exit/duration merge;
  *      fileChange events become a diff block.
- *   3. Transcript (DOM): plan checklist with per-step status, fileChange +/-
- *      stats + diff, tool source badge + exit/duration meta, live output shown.
+ *   3. Transcript (DOM): plan checklist, native fileChange diff styling, and
+ *      native Claude/Cursor/Grok edit tool cards sharing the visual treatment
+ *      without rewriting their payloads.
  */
 import { JSDOM } from "jsdom";
 import { build } from "esbuild";
@@ -81,7 +83,8 @@ assert(blocks.filter((b) => b.kind === "plan").length === 1, "plan updates stay 
 assert(blocks.find((b) => b.kind === "plan").steps.every((s) => s.status === "completed"), "latest plan steps win");
 
 // ---- Layer 3: Transcript DOM ------------------------------------------------
-const { Transcript } = await bundle("src/renderer/workbench/Transcript.tsx", "codex-items-transcript.mjs", ["react", "react-dom", "react-dom/client", "react/jsx-runtime"]);
+const TranscriptModule = await bundle("src/renderer/workbench/Transcript.tsx", "codex-items-transcript.mjs", ["react", "react-dom", "react-dom/client", "react/jsx-runtime"]);
+const { Transcript } = TranscriptModule;
 const React = await import("react");
 const reactDom = await import("react-dom/client");
 const mount = (el) => { const host = document.createElement("div"); document.body.appendChild(host); reactDom.createRoot(host).render(el); return host; };
@@ -93,6 +96,10 @@ const view = {
     { id: "plan", kind: "plan", steps: [{ step: "환경 점검", status: "completed" }, { step: "테스트 실행", status: "inProgress" }], explanation: "" },
     { id: "c1", kind: "tool", name: "shell", source: "shell", status: "completed", input: "npm test", output: "PASS\n", cwd: "/w", exitCode: 0, durationMs: 1500 },
     { id: "f1", kind: "fileChange", changes: [{ path: "src/a.ts", kind: "update", added: 3, removed: 1, diff: "@@\n+new\n-old" }], status: "completed" },
+    { id: "claude-edit", kind: "tool", name: "Edit", status: "completed", input: { file_path: "src/claude.ts", old_string: "old", new_string: "new" } },
+    { id: "cursor-edit", kind: "tool", name: "edit_file", status: "completed", input: { path: "src/cursor.ts", oldText: "old", newText: "new" } },
+    { id: "grok-edit", kind: "tool", name: "edit", status: "completed", input: { path: "src/grok.ts", instruction: "rename symbol" } },
+    { id: "read", kind: "tool", name: "read_file", status: "completed", input: { path: "src/read.ts" } },
     { id: "m1", kind: "tool", name: "search", source: "mcp:brave", status: "completed", input: { query: "x" } },
   ],
 };
@@ -105,6 +112,15 @@ assert(host.querySelectorAll(".wb-plan-step").length === 2, "plan lists each ste
 assert(Boolean(host.querySelector(".wb-plan-step.is-inProgress")), "in-progress step is marked");
 assert(Boolean(host.querySelector(".wb-filechange")), "fileChange card renders");
 assert(host.textContent.includes("src/a.ts") && host.textContent.includes("+3") && host.textContent.includes("-1"), "fileChange shows path and +/- stats");
+assert(host.querySelectorAll(".wb-filechange-diff-line.is-add").length === 1, "native diff addition receives line styling");
+assert(host.querySelectorAll(".wb-filechange-diff-line.is-delete").length === 1, "native diff deletion receives line styling");
+const styledEdits = [...host.querySelectorAll('.wb-tool[data-tool-visual="file-change"]')];
+assert(styledEdits.length === 3, "Claude Code, Cursor and Grok edit tools share the file-change style");
+assert(styledEdits.some((card) => card.textContent.includes("src/claude.ts")), "Claude file_path is visible without changing its payload");
+assert(styledEdits.some((card) => card.textContent.includes("src/cursor.ts")), "Cursor edit path is visible without changing its payload");
+assert(styledEdits.some((card) => card.textContent.includes("src/grok.ts")), "Grok edit path is visible without changing its payload");
+assert(![...host.querySelectorAll(".wb-tool")].find((card) => card.textContent.includes("read_file"))?.hasAttribute("data-tool-visual"), "read-only tools remain ordinary tool cards");
+assert(TranscriptModule.isFileChangeToolName("apply_patch") && !TranscriptModule.isFileChangeToolName("credit_write_analysis"), "file-edit classification uses exact aliases, not substring guessing");
 const sources = [...host.querySelectorAll(".wb-tool-source")].map((s) => s.textContent);
 assert(sources.includes("shell") && sources.includes("mcp:brave"), "tool source badges (shell, mcp:brave) render");
 assert(host.textContent.includes("exit 0") && host.textContent.includes("1.5s"), "shell tool shows exit code and duration");

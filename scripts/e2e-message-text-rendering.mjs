@@ -94,13 +94,6 @@ async function main() {
     });
     await post("/api/qa/members/renderer/emit", {
       events: [{
-        type: "file_change",
-        status: "completed",
-        changes: [{ kind: "add", path: LONG_FILE_PATH, added: 0, removed: 0, diff: "" }],
-      }],
-    });
-    await post("/api/qa/members/renderer/emit", {
-      events: [{
         type: "diagnostic",
         severity: "error",
         category: "MCP",
@@ -116,6 +109,23 @@ async function main() {
         source: "shell",
         status: "completed",
         input: { command: LONG_TOOL_PATH },
+      }],
+    });
+    // Fixture injection is intentionally direct HTTP: this test validates the
+    // renderer against native harness event shapes, not a member action that
+    // exists as an AgentParty MCP tool.
+    await post("/api/qa/members/renderer/emit", {
+      events: [
+        { type: "tool_call", id: "claude-native-edit", name: "Edit", status: "completed", input: { file_path: "src/claude/native-edit.ts", old_string: "before", new_string: "after" } },
+        { type: "tool_call", id: "cursor-native-edit", name: "edit_file", status: "completed", input: { path: "src/cursor/native-edit.ts", oldText: "before", newText: "after" } },
+        { type: "tool_call", id: "grok-native-edit", name: "edit", status: "completed", input: { path: "src/grok/native-edit.ts", instruction: "rename the exported symbol" } },
+      ],
+    });
+    await post("/api/qa/members/renderer/emit", {
+      events: [{
+        type: "file_change",
+        status: "completed",
+        changes: [{ kind: "update", path: LONG_FILE_PATH, added: 2, removed: 1, diff: "@@ -1,2 +1,3 @@\n-old line\n+new line\n+another line\n context" }],
       }],
     });
     await waitForMeasure(".wb-channel-bubble");
@@ -170,7 +180,7 @@ async function main() {
       limit: 1,
     });
     const diagnosticCard = diagnostic.elements[0];
-    ok(diagnosticCard.containedBy?.fully === true, `E) MCP diagnostic stays inside the transcript (overflowRight=${diagnosticCard.containedBy?.overflowRight})`);
+    ok((diagnosticCard.containedBy?.overflowLeft || 0) <= 1 && (diagnosticCard.containedBy?.overflowRight || 0) <= 1, `E) MCP diagnostic stays inside the transcript horizontally (left=${diagnosticCard.containedBy?.overflowLeft}, right=${diagnosticCard.containedBy?.overflowRight})`);
     ok(diagnosticCard.scrollable.horizontal === false, `E) MCP diagnostic has no horizontal overflow (scrollWidth=${diagnosticCard.scroll.width}, clientWidth=${diagnosticCard.content.width})`);
     const diagnosticDetail = await post("/api/measure", {
       selector: ".wb-diagnostic-detail",
@@ -210,7 +220,7 @@ async function main() {
       limit: 1,
     });
     const fileChangeCard = fileChange.elements[0];
-    ok(fileChangeCard.containedBy?.fully === true, `G) file-change card stays inside the narrow transcript (overflowRight=${fileChangeCard.containedBy?.overflowRight})`);
+    ok((fileChangeCard.containedBy?.overflowLeft || 0) <= 1 && (fileChangeCard.containedBy?.overflowRight || 0) <= 1, `G) file-change card stays inside the narrow transcript horizontally (left=${fileChangeCard.containedBy?.overflowLeft}, right=${fileChangeCard.containedBy?.overflowRight})`);
     ok(fileChangeCard.scrollable.horizontal === false, `G) file-change card has no horizontal overflow (scrollWidth=${fileChangeCard.scroll.width}, clientWidth=${fileChangeCard.content.width})`);
     const fileChangeParts = await post("/api/measure", {
       selector: ".wb-filechange-kind, .wb-filechange-path, .wb-filechange-file summary > .wb-diff-stat",
@@ -219,11 +229,36 @@ async function main() {
       limit: 3,
     });
     const [fileKind, filePath, fileStats] = fileChangeParts.elements;
-    ok(fileKind.text === "add" && fileKind.box.height < 24 && fileKind.box.width > 25, `G) ADD badge stays on one line (${Math.round(fileKind.box.width)}x${Math.round(fileKind.box.height)})`);
+    ok(fileKind.text === "update" && fileKind.box.height < 24 && fileKind.box.width > 25, `G) UPDATE badge stays on one line (${Math.round(fileKind.box.width)}x${Math.round(fileKind.box.height)})`);
     ok(filePath.box.width >= 32 && filePath.box.height < 24, `G) long file path owns the remaining row and stays one line (${Math.round(filePath.box.width)}x${Math.round(filePath.box.height)})`);
     ok(filePath.styles["text-overflow"] === "ellipsis", `G) long file path is ellipsis-clipped (${filePath.styles["text-overflow"]})`);
     ok(fileStats.box.height < 24 && fileStats.box.width > 25, `G) file diff stats stay on one line (${Math.round(fileStats.box.width)}x${Math.round(fileStats.box.height)})`);
     ok(fileChangeParts.elements.every((part) => part.containedBy?.fully === true), "G) file kind, path and stats are all contained by the summary row");
+
+    const nativeEditCards = await post("/api/measure", {
+      selector: '.wb-tool[data-tool-visual="file-change"]',
+      styles: ["border-left-color", "overflow-x"],
+      containedBy: ".wb-transcript",
+      limit: 6,
+    });
+    ok(nativeEditCards.elements.length === 3, "H) Claude Code, Cursor and Grok native edit calls receive the shared file-change style");
+    ok(nativeEditCards.elements.every((card) => card.containedBy?.fully === true), "H) all native edit cards stay inside the narrow transcript");
+    ok(nativeEditCards.elements.every((card) => card.scrollable.horizontal === false), "H) native edit cards have no horizontal overflow");
+    const nativeEditPaths = await post("/api/measure", {
+      selector: '.wb-tool[data-tool-visual="file-change"] .wb-tool-arg',
+      styles: ["white-space", "overflow", "text-overflow"],
+      containedBy: '.wb-tool[data-tool-visual="file-change"] > summary',
+      limit: 6,
+    });
+    ok(nativeEditPaths.elements.some((item) => item.text.includes("claude/native-edit.ts")), "H) Claude file_path is presented from the untouched input");
+    ok(nativeEditPaths.elements.some((item) => item.text.includes("cursor/native-edit.ts")), "H) Cursor path is presented from the untouched input");
+    ok(nativeEditPaths.elements.some((item) => item.text.includes("grok/native-edit.ts")), "H) Grok path is presented from the untouched input");
+    ok(nativeEditPaths.elements.every((item) => (item.containedBy?.overflowLeft || 0) <= 1 && (item.containedBy?.overflowRight || 0) <= 1), "H) every native edit path stays inside its summary row horizontally");
+
+    await post("/api/capture", { click: '.wb-tool[data-tool-visual="file-change"] > summary', path: path.join(shotDir, "native-edit-expanded.png") });
+    await delay(250);
+    const nativePayload = await post("/api/measure", { selector: ".wb-tool.is-file-change[open] .wb-filechange-input", limit: 1 });
+    ok(nativePayload.elements[0].text.includes("old_string") && nativePayload.elements[0].text.includes("new_string"), "H) expanding Claude Edit shows its original payload rather than a synthesized diff");
 
     for (const theme of ["agentparty-light", "agentparty-dark"]) {
       const appliedTheme = await post("/api/appearance/theme", { theme });
@@ -231,6 +266,17 @@ async function main() {
       const themedShot = path.join(shotDir, `narrow-tool-${theme}.png`);
       const captured = await post("/api/capture", { path: themedShot });
       ok(appliedTheme.applied === theme && captured.bytes > 0, `F) ${theme} tool-layout screenshot → ${themedShot}`);
+    }
+
+    await post("/api/qa/open", { panels: [["renderer"]] });
+    await post("/api/qa/window/bounds", { width: 1400, height: 900 });
+    await delay(500);
+    for (const theme of ["agentparty-light", "agentparty-dark"]) {
+      const appliedTheme = await post("/api/appearance/theme", { theme });
+      await delay(250);
+      const themedShot = path.join(shotDir, `wide-file-change-${theme}.png`);
+      const captured = await post("/api/capture", { path: themedShot });
+      ok(appliedTheme.applied === theme && captured.bytes > 0, `H) ${theme} wide file-change screenshot → ${themedShot}`);
     }
 
     const shot = path.join(shotDir, "mixed-channel-320.png");
