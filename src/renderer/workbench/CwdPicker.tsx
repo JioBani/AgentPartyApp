@@ -89,6 +89,10 @@ export interface CwdPickerProps {
 export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, wsl, saveAsDefault, hint }: CwdPickerProps) {
   const env: ExecutionEnv = value?.env ?? "windows";
   const { fallback, recent } = preferencesFor(prefs, env);
+  // The store also enforces this cap, but the picker is a public presentation
+  // boundary used by previews and live broadcasts. Never let an oversized or
+  // stale payload grow the modal past the product's five-row promise.
+  const displayedRecent = recent.slice(0, RECENT_CWD_LIMIT);
   // WSL is distro-then-path: a path means nothing until we know whose
   // filesystem it belongs to, and `/home/dev` exists in one distro and not the
   // next. So browsing stays shut until a distro is named.
@@ -202,7 +206,7 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
             <span><LocalizedText id="STR-3656" /> {RECENT_CWD_LIMIT}개</span>
           </div>
           <div role="radiogroup" aria-label={`${ENV_LABEL[env]} 최근 작업 위치`}>
-          {recent.map((entry) => (
+          {displayedRecent.map((entry) => (
             <CwdRecentItem
               key={`${entry.location.distro ?? ""}:${entry.location.cwd}`}
               entry={entry}

@@ -15,6 +15,8 @@ const workspace = path.join(os.tmpdir(), `${token}-source`);
 const otherWorkspace = path.join(os.tmpdir(), `${token}-other`);
 const userData = path.join(os.tmpdir(), `${token}-user-data`);
 const recentCwd = path.join(workspace, "fresh-recent-cwd");
+const recentCwds = Array.from({ length: 7 }, (_, index) => path.join(workspace, `recent-${index + 1}`));
+const shots = path.join(os.tmpdir(), `${token}-shots`);
 const port = 45500 + Math.floor(Math.random() * 1000);
 const app = createElectronE2eApp({
   root,
@@ -65,6 +67,8 @@ try {
   await app.prepare();
   fs.mkdirSync(otherWorkspace, { recursive: true });
   fs.mkdirSync(recentCwd, { recursive: true });
+  fs.mkdirSync(shots, { recursive: true });
+  for (const cwd of recentCwds) fs.mkdirSync(cwd, { recursive: true });
   await app.launch();
 
   const firstWindow = (await windows())[0]?.id;
@@ -82,15 +86,51 @@ try {
     location: recentCwd,
   });
   const partyId = created.currentPartyId;
+  // Direct HTTP is fixture setup here: the behavior under test is the rendered
+  // new-party picker, which is opened and inspected through the real UI below.
+  for (const [index, cwd] of recentCwds.entries()) {
+    await app.post(`/api/parties?window=${encodeURIComponent(firstWindow)}`, {
+      name: `RECENT-CWD-${index + 1}`,
+      groupId: sourceGroup.id,
+      location: cwd,
+    });
+  }
   const backendPrefs = (await app.get("/api/cwd/preferences")).preferences;
-  assert(backendPrefs.windowsRecent?.some((entry) => entry.location?.cwd === recentCwd), "backend remembers the successful cwd");
+  assert(backendPrefs.windowsRecent?.length === 5, "backend retains only five recent Windows cwds");
+  assert(
+    backendPrefs.windowsRecent?.map((entry) => entry.location?.cwd).join("|") === recentCwds.slice(-5).reverse().join("|"),
+    "backend keeps the five newest cwds in recency order",
+  );
+
+  await app.post(`/api/navigation?window=${encodeURIComponent(firstWindow)}`, { view: "workbench" });
+  await app.post(`/api/qa/pointer?window=${encodeURIComponent(firstWindow)}`, {
+    steps: [{ selector: ".wb-new-party .wb-icon-btn.is-accent", action: "click" }],
+    delayMs: 0,
+  });
+  const modalRows = await waitFor(
+    () => measure(firstWindow, ".wb-new-party-modal .wb-cwd-item"),
+    (result) => result.count === 5,
+  );
+  const modalLabel = await measure(firstWindow, ".wb-new-party-modal .wb-cwd-list-label");
+  assert(modalRows.count === 5, "new-party UI exposes exactly five recent cwd rows");
+  assert(modalLabel.elements?.[0]?.text?.includes("5"), "new-party UI labels the five-row maximum");
+  await app.post(`/api/appearance/theme`, { theme: "agentparty-dark" });
+  await app.post(`/api/qa/window/bounds?window=${encodeURIComponent(firstWindow)}`, { width: 1100, height: 720 });
+  await app.post(`/api/capture?window=${encodeURIComponent(firstWindow)}`, { path: path.join(shots, "recent-cwd-compact-dark.png") });
+  await app.post(`/api/appearance/theme`, { theme: "agentparty-light" });
+  await app.post(`/api/qa/window/bounds?window=${encodeURIComponent(firstWindow)}`, { width: 1400, height: 900 });
+  await app.post(`/api/capture?window=${encodeURIComponent(firstWindow)}`, { path: path.join(shots, "recent-cwd-large-light.png") });
+  await app.post(`/api/qa/pointer?window=${encodeURIComponent(firstWindow)}`, {
+    steps: [{ selector: ".wb-new-party-modal .wb-modal-head .wb-icon-btn", action: "click" }],
+    delayMs: 0,
+  });
 
   await app.post(`/api/navigation?window=${encodeURIComponent(firstWindow)}`, { view: "settings", tab: "workspace" });
   const recentRows = await waitFor(
     () => measure(firstWindow, '[data-layout-card="settings-workspace-recent-windows"] .set-cwd-path'),
-    (result) => result.elements?.some((entry) => entry.text?.includes(recentCwd)),
+    (result) => result.count === 5,
   );
-  assert(recentRows.elements?.some((entry) => entry.text?.includes(recentCwd)), "the open renderer receives the new recent cwd without a reload");
+  assert(recentRows.count === 5, "settings receives the five-row recent list without a reload");
 
   console.log("\nLong-list party drag:");
   await app.post(`/api/navigation?window=${encodeURIComponent(firstWindow)}`, { view: "workbench" });

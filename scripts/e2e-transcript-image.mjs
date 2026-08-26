@@ -59,7 +59,7 @@ async function main() {
     const within = (appRoot + path.sep).toLowerCase().startsWith(root.toLowerCase() + path.sep);
     assert(Boolean(appRoot) && within, `running build is THIS worktree (appRoot=${appRoot || "<missing>"})`);
     const windows = (await get("/api/windows")).windows || [];
-    assert(windows[0]?.workspacePath === ws, `window serves the e2e workspace (${windows[0]?.workspacePath})`);
+    assert(windows[0]?.workspacePath?.toLowerCase() === ws.toLowerCase(), `window serves the e2e workspace (${windows[0]?.workspacePath})`);
 
     await post("/api/qa/seed", {
       party: "transcript image e2e",
@@ -73,7 +73,7 @@ async function main() {
     // /message does not paint them. Drive the real composer: drop an image,
     // send it, then exercise copy + enlarge on what stayed in the conversation.
     cdp = await attachRenderer();
-    const pngB64 = smallPng(32, 24).toString("base64");
+    const pngB64 = smallPng(1600, 1200).toString("base64");
     const dropped = await cdp.eval(`(() => {
       const form = document.querySelector("form.wb-composer");
       if (!form) return { ok: false, reason: "no composer" };
@@ -89,7 +89,7 @@ async function main() {
     assert(dropped.ok && attachCount >= 1, `입력창에 이미지가 첨부됐다 (ok=${dropped.ok}, thumbs=${attachCount})`);
     assert((await cdp.eval(`document.querySelectorAll(".wb-attachment-copy").length`)) === 0, "입력창 첨부 복사 버튼은 없다");
 
-    await post("/api/qa/input", { selector: "textarea.wb-composer-textarea", text: "이 이미지 확인해줘", key: "Enter", modifiers: ["control"] });
+    await post("/api/qa/input", { selector: ".wb-composer-editor", text: "이 이미지 확인해줘", key: "Enter", modifiers: ["control"] });
     await delay(1500);
 
     const present = await cdp.eval(`({
@@ -105,30 +105,95 @@ async function main() {
     let overlay = await cdp.eval(`({
       open: !!document.querySelector(".wb-tool-modal"),
       wide: !!document.querySelector(".wb-tool-modal.is-wide"),
+      imageViewer: !!document.querySelector(".wb-tool-modal.is-image-viewer"),
       fit: !!document.querySelector(".wb-image-viewer.is-fit"),
       zoom: document.querySelector("[data-image-zoom]")?.getAttribute("data-image-zoom") || null,
+      portal: document.querySelector(".wb-tool-modal-backdrop")?.parentElement === document.body,
     })`);
-    assert(overlay.open && overlay.wide && overlay.fit, `크게 보기 오버레이가 맞춤으로 열린다 (${JSON.stringify(overlay)})`);
+    assert(overlay.open && overlay.wide && overlay.imageViewer && overlay.fit && overlay.portal, `크게 보기 오버레이가 창 전체 body 포털에서 맞춤으로 열린다 (${JSON.stringify(overlay)})`);
+
+    await post("/api/appearance/theme", { theme: "agentparty-dark" });
+    const compactBounds = await post("/api/qa/window/bounds", { width: 1100, height: 720 });
+    await delay(250);
+    const compactGeometry = await cdp.eval(`(() => {
+      const backdrop = document.querySelector(".wb-tool-modal-backdrop.is-image-viewer");
+      const modal = document.querySelector(".wb-tool-modal.is-image-viewer");
+      const close = modal?.querySelector(".wb-tool-modal-head button:last-child");
+      const b = backdrop?.getBoundingClientRect();
+      const m = modal?.getBoundingClientRect();
+      const c = close?.getBoundingClientRect();
+      return {
+        viewport: [innerWidth, innerHeight],
+        backdrop: b && [Math.round(b.left), Math.round(b.top), Math.round(b.right), Math.round(b.bottom)],
+        modal: m && [Math.round(m.left), Math.round(m.top), Math.round(m.right), Math.round(m.bottom)],
+        close: c && [Math.round(c.left), Math.round(c.top), Math.round(c.right), Math.round(c.bottom)],
+        theme: document.documentElement.getAttribute("data-theme"),
+      };
+    })()`);
+    assert(
+      compactGeometry.backdrop?.[0] === 0 && compactGeometry.backdrop?.[1] === 0 &&
+        compactGeometry.backdrop?.[2] === compactGeometry.viewport?.[0] && compactGeometry.backdrop?.[3] === compactGeometry.viewport?.[1],
+      `작은 창에서도 배경이 전체 뷰포트를 덮는다 (${JSON.stringify(compactGeometry)})`,
+    );
+    assert(
+      compactBounds.bounds?.width === 1100 && compactBounds.bounds?.height === 720 &&
+        compactGeometry.viewport?.[0] === 1100 && compactGeometry.viewport?.[1] === 720,
+      `앱의 최소 창 크기 1100x720에서 검증한다 (bounds=${JSON.stringify(compactBounds.bounds)}, viewport=${JSON.stringify(compactGeometry.viewport)})`,
+    );
+    assert(
+      compactGeometry.modal?.[0] === 12 && compactGeometry.modal?.[1] === 12 &&
+        compactGeometry.modal?.[2] === compactGeometry.viewport?.[0] - 12 && compactGeometry.modal?.[3] === compactGeometry.viewport?.[1] - 12,
+      `이미지 팝업이 작은 창의 12px 안쪽 전체 영역을 쓴다 (${JSON.stringify(compactGeometry.modal)})`,
+    );
+    assert(
+      compactGeometry.close?.every((value, index) => index % 2 === 0 ? value >= 0 && value <= compactGeometry.viewport[0] : value >= 0 && value <= compactGeometry.viewport[1]),
+      `닫기 버튼이 작은 창 안에서 접근 가능하다 (${JSON.stringify(compactGeometry.close)})`,
+    );
+    assert(compactGeometry.theme === "agentparty-dark", "작은 창 다크 테마에서 실제로 렌더링된다");
+    await post("/api/capture", { path: path.join(shotDir, "transcript-image-viewer-compact-dark.png") });
 
     await cdp.eval(`document.querySelector("[data-image-zoom]")?.click()`);
     await delay(100);
     overlay = await cdp.eval(`({
       actual: !!document.querySelector(".wb-image-viewer.is-actual"),
       zoom: document.querySelector("[data-image-zoom]")?.getAttribute("data-image-zoom") || null,
+      overflow: (() => { const el = document.querySelector(".wb-image-viewer"); return el ? [el.scrollWidth > el.clientWidth, el.scrollHeight > el.clientHeight] : []; })(),
     })`);
     assert(overlay.actual && overlay.zoom === "actual", `실제 크기 토글이 동작한다 (${JSON.stringify(overlay)})`);
+    assert(overlay.overflow?.every(Boolean), `실제 크기는 창 안에서 양방향 스크롤된다 (${JSON.stringify(overlay.overflow)})`);
 
-    await cdp.eval(`document.querySelector(".wb-tool-modal-backdrop")?.dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
+    await cdp.eval(`document.querySelector(".wb-tool-modal-backdrop")?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))`);
     await delay(100);
-    assert(await cdp.eval(`!!document.querySelector(".wb-tool-modal")`), "바깥 클릭으로 닫히지 않는다");
+    assert(!(await cdp.eval(`!!document.querySelector(".wb-tool-modal")`)), "이미지 팝업은 바깥 클릭으로 닫힌다");
 
+    await post("/api/appearance/theme", { theme: "agentparty-light" });
+    const largeBounds = await post("/api/qa/window/bounds", { width: 1400, height: 900 });
+    await cdp.eval(`document.querySelector(".wb-msg-image-hit")?.click()`);
+    await delay(250);
+    const largeGeometry = await cdp.eval(`(() => {
+      const modal = document.querySelector(".wb-tool-modal.is-image-viewer")?.getBoundingClientRect();
+      return { viewport: [innerWidth, innerHeight], modal: modal && [Math.round(modal.left), Math.round(modal.top), Math.round(modal.right), Math.round(modal.bottom)], fit: !!document.querySelector(".wb-image-viewer.is-fit"), theme: document.documentElement.getAttribute("data-theme") };
+    })()`);
+    assert(
+      largeGeometry.modal?.[0] === 12 && largeGeometry.modal?.[1] === 12 &&
+        largeGeometry.modal?.[2] === largeGeometry.viewport?.[0] - 12 && largeGeometry.modal?.[3] === largeGeometry.viewport?.[1] - 12,
+      `큰 창에서도 팝업이 전체 창에 맞는다 (${JSON.stringify(largeGeometry)})`,
+    );
+    assert(
+      largeBounds.bounds?.width === 1400 && largeBounds.bounds?.height === 900 &&
+        largeGeometry.viewport?.[0] === 1400 && largeGeometry.viewport?.[1] === 900,
+      `큰 창 1400x900에서 검증한다 (bounds=${JSON.stringify(largeBounds.bounds)}, viewport=${JSON.stringify(largeGeometry.viewport)})`,
+    );
+    assert(largeGeometry.fit, "다시 열어도 안전한 화면 맞춤 상태에서 시작한다");
+    assert(largeGeometry.theme === "agentparty-light", "큰 창 라이트 테마에서 실제로 렌더링된다");
+    await post("/api/capture", { path: path.join(shotDir, "transcript-image-viewer-large-light.png") });
     await cdp.eval(`window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
     await delay(100);
     assert(!(await cdp.eval(`!!document.querySelector(".wb-tool-modal")`)), "Esc 로 닫힌다");
 
     // Same AppController route the transcript copy button uses.
     const clip = await post("/api/clipboard/image", { mediaType: "image/png", dataBase64: pngB64 });
-    assert(clip.ok && clip.width === 32 && clip.height === 24, `클립보드 API가 이미지를 받는다 (${clip.width}x${clip.height})`);
+    assert(clip.ok && clip.width === 1600 && clip.height === 1200, `클립보드 API가 이미지를 받는다 (${clip.width}x${clip.height})`);
 
     const shot = path.join(shotDir, "transcript-image.png");
     const cap = await post("/api/capture", { path: shot });

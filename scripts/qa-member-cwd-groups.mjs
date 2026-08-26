@@ -37,8 +37,28 @@ async function load(entry, name) {
 const groups = await load("src/renderer/workbench/memberGroups.ts", "member-groups.mjs");
 const provider = await load("src/renderer/workbench/modelProvider.ts", "model-provider.mjs");
 const outcome = await load("src/renderer/workbench/toolOutcome.ts", "tool-outcome.mjs");
+const locations = await load("src/shared/memberLocation.ts", "member-location.mjs");
 
 const member = (name, location) => ({ name, member: location === undefined ? {} : { location } });
+
+console.log("\nrecent cwd limit:");
+{
+  let prefs = { windowsRecent: [], wslRecent: [] };
+  for (let index = 1; index <= 7; index += 1) {
+    prefs = locations.withRecentCwd(
+      prefs,
+      { env: "windows", cwd: `C:\\Project\\Recent-${index}` },
+      `2026-08-${String(index).padStart(2, "0")}T00:00:00.000Z`,
+    );
+  }
+  assert(locations.RECENT_CWD_LIMIT === 5, "the product exposes at most five recent cwds per environment");
+  assert(prefs.windowsRecent.length === 5, "recording more locations trims the stored list to five");
+  assert(
+    prefs.windowsRecent.map((entry) => entry.location.cwd).join(",") ===
+      "C:\\Project\\Recent-7,C:\\Project\\Recent-6,C:\\Project\\Recent-5,C:\\Project\\Recent-4,C:\\Project\\Recent-3",
+    "the five newest locations remain in recency order",
+  );
+}
 
 console.log("\nenvironment / cwd grouping:");
 {

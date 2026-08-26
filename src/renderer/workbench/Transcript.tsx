@@ -1,4 +1,5 @@
 import { Fragment, memo, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, AlignLeft, ArrowDownLeft, Ban, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, Loader, LoaderCircle, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
 import type { WorkbenchActions } from "./actions";
@@ -1182,11 +1183,12 @@ export function ExpandableText({ text, title, markdown, chips }: { text: string;
  * `actions` sits in the header before ✕ so image fit/copy controls reuse this
  * shell instead of inventing a second overlay (R-19).
  */
-function DetailModal({ title, onClose, actions, wide, dismissOnBackdrop = false, children }: {
+function DetailModal({ title, onClose, actions, wide, imageViewer, dismissOnBackdrop = false, children }: {
   title: string;
   onClose: () => void;
   actions?: ReactNode;
   wide?: boolean;
+  imageViewer?: boolean;
   dismissOnBackdrop?: boolean;
   children: ReactNode;
 }) {
@@ -1231,16 +1233,16 @@ function DetailModal({ title, onClose, actions, wide, dismissOnBackdrop = false,
       previousFocus?.focus();
     };
   }, []);
-  return (
+  return createPortal(
     <div
-      className="wb-tool-modal-backdrop"
+      className={"wb-tool-modal-backdrop" + (imageViewer ? " is-image-viewer" : "")}
       onMouseDown={(event) => {
         if (dismissOnBackdrop && event.target === event.currentTarget) onClose();
       }}
     >
       <div
         ref={dialogRef}
-        className={"wb-tool-modal" + (wide ? " is-wide" : "")}
+        className={"wb-tool-modal" + (wide ? " is-wide" : "") + (imageViewer ? " is-image-viewer" : "")}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -1254,7 +1256,8 @@ function DetailModal({ title, onClose, actions, wide, dismissOnBackdrop = false,
         </div>
         <div className="wb-tool-modal-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -1338,6 +1341,13 @@ function ImageFigure({ src, label, copySource }: { src: string; label: string; c
   const timer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => () => clearTimeout(timer.current), []);
 
+  function openViewer() {
+    // Every open starts from the safe overview. Carrying an oversized actual-
+    // pixel view across closes can reopen on an apparently blank/cropped area.
+    setFit(true);
+    setViewer(true);
+  }
+
   async function copyImage(event?: { preventDefault(): void; stopPropagation(): void }) {
     event?.preventDefault();
     event?.stopPropagation();
@@ -1383,7 +1393,7 @@ function ImageFigure({ src, label, copySource }: { src: string; label: string; c
           className="wb-msg-image-hit"
           title={localized("STR-2212", [label])}
           aria-label={localized("STR-2213", [label])}
-          onClick={() => setViewer(true)}
+          onClick={openViewer}
         >
           <img className="wb-msg-image" src={src} alt={label} loading="lazy" decoding="async" />
         </button>
@@ -1394,7 +1404,7 @@ function ImageFigure({ src, label, copySource }: { src: string; label: string; c
             className="wb-icon-btn"
             title={localized("STR-2214")}
             aria-label={localized("STR-2215")}
-            onClick={() => setViewer(true)}
+            onClick={openViewer}
           >
             <Maximize2 size={13} />
           </button>
@@ -1405,6 +1415,7 @@ function ImageFigure({ src, label, copySource }: { src: string; label: string; c
         <DetailModal
           title={label}
           wide
+          imageViewer
           dismissOnBackdrop
           onClose={() => setViewer(false)}
           actions={

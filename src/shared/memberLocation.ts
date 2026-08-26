@@ -52,7 +52,7 @@ export const SUPPORTED_MEMBER_EXECUTION_HOSTS: readonly SupportedMemberExecution
 ];
 
 /** The most recent cwds we keep per environment (README §6). */
-export const RECENT_CWD_LIMIT = 10;
+export const RECENT_CWD_LIMIT = 5;
 
 /**
  * A member's fixed execution location, in the shape screens want to read.
@@ -136,7 +136,7 @@ export interface MemberExecutionLocationCatalog {
 }
 
 /**
- * App-global cwd preferences: one default per environment, ten recents each.
+ * App-global cwd preferences: one default per environment, five recents each.
  *
  * Global rather than per-workspace because the party list is global now — the
  * directory the app happened to be launched from must not change which cwds are
