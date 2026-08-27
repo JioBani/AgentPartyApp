@@ -1,7 +1,7 @@
 {
   "name": "agentparty-app",
   "productName": "AgentParty",
-  "version": "0.5.13-beta.1",
+  "version": "0.5.13-beta.2",
   "description": "AgentParty desktop client for local multi-agent coding sessions.",
   "author": "AgentParty",
   "license": "UNLICENSED",
@@ -299,6 +299,7 @@
         "portable"
       ]
     },
+    "generateUpdatesFilesForAllChannels": true,
     "publish": [
       {
         "provider": "github",

@@ -19,6 +19,7 @@ import {
   type ThemePreference,
 } from "../shared/appTheme";
 import { publishFontProbe } from "./app/fontProbe";
+import { applyFontScale, readMirroredFontScale } from "./app/fontScaleStore";
 import { reportNotice, useNoticeSink } from "./app/appNotice";
 import type { CreateMemberInput, CreatePartyInput } from "./workbench/PartySidebar";
 import { DEFAULT_PARTY_GROUP_ID, type PartyGroup, type RegisteredParty } from "../shared/partyGroups";
@@ -99,6 +100,10 @@ interface EnsureSessionResult {
   error?: string;
   skipped?: boolean;
 }
+
+// Read once: the same value main.tsx applied pre-paint, used as the fallback
+// until the persisted settings arrive from the main process.
+const bootFontScale = readMirroredFontScale();
 
 export function App() {
   const theme = useTheme();
@@ -516,14 +521,26 @@ export function App() {
   }, [updateStatus?.state, updateStatus?.latestVersion, updateStatus?.downgrade]);
 
   // --- Transcript text zoom (Ctrl+wheel over a session view) ---------------
-  const fontScale = state.settings.transcriptFontScale ?? 1;
+  // Until the persisted settings arrive, keep the boot-mirrored scale that
+  // main.tsx already applied pre-paint — falling back to 1 here would flip the
+  // transform to 1 and back, recreating the blur this exists to prevent.
+  const fontScale = state.settings.transcriptFontScale ?? bootFontScale;
   const fontScaleRef = useRef(fontScale);
   fontScaleRef.current = fontScale;
   const fontScalePersist = useRef<ReturnType<typeof setTimeout>>();
 
-  // Reflect the zoom as a CSS variable every transcript reads (`zoom: var(...)`).
+  // Reflect the zoom as the CSS variable every transcript scale wrapper reads.
+  // Changing the variable moves the wrappers' transform without a repaint, and
+  // Chromium keeps rendering the raster made for the PREVIOUS scale
+  // (crbug.com/40431598) — so after the initial application, announce every
+  // change and let each Transcript rebuild its paint (see Transcript.tsx).
+  const appliedFontScale = useRef<number | null>(null);
   useEffect(() => {
-    document.documentElement.style.setProperty("--wb-font-scale", String(fontScale));
+    applyFontScale(fontScale);
+    if (appliedFontScale.current !== null && appliedFontScale.current !== fontScale) {
+      window.dispatchEvent(new Event("wb-font-scale-applied"));
+    }
+    appliedFontScale.current = fontScale;
   }, [fontScale]);
 
   // Ctrl+wheel over a transcript grows/shrinks its text. The raw wheel event is
