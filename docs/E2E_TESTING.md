@@ -330,7 +330,7 @@ Captures (light + dark, since the colours are tokens) go to a temp dir.
 
 `node scripts/e2e-sidebar-overflow.mjs` (or `npm run test:e2e:sidebar-overflow`)
 boots the real app on an isolated userData + temp workspace (offline — mock
-members, no model) and locks the OVERFLOW-SAFETY invariant behind [#11]: with 16
+members, no model) and locks the OVERFLOW-SAFETY invariant behind [#11]: with 24
 parties and 27 members the sidebar lists must SCROLL, not clip. Unlike a
 screenshot check it MEASURES the running renderer over the Chrome DevTools
 Protocol (`--remote-debugging-port=0`, port read from `<userData>/
@@ -338,10 +338,11 @@ DevToolsActivePort` — nothing hardcoded), asserting each list overflows, has a
 computed `overflow-y` that actually scrolls, stays inside the window, keeps the
 Members section usable beside it, and — the decisive one — that after scrolling
 to the bottom `document.elementFromPoint()` over the LAST row hits that row, i.e.
-it is clickable. It also asserts an open `.wb-dd-menu` is height-bounded and
-scrolls. Horizontal menu containment is deliberately NOT asserted (see the note
-in the script): `<Dropdown>`'s default `align="left"` can push a menu past the
-right window edge, which needs a placement fix in `Dropdown.tsx`.
+it is clickable. It also asserts open dropdown and context menus remain inside
+the viewport. The group context menu is rendered and captured in light and dark
+themes with a deliberately long group name; every action row must have zero
+computed border width so native button chrome cannot reappear inside the menu
+shell.
 
 `node scripts/e2e-usage-unpriced.mjs` (or `npm run test:e2e:usage-unpriced`)
 seeds a usage ledger holding one member on a priced model and one on a model

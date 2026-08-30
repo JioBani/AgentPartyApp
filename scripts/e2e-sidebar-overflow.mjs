@@ -149,6 +149,61 @@ async function main() {
     const creationShot = await post("/api/capture", { path: path.join(os.tmpdir(), "create-actions-e2e.png") });
     assert(creationShot.ok && creationShot.bytes > 0, "saved the creation-entry layout screenshot");
 
+    // The group menu used to inherit Chromium's native button border on every
+    // action, producing stacked black rounded rectangles inside the menu shell.
+    // Exercise the exact menu (not only another consumer of .wb-ctx-item) in
+    // both built-in themes and keep captures for visual review.
+    const groupTarget = await cdp.eval(`(() => {
+      const group = [...document.querySelectorAll(".wb-party-group")]
+        .find((item) => item.textContent?.includes("empty-group-with-a-deliberately-long-name"));
+      const row = group?.querySelector(".wb-group-row");
+      const rect = row?.getBoundingClientRect();
+      return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+    })()`);
+    assert(Boolean(groupTarget), "the group row has a native pointer target for its context menu");
+
+    const inspectGroupMenu = () => cdp.eval(`(() => {
+      const menu = document.querySelector(".wb-ctx-menu");
+      const items = [...(menu?.querySelectorAll(".wb-ctx-item") || [])];
+      return {
+        found: Boolean(menu),
+        theme: document.documentElement.getAttribute("data-theme"),
+        itemCount: items.length,
+        itemBorders: items.map((item) => {
+          const style = getComputedStyle(item);
+          return [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth];
+        }),
+      };
+    })()`);
+
+    if (groupTarget) await cdp.rightClick(groupTarget.x, groupTarget.y);
+    await delay(200);
+    const lightGroupMenu = await inspectGroupMenu();
+    assert(
+      lightGroupMenu.found && lightGroupMenu.theme === "agentparty-light" && lightGroupMenu.itemCount >= 3
+        && lightGroupMenu.itemBorders.every((widths) => widths.every((width) => width === "0px")),
+      `group context actions are borderless in the light theme (${JSON.stringify(lightGroupMenu)})`,
+    );
+    const lightGroupShot = await post("/api/capture", { path: path.join(os.tmpdir(), "group-context-menu-light-e2e.png") });
+    assert(lightGroupShot.ok && lightGroupShot.bytes > 0, "saved the light group-context-menu screenshot");
+    await cdp.eval(`document.dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
+
+    await post("/api/appearance/theme", { theme: "agentparty-dark" });
+    await delay(150);
+    if (groupTarget) await cdp.rightClick(groupTarget.x, groupTarget.y);
+    await delay(200);
+    const darkGroupMenu = await inspectGroupMenu();
+    assert(
+      darkGroupMenu.found && darkGroupMenu.theme === "agentparty-dark" && darkGroupMenu.itemCount >= 3
+        && darkGroupMenu.itemBorders.every((widths) => widths.every((width) => width === "0px")),
+      `group context actions are borderless in the dark theme (${JSON.stringify(darkGroupMenu)})`,
+    );
+    const darkGroupShot = await post("/api/capture", { path: path.join(os.tmpdir(), "group-context-menu-dark-e2e.png") });
+    assert(darkGroupShot.ok && darkGroupShot.bytes > 0, "saved the dark group-context-menu screenshot");
+    await cdp.eval(`document.dispatchEvent(new MouseEvent("click", { bubbles: true }))`);
+    await post("/api/appearance/theme", { theme: "agentparty-light" });
+    await delay(150);
+
     // Overflowing POPUPS are the other half of #11: a menu must be bounded and
     // fully on-window, otherwise its tail is unreachable the same way. Checked
     // first, while one member owns a full-width panel — the panel's dropdowns
@@ -292,6 +347,10 @@ async function main() {
       return {
         found: true,
         visible: getComputedStyle(el).visibility !== "hidden",
+        itemBorders: [...el.querySelectorAll(".wb-ctx-item")].map((item) => {
+          const style = getComputedStyle(item);
+          return [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth];
+        }),
         top: rect.top,
         bottom: rect.bottom,
         left: rect.left,
@@ -300,6 +359,11 @@ async function main() {
       };
     })()`);
     assert(contextMenu.found && contextMenu.visible, "right-click opens the bottom member's context menu");
+    assert(
+      contextMenu.found && contextMenu.itemBorders?.length > 0
+        && contextMenu.itemBorders.every((widths) => widths.every((width) => width === "0px")),
+      `context menu actions use borderless rows (${JSON.stringify(contextMenu.itemBorders)})`,
+    );
     assert(
       contextMenu.found
         && contextMenu.top >= 0
