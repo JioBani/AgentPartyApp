@@ -162,10 +162,10 @@ const api = {
   /** Reveals the log folder. Rejects with the OS reason when it cannot open. */
   openLogFolder: (): Promise<{ ok: true; path: string }> => ipcRenderer.invoke("diagnostics:openLogFolder"),
   openExternal: (url: string) => ipcRenderer.invoke("shell:openExternal", url),
-  /** Opens a local file with its default app, or reveals it when there is none. */
-  openPath: (target: string) => ipcRenderer.invoke("shell:openPath", target),
-  /** Shows a local file in the OS file manager without opening it. */
-  revealPath: (target: string) => ipcRenderer.invoke("shell:openPath", target, { reveal: true }),
+  /** Opens a local file relative to the member that authored the link. */
+  openPath: (target: string, sourceLocation?: string) => ipcRenderer.invoke("shell:openPath", target, { sourceLocation }),
+  /** Shows a member-authored local file in the OS file manager without opening it. */
+  revealPath: (target: string, sourceLocation?: string) => ipcRenderer.invoke("shell:openPath", target, { reveal: true, sourceLocation }),
   // `mediaType` is optional because the main process sniffs the real format off
   // the bytes — an image copied from a remote URL may not declare one.
   copyImageToClipboard: (image: { dataBase64: string; mediaType?: string }) => ipcRenderer.invoke("clipboard:writeImage", image),

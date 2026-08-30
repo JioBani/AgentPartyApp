@@ -133,7 +133,10 @@ export const appRoutes: MethodRoute[] = [
     name: "shell.openPath",
     http: "POST /api/shell/open-path",
     remote: false,
-    handler: (p, ctx) => ctx.controller.openLocalPath(ctx.windowId, text(p.path), { reveal: p.reveal === true }),
+    handler: (p, ctx) => ctx.controller.openLocalPath(ctx.windowId, text(p.path), {
+      reveal: p.reveal === true,
+      sourceLocation: optText(p.sourceLocation),
+    }),
   },
   {
     name: "clipboard.image",

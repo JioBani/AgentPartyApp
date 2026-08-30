@@ -60,7 +60,7 @@ function remarkPreserveWindowsPathSeparators() {
  * Links open in the OS default browser (never inside an Electron window) and
  * carry a copy control for the target URL; so does every fenced code block.
  */
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({ text, sourceLocation }: { text: string; sourceLocation?: string }) {
   useI18n(); // Keep localized link/code attributes live when the locale changes.
   return (
     <div className="wb-md">
@@ -72,7 +72,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
         // default sanitisation.
         urlTransform={(url) => isPreservedLocalHref(url) ? url : defaultUrlTransform(url)}
         components={{
-          a: ({ node: _node, href, children, ...props }) => <MarkdownLink href={href} {...props}>{children}</MarkdownLink>,
+          a: ({ node: _node, href, children, ...props }) => <MarkdownLink href={href} sourceLocation={sourceLocation} {...props}>{children}</MarkdownLink>,
           pre: ({ node: _node, children, ...props }) => <MarkdownPre {...props}>{children}</MarkdownPre>,
           code({ node: _node, className, children, ...props }) {
             const content = String(children ?? "");
@@ -180,7 +180,7 @@ function externalTarget(href: string | undefined): string {
  * because it is the only place that still knows the href as authored, which is
  * what makes a scheme-less `example.com` recoverable.
  */
-function MarkdownLink({ href, children, ...props }: { href?: string; children?: ReactNode } & Record<string, unknown>) {
+function MarkdownLink({ href, sourceLocation, children, ...props }: { href?: string; sourceLocation?: string; children?: ReactNode } & Record<string, unknown>) {
   const target = externalTarget(href);
   // Anything left over that is not an in-page anchor or a foreign scheme is a
   // path — a file the member wrote or read. A bare `C:/...` superficially
@@ -207,7 +207,7 @@ function MarkdownLink({ href, children, ...props }: { href?: string; children?: 
           // revealed (no handler / not launchable), and a missing file is an
           // error the user has to see rather than a click that did nothing.
           void window.agentParty
-            .openPath(file)
+            .openPath(file, sourceLocation)
             .then((result: { action?: string; path?: string; reason?: string }) => {
               if (result?.reason) {
                 reportNotice(result.reason);
@@ -233,7 +233,7 @@ function MarkdownLink({ href, children, ...props }: { href?: string; children?: 
             event.preventDefault();
             event.stopPropagation();
             void window.agentParty
-              .revealPath(file)
+              .revealPath(file, sourceLocation)
               .catch((error: unknown) => reportNotice(`파일 위치를 열지 못했습니다: ${ipcErrorMessage(error)}`));
           }}
         >

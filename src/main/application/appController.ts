@@ -1,7 +1,13 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { decodeLocalFileTarget, isLaunchable, localFileHostPath, normalizeLocalFileTarget } from "../../shared/localFiles";
+import {
+  decodeLocalFileTarget,
+  isLaunchable,
+  localFileHostPath,
+  normalizeLocalFileTarget,
+  withoutLocalFileSourceLocation,
+} from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import { invokePartyToolFromExecutionHost, type PartyToolResult } from "../../core/partyBridge";
@@ -1787,16 +1793,22 @@ export class AppController {
   // was opened from, which is the entire point of the feature.
 
   /**
-   * Copies pre-existing party data from one explicitly opened former cwd into
-   * the Windows-global store and backfills missing member locations.
+   * Copies pre-existing party data from registered or explicitly opened former
+   * cwds into the Windows-global store and backfills missing member locations.
    *
-   * Desktop-global mode looks only at workspaces it is TOLD about. Scanning the
-   * disk or the old registry would sweep up backups and unopened projects.
+   * Desktop-global mode imports the former workspaces already named by the
+   * durable group registry, plus explicitly supplied workspaces. This is not a
+   * filesystem scan: every candidate is a location the user previously opened
+   * and registered. Importing all of them is what makes a Windows-search launch
+   * show the same party list as a launch from one particular WSL cwd.
    */
   async migratePartyGroups(extraWorkspaces: string[] = []): Promise<MigrationReport> {
     if (this.globalPartyMode()) {
       const target = this.deps.partyStorageWorkspace as string;
-      const workspaces = [...new Set(extraWorkspaces.filter(Boolean))];
+      const workspaces = [...new Set([
+        ...this.partyGroups.knownWorkspaces(),
+        ...extraWorkspaces.filter(Boolean),
+      ])];
       const report: MigrationReport = {
         ok: true,
         workspaces,
@@ -2914,9 +2926,9 @@ export class AppController {
    * Three deliberate refusals, because each would otherwise be a silent wrong
    * action rather than an error:
    * - A path that does not exist is an error naming the resolved path. A
-   *   relative link resolves against the WINDOW'S WORKSPACE (the folder the user
-   *   is looking at), not the app bundle, and stating the resolved path is what
-   *   makes a wrong resolution visible instead of just "nothing happened".
+   *   relative transcript link resolves against its authoring member's execution
+   *   location; the window workspace is only the legacy fallback. Stating the
+   *   resolved path makes a wrong resolution visible instead of doing nothing.
    * - An executable or script is never launched, only revealed — a link written
    *   by a model must not be able to run something. See shared/localFiles.ts.
    * - `shell.openPath` reporting a failure (no association) falls back to
@@ -2926,17 +2938,34 @@ export class AppController {
    * this controller also runs headless inside a WSL distro, where `electron`
    * does not exist.
    */
-  async openLocalPath(windowId: string | undefined, target: string, options?: { reveal?: boolean }): Promise<{ ok: true; action: "opened" | "revealed"; path: string; reason?: string }> {
+  async openLocalPath(windowId: string | undefined, target: string, options?: { reveal?: boolean; sourceLocation?: string }): Promise<{ ok: true; action: "opened" | "revealed"; path: string; reason?: string }> {
     const { shell } = await import("electron");
     const raw = String(target || "").trim();
     if (!raw) {
       throw new Error("open-path requires a 'path'.");
     }
-    const resolved = this.resolveLocalPath(windowId, raw);
+    const sourceLocation = options?.sourceLocation
+      ? this.requireAbsoluteSourceLocation(options.sourceLocation)
+      : undefined;
+    const resolutionOwner = sourceLocation ? "the member's execution location" : "the window's workspace";
+    let resolved = this.resolveLocalPath(windowId, raw, sourceLocation);
     try {
       await fs.stat(resolved);
     } catch {
-      throw new Error(`No such file: '${resolved}'. A relative link resolves against the window's workspace.`);
+      // Model-authored citations often use `file.md:45` / `file.md:45:12`.
+      // Preserve a real POSIX filename containing `:` by trying it first; only
+      // when it is absent do we interpret the numeric tail as source location.
+      const withoutLocation = withoutLocalFileSourceLocation(raw);
+      if (!withoutLocation) {
+        throw new Error(`No such file: '${resolved}'. A relative link resolves against ${resolutionOwner}.`);
+      }
+      const candidate = this.resolveLocalPath(windowId, withoutLocation, sourceLocation);
+      try {
+        await fs.stat(candidate);
+        resolved = candidate;
+      } catch {
+        throw new Error(`No such file: '${resolved}'. A relative link resolves against ${resolutionOwner}.`);
+      }
     }
     // `reveal` is the caller asking for the file manager outright — the folder
     // icon next to a file link. It shares this method (rather than getting its
@@ -2965,8 +2994,8 @@ export class AppController {
     return { ok: true, action: "opened", path: resolved };
   }
 
-  /** `file://` URL or plain path → an absolute path, relative ones against the window's workspace. */
-  private resolveLocalPath(windowId: string | undefined, raw: string): string {
+  /** `file://` URL or plain path → absolute, preferring the authoring member's location. */
+  private resolveLocalPath(windowId: string | undefined, raw: string, sourceLocation?: string): string {
     // Decode before host classification: Windows `fileURLToPath` rejects
     // `file:///home/...` and `file:///mnt/c/...` (ERR_INVALID_FILE_URL_PATH)
     // even when the window is a WSL workspace that can open those paths.
@@ -2975,10 +3004,11 @@ export class AppController {
     // `\C:\...`, which can never exist. Restore the drive spelling after URL
     // decode, before the generic absolute/relative decision.
     const value = normalizeLocalFileTarget(decodeLocalFileTarget(raw), process.platform);
-    const workspace = (this.windowFor(windowId) ? this.deps.windowRegistry.resolve(windowId)?.workspacePath : undefined)
+    const workspace = sourceLocation
+      || (this.windowFor(windowId) ? this.deps.windowRegistry.resolve(windowId)?.workspacePath : undefined)
       || getSettings().workspacePath
       || process.cwd();
-    // A WSL window's links point INTO the distro, whose files Windows reaches
+    // A WSL member's links point INTO the distro, whose files Windows reaches
     // only through `\\wsl$\<distro>\...`. Ask which host owns the path before
     // the platform-shaped absolute/relative decision below: `path.isAbsolute`
     // reads `/home/...` on Windows as the C: drive root.
@@ -2990,6 +3020,20 @@ export class AppController {
       return path.normalize(value);
     }
     return path.resolve(parseWorkspaceLocation(workspace).path || process.cwd(), value);
+  }
+
+  /** Rejects malformed resolution context instead of silently falling back to another host. */
+  private requireAbsoluteSourceLocation(raw: string): string {
+    const value = String(raw || "").trim();
+    const location = parseWorkspaceLocation(value);
+    if (location.host.kind === "wsl") {
+      if (!location.host.distro || !path.posix.isAbsolute(location.path)) {
+        throw new Error(`Invalid sourceLocation '${value}': an absolute WSL path is required.`);
+      }
+    } else if (!path.win32.isAbsolute(location.path) && !path.posix.isAbsolute(location.path)) {
+      throw new Error(`Invalid sourceLocation '${value}': an absolute local path is required.`);
+    }
+    return serializeWorkspaceLocation(location);
   }
 
   /**

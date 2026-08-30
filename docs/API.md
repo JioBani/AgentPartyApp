@@ -731,16 +731,21 @@ Opens a local file the way the desktop would. The same controller method as a
 clicked file link in the transcript.
 
 ```json
-{ "path": "./docs/API.md" }
+{ "path": "./docs/API.md", "sourceLocation": "wsl+Ubuntu-20.04:/home/me/project" }
 ```
 
-A relative path resolves against the **calling window's workspace** — not the
-app bundle — so the same string a member wrote in a message resolves the way the
-user reads it. `file://` URLs and absolute paths are taken as given. On Windows,
+A transcript click supplies the immutable execution location of the member that
+authored the link as `sourceLocation`. A relative path resolves against that
+location, so opening the same transcript from a Windows window or a WSL window
+produces the same file. Direct and legacy callers may omit `sourceLocation`;
+only then does resolution fall back to the **calling window's workspace**. The
+source location must be absolute (`C:\…`, `/…`, or `wsl+<distro>:/…`);
+malformed context is rejected rather than silently switching hosts. `file://`
+URLs and absolute paths are taken as given. On Windows,
 markdown/URL-shaped drive paths such as `/C:/work/report.html` are restored to
 `C:\work\report.html` before resolution; UNC paths are left unchanged.
 
-**A window on a WSL workspace resolves into that distro.** Its members write
+**A WSL source location resolves into that distro.** Its members write
 POSIX paths (`/home/me/proj/설계.md`), and those files live on the distro's ext4,
 so the path is resolved in POSIX space and returned as the Windows UNC view —
 `\\wsl$\<distro>\home\me\proj\설계.md` — which is what `shell.openPath` and
@@ -750,7 +755,7 @@ is the distro's view of a Windows drive, not a file on ext4, so it becomes
 `C:\…` rather than `\\wsl$\<distro>\mnt\c\…`. A Windows drive path (`C:\…`,
 `/C:/…`) stays Windows even in a WSL window. A path that names its own distro
 (`wsl+<distro>:/p`, `\\wsl$\<distro>\…`, `\\wsl.localhost\<distro>\…`) is
-honoured over the window's. A local Windows window does not guess a distro for
+honoured over the source location. A local Windows source does not guess a distro for
 an anonymous `/home` path. Inside the headless WSL engine the same POSIX path is
 already native and is left alone.
 
@@ -762,6 +767,12 @@ is `%23`. Malformed URLs fail with `Not a readable file URL`.
 
 The response says what actually happened, because "opened" and "the file manager
 came up instead" are different outcomes:
+
+Model/editor citations may append a source location (`report.md:45` or
+`report.ts:45:12`). The controller first checks that spelling as a real filename;
+only when it does not exist does it retry the underlying file without the
+numeric line/column suffix. This preserves legal POSIX filenames containing
+`:` while making transcript citations openable through both UI and HTTP.
 
 ```json
 { "ok": true, "action": "opened", "path": "C:\\work\\docs\\API.md" }
@@ -2035,11 +2046,14 @@ queues, layouts, transcripts, images, and party-attributed usage live under
 at its immutable execution `location`, which may be a Windows path or a
 `wsl+<distro>:` path.
 
-When a former workspace is explicitly opened, its `.agent_party_app` (or older
-`.agentparty`) party store is copied into the Windows-global store before the
-window hydrates. The source is left untouched, ids and group filing are
-preserved, and `<userData>/party-store/.agent_party_app/workspace-imports.json`
-makes the import resumable and idempotent.
+At startup, every former workspace already named by the durable party-group
+registry, plus the workspace being opened, has its `.agent_party_app` (or older
+`.agentparty`) party store copied into the Windows-global store before the
+window hydrates. This is a bounded registry migration, not a filesystem scan.
+The source is left untouched, ids and group filing are preserved, and
+`<userData>/party-store/.agent_party_app/workspace-imports.json` makes the
+import resumable and idempotent. Consequently a Windows Search launch does not
+need each old WSL cwd to be opened once before its parties appear.
 
 ```json
 {
@@ -2131,8 +2145,8 @@ case-insensitive, while the POSIX path inside a distro remains case-sensitive.
 Every group and every party already present in the Windows-global store. A party
 summary carries `memberCount`, `runningCount` and the `windowsCount`/`wslCount`
 split. Its `workspacePath` is the internal global-store identity, not an owner
-cwd. Legacy registry rows stay hidden until their former workspace is opened
-and imported.
+cwd. Registered legacy rows are imported automatically during startup rather
+than remaining hidden until their former workspace is opened.
 
 ### `POST /api/party-groups`
 
@@ -2145,9 +2159,11 @@ transcripts are untouched — a group is a folder, not a location.
 
 ### `POST /api/party-groups/migrate`
 
-Imports party data from only the explicitly supplied former workspaces. The app
-calls this automatically for the cwd used to open or switch a window; it never
-scans every known folder. Windows paths are read directly and WSL paths through
+Imports party data from the explicitly supplied former workspaces and every
+former workspace already recorded in the durable party-group registry. The app
+calls this automatically before a window hydrates. It never scans the
+filesystem for stores: candidates are limited to locations the user previously
+opened and registered. Windows paths are read directly and WSL paths through
 their `\\wsl.localhost\<distro>\...` filesystem view.
 
 The source is never removed or rewritten. Party ids, group filing, members,

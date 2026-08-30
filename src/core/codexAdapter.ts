@@ -177,6 +177,10 @@ export class CodexAdapter extends EventEmitter {
   private usageRefreshTimer: NodeJS.Timeout | undefined;
   private lastUsageStatus = "";
   private lastRateLimitNotice = "";
+  /** Text already emitted for a streaming Codex item, keyed by its wire item id. */
+  private readonly streamedItemText = new Map<string, string>();
+  /** Fallback owner for delta notifications from older app-server builds that omit itemId. */
+  private readonly activeTextItem: Partial<Record<"assistant" | "reasoning", string>> = {};
 
   constructor(private readonly options: CodexAdapterOptions) {
     super();
@@ -301,6 +305,7 @@ export class CodexAdapter extends EventEmitter {
     this.status = "idle";
     this.turnState = undefined;
     this.activeTurnId = undefined;
+    this.clearStreamedItemText();
     this.drainQueuedTurn();
   }
 
@@ -318,6 +323,7 @@ export class CodexAdapter extends EventEmitter {
     // occupancy is stale. The window repopulates from the next tokenUsage update.
     this.contextTokens = undefined;
     this.contextWindow = undefined;
+    this.clearStreamedItemText();
     this.start();
   }
 
@@ -425,6 +431,7 @@ export class CodexAdapter extends EventEmitter {
     this.logger?.close();
     this.logger = undefined;
     this.shutdownProcess();
+    this.clearStreamedItemText();
     if (this.imageTempDir) {
       try { fs.rmSync(this.imageTempDir, { recursive: true, force: true }); } catch { /* best-effort */ }
       this.imageTempDir = undefined;
@@ -1017,6 +1024,7 @@ export class CodexAdapter extends EventEmitter {
   }
 
   private async runTurn(text: string, attachments?: ImageAttachment[]): Promise<void> {
+    this.clearStreamedItemText();
     this.activeTurn = true;
     this.turnState = "submitted";
     this.status = "requesting";
@@ -1258,8 +1266,7 @@ export class CodexAdapter extends EventEmitter {
         return;
       }
       const status = String(params.status?.type || "unknown");
-      this.status = status === "active" ? "responding" : status;
-      this.emitEvent({ type: "status", status: this.status, at: now() });
+      this.emitStatusIfChanged(status === "active" ? "responding" : status);
       return;
     }
     if (method === "turn/started") {
@@ -1269,9 +1276,8 @@ export class CodexAdapter extends EventEmitter {
         return;
       }
       this.activeTurnId = String(params.turn?.id || this.activeTurnId || "");
-      this.status = "responding";
       this.turnState = "responding";
-      this.emitEvent({ type: "status", status: "responding", at: now() });
+      this.emitStatusIfChanged("responding");
       return;
     }
     if (method === "turn/completed") {
@@ -1324,6 +1330,7 @@ export class CodexAdapter extends EventEmitter {
       }
       const text = String(params.delta || params.text || "");
       if (text) {
+        this.rememberStreamedItemText("assistant", params, text);
         this.lastAssistantMessageAt = now();
         this.emitEvent({ type: "assistant_text_delta", text, at: now() });
       }
@@ -1335,6 +1342,7 @@ export class CodexAdapter extends EventEmitter {
       }
       const text = String(params.delta || params.text || "");
       if (text) {
+        this.rememberStreamedItemText("reasoning", params, text);
         this.emitEvent({ type: "reasoning_delta", text, at: now() });
       }
       return;
@@ -1434,6 +1442,83 @@ export class CodexAdapter extends EventEmitter {
     }
   }
 
+  /**
+   * Codex reports the start of a turn twice: once as an active thread and once
+   * as turn/started. Both describe one state transition, so publishing both
+   * only leaves two consecutive `responding` rows in the transcript.
+   */
+  private emitStatusIfChanged(status: string): void {
+    const changed = this.status !== status;
+    this.status = status;
+    if (changed) {
+      this.emitEvent({ type: "status", status, at: now() });
+    }
+  }
+
+  /** Records a real streamed delta so item/completed can contribute only its unseen tail. */
+  private rememberStreamedItemText(kind: "assistant" | "reasoning", params: any, text: string): void {
+    const itemId = String(params?.itemId || params?.item?.id || this.activeTextItem[kind] || `__fallback__:${kind}:${this.activeTurnId || this.turnCount}`);
+    this.activeTextItem[kind] = itemId;
+    const key = `${kind}:${itemId}`;
+    this.streamedItemText.set(key, `${this.streamedItemText.get(key) || ""}${text}`);
+  }
+
+  /**
+   * A completed item contains the full canonical text. Newer app-server builds
+   * can send it even when initialize opted out of deltas. If deltas did arrive,
+   * emitting the full value again duplicates one model response in one block.
+   */
+  private completedItemRemainder(kind: "assistant" | "reasoning", itemId: string, completed: string): string {
+    const key = `${kind}:${itemId}`;
+    const streamed = this.streamedItemText.get(key) || "";
+    this.streamedItemText.delete(key);
+    if (this.activeTextItem[kind] === itemId) {
+      delete this.activeTextItem[kind];
+    }
+    if (!streamed) {
+      return completed;
+    }
+    if (completed.startsWith(streamed)) {
+      return completed.slice(streamed.length);
+    }
+    if (streamed.startsWith(completed)) {
+      return "";
+    }
+    // The reducer only has append semantics, so a divergent completed snapshot
+    // cannot safely replace the already visible prefix. Keep the streamed text
+    // and surface the protocol mismatch instead of corrupting it silently.
+    this.emitEvent({
+      type: "diagnostic",
+      severity: "warning",
+      category: "provider",
+      title: "Codex stream did not match its completed message",
+      detail: `${kind} item ${itemId} streamed ${streamed.length} characters but completed with a different ${completed.length}-character value.`,
+      recovery: "The streamed text was kept to avoid duplicating or combining two conflicting versions.",
+      at: now(),
+    });
+    return "";
+  }
+
+  private clearStreamedItemText(): void {
+    this.streamedItemText.clear();
+    delete this.activeTextItem.assistant;
+    delete this.activeTextItem.reasoning;
+  }
+
+  /** Binds a started item to any deltas that arrived just before its start frame. */
+  private beginTextItem(kind: "assistant" | "reasoning", itemId: string): void {
+    const previous = this.activeTextItem[kind];
+    if (previous?.startsWith("__fallback__:") && previous !== itemId) {
+      const fallbackKey = `${kind}:${previous}`;
+      const streamed = this.streamedItemText.get(fallbackKey);
+      if (streamed) {
+        this.streamedItemText.set(`${kind}:${itemId}`, streamed);
+        this.streamedItemText.delete(fallbackKey);
+      }
+    }
+    this.activeTextItem[kind] = itemId;
+  }
+
   private normalizeItem(item: any, status: "started" | "completed"): void {
     if (!item || typeof item !== "object") {
       return;
@@ -1443,23 +1528,33 @@ export class CodexAdapter extends EventEmitter {
     // (item/started, updates, item/completed) all sharing one item id. Buffered
     // providers (e.g. OpenRouter via the responses wire) carry the FULL text on
     // item/started already, then repeat it on item/completed — emitting on both
-    // would render (and cost-display) the text twice. Deltas are opted out, so
-    // nothing streams before completion: emit exactly once, on item/completed.
+    // would render (and cost-display) the text twice. We request delta opt-out,
+    // but app-server versions/providers can still send them; completion emits
+    // only the tail that was not already streamed.
     // (The model generated once — same item id, single token bill — so this is a
     // display de-dup, not a content change.)
     if (item.type === "agentMessage") {
-      if (status === "completed" && typeof item.text === "string" && item.text) {
+      if (status === "started") {
+        this.beginTextItem("assistant", id);
+        return;
+      }
+      const text = typeof item.text === "string" ? item.text : "";
+      const remainder = this.completedItemRemainder("assistant", id, text);
+      if (remainder) {
         this.lastAssistantMessageAt = now();
-        this.emitEvent({ type: "assistant_text_delta", text: item.text, at: now() });
+        this.emitEvent({ type: "assistant_text_delta", text: remainder, at: now() });
       }
       return;
     }
     if (item.type === "reasoning") {
-      if (status === "completed") {
-        const text = [...stringArray(item.summary), ...stringArray(item.content)].join("\n");
-        if (text) {
-          this.emitEvent({ type: "reasoning_delta", text, at: now() });
-        }
+      if (status === "started") {
+        this.beginTextItem("reasoning", id);
+        return;
+      }
+      const text = [...stringArray(item.summary), ...stringArray(item.content)].join("\n");
+      const remainder = this.completedItemRemainder("reasoning", id, text);
+      if (remainder) {
+        this.emitEvent({ type: "reasoning_delta", text: remainder, at: now() });
       }
       return;
     }
@@ -1634,6 +1729,7 @@ export class CodexAdapter extends EventEmitter {
     this.status = failed ? "error" : "idle";
     this.turnState = failed ? "error" : "complete";
     this.activeTurn = false;
+    this.clearStreamedItemText();
     this.emitEvent({ type: "turn_complete", result: failed ? "error" : "ok", cost, usage: codexTokenBreakdown(this.lastUsage, this.contextTokens), at: now() });
     if (this.pendingAuthenticationGeneration) {
       this.pendingAuthenticationGeneration = undefined;
@@ -1689,6 +1785,7 @@ export class CodexAdapter extends EventEmitter {
     if (this.spawnState === "starting") {
       this.emitSessionSpawn("failed", error);
     }
+    this.clearStreamedItemText();
     this.emitEvent({ type: "error", ...errorEventPayload(blocked), at: now() });
     this.drainQueuedTurn();
   }
