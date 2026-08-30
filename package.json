@@ -89,6 +89,7 @@
     "test:e2e:sidebar-overflow": "npm run build && node scripts/e2e-sidebar-overflow.mjs",
     "qa:party-location-preview": "npm run build && node scripts/qa-party-location-preview.mjs",
     "test:e2e:usage-unpriced": "npm run build && node scripts/e2e-usage-unpriced.mjs",
+    "test:usage-cost": "npm run build && node scripts/qa-usage-costing.mjs",
     "test:e2e:transcript-render": "npm run build && node scripts/e2e-transcript-render.mjs",
     "test:e2e:late-window-event-handoff": "npm run build && node scripts/e2e-late-window-event-handoff.mjs",
     "test:e2e:message-text-rendering": "npm run build && node scripts/e2e-message-text-rendering.mjs",

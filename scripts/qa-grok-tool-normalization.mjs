@@ -177,7 +177,7 @@ console.log("Grok account usage lifecycle:");
   const session = {
     availableModels: [{ modelId: "grok-4.5" }], model: "grok-4.5", acpSessionId: "usage-thread",
     async start() {}, async setModel() {}, async setMode() {}, dispose() {}, cancel() {},
-    async prompt() { return { stopReason: "end_turn", text: "", thought: "" }; },
+    async prompt() { return { stopReason: "end_turn", text: "", thought: "", costUsd: 0.0286528, usage: { input: 13433, cacheRead: 5376, cacheWrite: 0, output: 29 } }; },
     async billingUsage() {
       return { config: { creditUsagePercent: 14, currentPeriod: {
         type: "USAGE_PERIOD_TYPE_WEEKLY", start: "2026-08-09T16:10:35Z", end: "2026-08-16T16:10:35Z",
@@ -193,6 +193,11 @@ console.log("Grok account usage lifecycle:");
   assert.equal(usage?.provider, "grok", "Grok billing emits the Grok provider meter");
   assert.equal(usage?.windows?.[0]?.utilization, 14, "Grok billing percent reaches usage_limit");
   assert.equal(usage?.sourceId, "bg-grok", "Grok usage source participates in SessionManager fan-in");
+  adapter.sendUserTurn("cost probe");
+  await delay(20);
+  const completed = events.find((event) => event.type === "turn_complete");
+  assert.equal(completed?.cost?.amountUsd, 0.0286528, "exact xAI USD ticks reach the normalized turn cost");
+  assert.equal(completed?.cost?.basis, "provider-reported", "Grok exact cost retains provider provenance");
   adapter.dispose();
 }
 

@@ -311,6 +311,7 @@ export class CursorAdapter extends EventEmitter {
       sessionId: this.sessionId || undefined,
       model: this.model,
       effort: this.effort,
+      serviceTier: this.serviceTier,
       cursorPolicy: { ...this.cursorPolicy },
       status: this.status,
       turnState: this.turnState,
@@ -445,6 +446,7 @@ export class CursorAdapter extends EventEmitter {
     this.interruptRequested = false;
     this.lastError = undefined;
     this.stderrTail = "";
+    this.lastTokens = undefined;
     this.activeTurn = { text, assistant: "" };
     this.turnCount += 1;
     this.lastUserMessageAt = now();

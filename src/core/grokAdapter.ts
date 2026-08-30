@@ -383,7 +383,15 @@ export class GrokAdapter extends EventEmitter {
                 context: this.snapshot.contextTokens,
               }
             : undefined,
-          cost: { source: "grok", basis: "subscription", label: "Grok subscription" },
+          cost: typeof result.costUsd === "number"
+            ? {
+                amountUsd: result.costUsd,
+                source: "grok",
+                basis: "provider-reported",
+                label: `$${result.costUsd.toFixed(6)}`,
+                detail: "Reported by xAI as exact per-turn USD ticks.",
+              }
+            : { source: "grok", basis: "subscription", label: "Grok subscription" },
           costUsd: result.costUsd,
           at: now(),
         });

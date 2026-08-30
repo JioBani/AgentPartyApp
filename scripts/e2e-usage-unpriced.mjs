@@ -26,6 +26,7 @@ import { firstBaseUrl } from "./lib/discovery.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ws = path.join(os.tmpdir(), "agentparty-usage-unpriced-e2e-workspace");
 const userData = path.join(os.tmpdir(), "agentparty-usage-unpriced-e2e-user-data");
+const partyStore = path.join(userData, "party-store");
 const PARTY = "party-unpriced-e2e";
 const PRICED_MODEL = "claude-sonnet-4-6";
 /** Deliberately not in modelCatalog.json — that is the whole point. */
@@ -40,7 +41,9 @@ const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`);
 async function main() {
   await removePath(ws);
   await removePath(userData);
-  fs.mkdirSync(path.join(ws, ".agent_party_app", "usage"), { recursive: true });
+  // Parties are globally persisted under userData/party-store. Seed the same
+  // execution context the real app queries instead of the old cwd-local path.
+  fs.mkdirSync(path.join(partyStore, ".agent_party_app", "usage"), { recursive: true });
   // Chromium writes DevToolsActivePort before Electron creates userData itself.
   fs.mkdirSync(userData, { recursive: true });
 
@@ -55,7 +58,8 @@ async function main() {
   const lines = [];
   for (let i = 0; i < PRICED_TURNS; i += 1) lines.push(record("priced-guy", PRICED_MODEL, i));
   for (let i = 0; i < UNPRICED_TURNS; i += 1) lines.push(record("unpriced-guy", UNPRICED_MODEL, i));
-  fs.writeFileSync(path.join(ws, ".agent_party_app", "usage", "turns.jsonl"), `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+  lines.push({ ...record("reported-grok", "grok-4.6", 10), provider: "grok", costUsd: 0.1234, costBasis: "provider-reported" });
+  fs.writeFileSync(path.join(partyStore, ".agent_party_app", "usage", "turns.jsonl"), `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
 
   const child = spawn(process.execPath, [path.join(root, "scripts", "launch-electron.mjs"), "--workspace", ws, "--remote-debugging-port=0"], {
     cwd: root,
@@ -74,12 +78,15 @@ async function main() {
     const agg = await getJson(`/api/token-usage?fromMs=${now - 3600_000}&toMs=${now + 60_000}&bucketMinutes=5`);
     const priced = (agg.members || []).find((m) => m.key.endsWith(":priced-guy"));
     const unpriced = (agg.members || []).find((m) => m.key.endsWith(":unpriced-guy"));
+    const reported = (agg.members || []).find((m) => m.key.endsWith(":reported-grok"));
     assert(!!priced && !!unpriced, "both seeded members reached the aggregate");
     assert(priced?.estCostUsd > 0 && priced?.unpricedTurns === 0, `the priced member has a real cost (${priced?.estCostUsd})`);
     assert(unpriced?.unpricedTurns === UNPRICED_TURNS && unpriced?.turns === UNPRICED_TURNS,
       `every turn on an uncatalogued model is reported as unpriced (${unpriced?.unpricedTurns}/${unpriced?.turns})`);
     assert(unpriced?.estCostUsd === 0 && unpriced?.unpricedTokens > 0,
       `and its tokens are reported as unaccounted rather than free (${unpriced?.unpricedTokens} tok)`);
+    assert(reported?.effectiveCostUsd === 0.1234 && reported?.reportedCostTurns === 1 && reported?.unpricedTurns === 0,
+      `provider-reported Grok cost wins even without a catalog rate (${reported?.effectiveCostUsd})`);
 
     await post("/api/navigation", { view: "usage" });
     await delay(1500);
@@ -102,6 +109,7 @@ async function main() {
       return {
         cells,
         pricedCells: rowCells("priced-guy"),
+        reportedCells: rowCells("reported-grok"),
         markedTotal: text.includes("+?"),
         note: grab(/[^\\n]*단가[^\\n]*/),
         // The model·effort rane labels every segment. An uncatalogued model must
@@ -115,7 +123,8 @@ async function main() {
     // buckets it actually spent tokens in.
     assert((seen.cells || []).includes("?"), `the bucket it spent tokens in reads "?" (${JSON.stringify(seen.cells)})`);
     assert(!(seen.cells || []).some((c) => /\$\d*[1-9]/.test(c)), `and no bucket of its row shows a fabricated cost (${JSON.stringify(seen.cells)})`);
-    assert((seen.pricedCells || []).some((c) => /^\$\d/.test(c)), `the priced member still shows real costs (${JSON.stringify(seen.pricedCells)})`);
+    assert((seen.pricedCells || []).some((c) => /^(≈)?\$\d/.test(c)), `the priced member still shows real costs (${JSON.stringify(seen.pricedCells)})`);
+    assert((seen.reportedCells || []).some((c) => /\$0\.123/.test(c)), `the renderer shows Grok's reported cost (${JSON.stringify(seen.reportedCells)})`);
     assert(seen.markedTotal, "totals that omit unpriceable turns are marked +?");
     // Fabricated IDENTITY is worse than a fabricated number: the uncatalogued
     // model used to render as "sonnet medium", complete with sonnet's colour.
@@ -126,6 +135,25 @@ async function main() {
     assert(sonnetLabels.length === unknownLabels.length,
       `and "sonnet" is claimed exactly as often as the uncatalogued id appears — i.e. once per member, not borrowed (${sonnetLabels.length} vs ${unknownLabels.length})`);
     assert(/단가/.test(seen.note), `the timeline states what is missing from its bars (${seen.note})`);
+
+    await post("/api/capture", { path: path.join(os.tmpdir(), "agentparty-usage-cost-light.png") });
+    await post("/api/qa/window/bounds", { width: 1100, height: 720 });
+    await post("/api/appearance/theme", { theme: "agentparty-dark" });
+    await delay(350);
+    const compactDark = await cdp.eval(`(() => {
+      const scroll = document.querySelector('[data-tu="bucket-scroll"]');
+      const labels = scroll ? [...scroll.children].map((row) => row.firstElementChild?.textContent?.trim()) : [];
+      return {
+        theme: document.documentElement.getAttribute('data-theme'),
+        viewport: { width: innerWidth, height: innerHeight },
+        hasReported: labels.includes('reported-grok'),
+        scrollContained: !!scroll && scroll.getBoundingClientRect().right <= innerWidth + 1,
+      };
+    })()`);
+    assert(compactDark.theme === "agentparty-dark", `cost dashboard renders in dark theme (${compactDark.theme})`);
+    assert(compactDark.viewport.width <= 1100 && compactDark.viewport.height <= 720, `cost dashboard checked at compact bounds (${compactDark.viewport.width}x${compactDark.viewport.height})`);
+    assert(compactDark.hasReported && compactDark.scrollContained, "compact dark cost table remains present and contained in its scroll region");
+    await post("/api/capture", { path: path.join(os.tmpdir(), "agentparty-usage-cost-compact-dark.png") });
 
     cdp.close();
     await post("/api/window/close", {});

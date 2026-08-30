@@ -240,7 +240,7 @@ export function createFakeAgentParty(): FakeAgentParty {
     installUpdate: () => refused(),
     getTokenUsage: () => Promise.resolve(current().tokenUsage ?? {
       fromMs: 0, toMs: 0, bucketMinutes: 5, buckets: [], parties: [], members: [], triggers: [],
-      totals: { costUsd: 0, estCostUsd: 0, unpricedTurns: 0, unpricedTokens: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, turns: 0, overheadTokens: 0, firstHalfTokens: 0, secondHalfTokens: 0 },
+      totals: { costUsd: 0, estCostUsd: 0, effectiveCostUsd: 0, reportedCostTurns: 0, estimatedCostTurns: 0, unpricedTurns: 0, unpricedTokens: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, turns: 0, overheadTokens: 0, firstHalfTokens: 0, secondHalfTokens: 0 },
       totalTokens: 0, activeMsUnion: 0, recordCount: 0,
     }),
     getTokenUsageTurns: () => Promise.resolve(current().tokenUsageTurns || []),

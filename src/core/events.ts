@@ -40,6 +40,8 @@ export interface ClaudeSessionSnapshot {
   sessionId?: string;
   model: string;
   effort: ClaudeEffort;
+  /** Provider serving tier used for this session, when selectable. */
+  serviceTier?: string;
   /** Live thinking mode (adaptive | enabled | disabled), when the harness has one. */
   thinkingMode?: string;
   /** Live thinking token budget, when set. */

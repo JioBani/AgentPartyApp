@@ -12,7 +12,7 @@ import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "./codex
 import { terminateProcessTree } from "./processTree";
 import { DefaultTurnCostResolver } from "./costing";
 import type { TurnUsage } from "./costing";
-import type { TurnTokenBreakdown } from "../shared/tokenUsage";
+import { addCodexUsage, codexTokenBreakdown, normalizeCodexUsage } from "./codexUsage";
 import { imageContentResult } from "./imageFile";
 import type { PartyBridge, PartyIdentity } from "./partyBridge";
 import { buildPartyDynamicToolSpec, buildPartyPrimer, invokePartyTool, partyToolNameOf, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
@@ -145,6 +145,7 @@ export class CodexAdapter extends EventEmitter {
   private lastAssistantMessageAt: string | undefined;
   private lastError: string | undefined;
   private lastUsage: TurnUsage | undefined;
+  private activeServiceTier: string | undefined;
   /** Last reported context-window occupancy (tokens) and, if Codex sends it, window size. */
   private contextTokens: number | undefined;
   private contextWindow: number | undefined;
@@ -452,6 +453,7 @@ export class CodexAdapter extends EventEmitter {
       sessionId: this.sessionId || undefined,
       model: this.options.model,
       effort: this.options.effort,
+      serviceTier: this.activeServiceTier,
       permissionMode: this.options.permissionMode,
       status: this.status,
       turnState: this.turnState,
@@ -905,6 +907,11 @@ export class CodexAdapter extends EventEmitter {
 
   private applyThreadResult(result: any): void {
     this.sessionId = String(result?.thread?.id || result?.thread?.sessionId || this.sessionId || this.options.id);
+    this.activeServiceTier = normalizeServiceTierSelection(
+      typeof result?.serviceTier === "string" ? result.serviceTier
+        : typeof result?.thread?.serviceTier === "string" ? result.thread.serviceTier
+          : this.options.serviceTier,
+    );
     // The request response is the authoritative root identity. `thread/started`
     // is a notification and is not guaranteed to arrive before this response
     // (and a resumed thread may not announce itself again at all). Leaving the
@@ -1255,6 +1262,9 @@ export class CodexAdapter extends EventEmitter {
       // The root thread (no parent) owns the session; child threads are subagents.
       if (!params.thread?.parentThreadId) {
         this.sessionId = id;
+        this.activeServiceTier = normalizeServiceTierSelection(
+          typeof params.thread?.serviceTier === "string" ? params.thread.serviceTier : this.activeServiceTier,
+        );
         this.subagentTracker.setRoot(id);
         this.emitEvent({ type: "session", sessionId: this.sessionId, model: this.options.model, permissionMode: this.options.permissionMode, slashCommands: this.inventory, at: now() });
       }
@@ -1301,8 +1311,10 @@ export class CodexAdapter extends EventEmitter {
       // prompt+generation, which is `last` only. Never fall back to `total` for
       // the meter: cumulative session tokens overflow the window and would
       // misreport occupancy far above 100%.
-      this.lastUsage = normalizeCodexUsage(params.tokenUsage?.last || params.tokenUsage?.total);
       const last = normalizeCodexUsage(params.tokenUsage?.last);
+      this.lastUsage = last
+        ? addCodexUsage(this.lastUsage, last)
+        : normalizeCodexUsage(params.tokenUsage?.total);
       const occupancy = last?.totalTokens ?? ((last?.inputTokens ?? 0) + (last?.outputTokens ?? 0) || undefined);
       if (occupancy && occupancy > 0) {
         this.contextTokens = occupancy;
@@ -1926,32 +1938,6 @@ function effortFor(model: string, effort: ClaudeEffort): string | null {
     return null;
   }
   return effort;
-}
-
-/**
- * Codex reports input/output token counts and a numeric context occupancy, but
- * no cache-read/write split — those fields stay undefined (not zero). Returns
- * undefined when nothing was reported.
- */
-function codexTokenBreakdown(usage: TurnUsage | undefined, context: number | undefined): TurnTokenBreakdown | undefined {
-  const input = usage?.inputTokens;
-  const output = usage?.outputTokens;
-  if (input == null && output == null && context == null) {
-    return undefined;
-  }
-  return { input, output, context };
-}
-
-function normalizeCodexUsage(value: unknown): TurnUsage | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  const usage = value as Record<string, unknown>;
-  return {
-    inputTokens: numberValue(usage.inputTokens),
-    outputTokens: numberValue(usage.outputTokens),
-    totalTokens: numberValue(usage.totalTokens),
-  };
 }
 
 function numberValue(value: unknown): number | undefined {

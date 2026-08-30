@@ -1610,8 +1610,15 @@ totals), plus `parties`, `members`, and `triggers` rollups, `totals`, and
 shows "아직 없음", never a fabricated 0%.** `costUsd` is the harness/provider
 bill when available (실측); `estCostUsd` is a deterministic list-price `≈$`
 conversion (환산) kept separate so 실측 and 환산 stay distinguishable. Token
-fields are only present when the harness reported them (Codex exposes no cache
-split), so a missing field means "not reported", not zero. In the per-turn token
+`effectiveCostUsd` is the dashboard value: each turn uses its reported bill when
+present and otherwise its list-price estimate. `reportedCostTurns` and
+`estimatedCostTurns` expose that provenance; a turn is `unpriced` only when
+neither source is available. Token records may carry `serviceTier` (for example
+Cursor `standard`/`fast`) and Claude cache writes may carry
+`cacheWrite5m`/`cacheWrite1h` so their distinct rates are preserved.
+
+Fields are only present when the harness reported them, so a missing field means
+"not reported", not zero. In the per-turn token
 split, `input`/`cacheRead`/`cacheWrite`/`output` are the turn's **billed totals**
 (cumulative across every internal tool round-trip — correct for cost), whereas
 `context` is the **context-window occupancy** at the turn (non-cumulative, the

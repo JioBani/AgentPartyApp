@@ -3,6 +3,10 @@ import { ModelPricing, ModelProviderId } from "./modelRegistry";
 
 export interface TurnUsage {
   inputTokens?: number;
+  cachedInputTokens?: number;
+  cacheWriteInputTokens?: number;
+  /** Per-request deltas retained for threshold-based list pricing. */
+  requestUsages?: TurnUsage[];
   outputTokens?: number;
   promptTokens?: number;
   completionTokens?: number;
@@ -33,7 +37,7 @@ interface CostProvider {
 export class DefaultTurnCostResolver implements TurnCostResolver {
   private readonly providers: CostProvider[];
 
-  constructor(providers: CostProvider[] = [new OpenRouterCostProvider(), new SubscriptionCostProvider(), new ClaudeCodeCostProvider()]) {
+  constructor(providers: CostProvider[] = [new OpenRouterCostProvider(), new ClaudeCodeCostProvider(), new SubscriptionCostProvider()]) {
     this.providers = providers;
   }
 

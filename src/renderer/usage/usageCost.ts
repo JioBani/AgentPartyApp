@@ -3,7 +3,7 @@
  * handoff: cost-first, model×effort encoded by color-tint + fill-height). Pure,
  * so the encoding rules live in one testable place.
  *
- * Cost itself is computed in ONE place — `estimatedTurnCostUsd` in
+ * Cost itself is computed in ONE place — `effectiveTurnCostUsd` in
  * src/shared/tokenUsage.ts. This module used to carry a second copy of that
  * arithmetic; two copies means the next fix lands in one of them, which is the
  * exact trap that let unpriceable turns be summed as $0 here.

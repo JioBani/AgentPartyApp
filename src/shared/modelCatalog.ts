@@ -43,6 +43,20 @@ export interface ServiceTierSpec {
   default: "standard" | "fast";
 }
 
+/** Token list price for a provider-specific serving tier. */
+export interface TokenPriceSpec {
+  inPerM: number;
+  outPerM: number;
+  cacheReadPerM?: number;
+  cacheWritePerM?: number;
+}
+
+export interface LongContextPriceSpec {
+  thresholdTokens: number;
+  inputMultiplier: number;
+  outputMultiplier: number;
+}
+
 /**
  * Per-model multimodal input support. `image: false` = text-only (attaching an
  * image is refused with a visible error, never silently dropped). Omitted =
@@ -126,6 +140,13 @@ export interface CatalogModel {
   inPerM?: number;
   outPerM?: number;
   ioPerM?: number;
+  /** Explicit cache prices; omitted values use the provider's documented multipliers. */
+  cacheReadPerM?: number;
+  cacheWritePerM?: number;
+  /** Tier-specific prices, used when a harness reports the selected tier. */
+  serviceTierPricing?: Record<string, TokenPriceSpec>;
+  /** Full-request multiplier when that request's prompt exceeds the threshold. */
+  longContextPricing?: LongContextPriceSpec;
   reasoning?: ReasoningSpec | null;
   /** Provider-specific serving tier, e.g. Cursor Grok Standard/Fast. */
   serviceTier?: ServiceTierSpec;

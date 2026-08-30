@@ -345,8 +345,9 @@ computed border width so native button chrome cannot reappear inside the menu
 shell.
 
 `node scripts/e2e-usage-unpriced.mjs` (or `npm run test:e2e:usage-unpriced`)
-seeds a usage ledger holding one member on a priced model and one on a model
-that is deliberately absent from the catalog, boots the real app on that
+seeds a usage ledger holding one member on a priced model, one on a model that
+is deliberately absent from the catalog, and a Grok turn with a provider-reported
+cost, then boots the real app on that
 workspace (offline, no model call) and proves the dashboard never prices what it
 cannot price: `GET /api/token-usage` reports `unpricedTurns`/`unpricedTokens`
 instead of folding those turns into `estCostUsd`, and — measured in the running
@@ -355,6 +356,9 @@ actually spent in, its totals are marked `+?`, and the timeline caption states
 how many turns are missing from its bars. Guards the AGENTS.md no-silent-
 fallback rule at the exact spot it was violated (a `return 0` that summed into
 `≈$0.000`).
+It also verifies that the exact Grok amount wins over the missing catalog rate,
+and repeats the table containment check at 1100x720 in the dark theme while
+capturing both representative states.
 
 `node scripts/e2e-transcript-render.mjs` (or `npm run test:e2e:transcript-render`)
 boots the real app on an isolated userData + temp workspace (offline — a mock

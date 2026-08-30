@@ -1702,6 +1702,7 @@ export class SessionManager extends EventEmitter {
       provider: session.provider,
       model: snapshot?.model,
       effort: snapshot?.effort,
+      serviceTier: snapshot?.serviceTier,
       trigger,
       tokens: event.usage || {},
       costUsd: event.cost?.amountUsd ?? event.costUsd,

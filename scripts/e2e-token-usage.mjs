@@ -77,9 +77,12 @@ async function main() {
       ["frontend", "handle the re-auth hint"],
       ["reviewer", "review the auth diff"],
     ];
-    for (const [name, text] of sends) {
+    for (let index = 0; index < sends.length; index += 1) {
+      const [name, text] = sends[index];
       await post(`/api/party/members/${name}/message`, { text });
-      await delay(250);
+      // Wait for this turn to commit before sending the next one. This test is
+      // about ledger accounting, not the separate rapid-queue handoff path.
+      await waitForRecords(index + 1);
     }
 
     // Wait for the ledger to reflect every driven turn (mock auto-reply is ~700ms).
@@ -89,6 +92,8 @@ async function main() {
     // A real token split reached the ledger, and est cost was derived.
     assert(agg.totals.input > 0 && agg.totals.output > 0, `token split logged (in=${agg.totals.input}, out=${agg.totals.output})`);
     assert(agg.totals.estCostUsd > 0, `list-price estCost derived (≈$${agg.totals.estCostUsd.toFixed(4)})`);
+    assert(agg.totals.effectiveCostUsd > 0 && agg.totals.estimatedCostTurns > 0,
+      `dashboard cost uses list-price fallback when no bill is reported (≈$${agg.totals.effectiveCostUsd.toFixed(4)})`);
 
     // Rollups attribute spend correctly.
     const party = agg.parties.find((p) => p.key === partyId);

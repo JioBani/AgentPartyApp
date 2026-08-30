@@ -9,8 +9,8 @@ import type { GateFailureLayer } from "./messageGate";
  *
  * Honesty rules (mirroring docs/디자인 핸드오프/token_usage_brief.md §4/§8):
  *   - Token fields are only populated when the harness reports them. A missing
- *     field means "not reported", NEVER zero — Codex, for one, exposes no cache
- *     split. Aggregation must treat `undefined` as absent, not 0.
+ *     field means "not reported", NEVER zero. Aggregation must treat
+ *     `undefined` as absent, not 0.
  *   - `trigger` records the real cause when known and `"unknown"` otherwise; it
  *     is never fabricated into `"user"`.
  *   - `costUsd` is the harness/provider-reported bill when available (실측/
@@ -49,12 +49,27 @@ export interface TurnTokenBreakdown {
   cacheRead?: number;
   /** Cache-creation input tokens (cache writes). */
   cacheWrite?: number;
+  /** Five-minute cache writes, when the provider reports the TTL split. */
+  cacheWrite5m?: number;
+  /** One-hour cache writes, when the provider reports the TTL split. */
+  cacheWrite1h?: number;
+  /** Individual model requests, when the harness reports per-request deltas. */
+  pricingSegments?: TokenPricingSegment[];
   /** Generated / output tokens. */
   output?: number;
   /** Context-window occupancy at turn end (non-cumulative; drops after compact). */
   context?: number;
   /** Context-window size when the harness reports it numerically. */
   contextWindow?: number;
+}
+
+export interface TokenPricingSegment {
+  input?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  cacheWrite5m?: number;
+  cacheWrite1h?: number;
+  output?: number;
 }
 
 export interface TurnUsageRecord {
@@ -79,6 +94,8 @@ export interface TurnUsageRecord {
   provider?: string;
   model?: string;
   effort?: string;
+  /** Provider serving tier used for this turn (for example Cursor standard/fast). */
+  serviceTier?: string;
   trigger: TokenTrigger;
   tokens: TurnTokenBreakdown;
   /** Harness/provider-reported bill in USD when available (실측/provider-reported). */
@@ -123,8 +140,14 @@ export interface TokenUsageQuery {
 export interface SeriesTotals {
   costUsd: number;      // real bill sum (0 when all subscription/unavailable)
   estCostUsd: number;   // list-price ≈$ conversion of the turns that HAVE a rate
-  /** Turns whose model carries no catalog rate, so they are missing from
-   *  `estCostUsd` entirely. Non-zero ⇒ the total is a floor, not the cost, and
+  /** Best available cost: provider/harness reported amount, otherwise list-price estimate. */
+  effectiveCostUsd: number;
+  /** Turns contributing an exact provider/harness-reported amount. */
+  reportedCostTurns: number;
+  /** Turns contributing a catalog list-price estimate. */
+  estimatedCostTurns: number;
+  /** Turns carrying neither a reported cost nor a catalog rate, so they are
+   *  missing from `effectiveCostUsd` entirely. Non-zero ⇒ the total is a floor, and
    *  the UI must say so; `unpricedTurns === turns` ⇒ nothing is known at all
    *  and showing ≈$0.000 would be a lie. */
   unpricedTurns: number;
@@ -228,7 +251,8 @@ export interface TokenUsageAggregate {
 
 function emptyTotals(): SeriesTotals {
   return {
-    costUsd: 0, estCostUsd: 0, unpricedTurns: 0, unpricedTokens: 0,
+    costUsd: 0, estCostUsd: 0, effectiveCostUsd: 0, reportedCostTurns: 0, estimatedCostTurns: 0,
+    unpricedTurns: 0, unpricedTokens: 0,
     input: 0, cacheRead: 0, cacheWrite: 0, output: 0, turns: 0,
     overheadTokens: 0, firstHalfTokens: 0, secondHalfTokens: 0,
   };
@@ -259,8 +283,9 @@ function unionMs(intervals: Array<[number, number]>): number {
   return total;
 }
 
-/** Standard cache multipliers vs base input rate (Anthropic-style list pricing). */
-const CACHE_WRITE_MULT = 1.25;
+/** Provider defaults used only when a catalog entry has no explicit cache rate. */
+const CACHE_WRITE_5M_MULT = 1.25;
+const CACHE_WRITE_1H_MULT = 2;
 const CACHE_READ_MULT = 0.1;
 
 /**
@@ -276,16 +301,58 @@ const CACHE_READ_MULT = 0.1;
  */
 export function estimatedTurnCostUsd(record: TurnUsageRecord): number | undefined {
   const catalog = record.model ? resolveCatalogModel(record.model) : undefined;
-  const inPerM = catalog?.inPerM;
-  const outPerM = catalog?.outPerM ?? catalog?.ioPerM;
+  const tierId = record.serviceTier?.trim()
+    ? record.serviceTier.trim()
+    : record.provider === "cursor" ? catalog?.serviceTier?.default : undefined;
+  const tier = tierId
+    ? catalog?.serviceTierPricing?.[tierId]
+    : undefined;
+  const inPerM = tier?.inPerM ?? catalog?.inPerM;
+  const outPerM = tier?.outPerM ?? catalog?.outPerM ?? catalog?.ioPerM;
   if (typeof inPerM !== "number" && typeof outPerM !== "number") {
     return undefined;
   }
   const t = record.tokens;
-  const inputUnits = (t.input || 0) + (t.cacheWrite || 0) * CACHE_WRITE_MULT + (t.cacheRead || 0) * CACHE_READ_MULT;
-  const inCost = typeof inPerM === "number" ? (inputUnits / 1_000_000) * inPerM : 0;
-  const outCost = typeof outPerM === "number" ? ((t.output || 0) / 1_000_000) * outPerM : 0;
-  return inCost + outCost;
+  const segments = t.pricingSegments?.length ? t.pricingSegments : [t];
+  return segments.reduce((sum, segment) => sum + priceTokenSegment(segment, catalog, tier, inPerM, outPerM), 0);
+}
+
+function priceTokenSegment(
+  t: TokenPricingSegment,
+  catalog: ReturnType<typeof resolveCatalogModel>,
+  tier: { inPerM: number; outPerM: number; cacheReadPerM?: number; cacheWritePerM?: number } | undefined,
+  inPerM: number | undefined,
+  outPerM: number | undefined,
+): number {
+  const cacheWrite5m = t.cacheWrite5m || 0;
+  const cacheWrite1h = t.cacheWrite1h || 0;
+  const unclassifiedCacheWrite = Math.max(0, (t.cacheWrite || 0) - cacheWrite5m - cacheWrite1h);
+  const promptTokens = (t.input || 0) + (t.cacheRead || 0) + (t.cacheWrite || 0);
+  const long = catalog?.longContextPricing && promptTokens > catalog.longContextPricing.thresholdTokens
+    ? catalog.longContextPricing
+    : undefined;
+  const inputMultiplier = long?.inputMultiplier ?? 1;
+  const outputMultiplier = long?.outputMultiplier ?? 1;
+  const cacheReadPerM = tier?.cacheReadPerM ?? catalog?.cacheReadPerM
+    ?? (typeof inPerM === "number" ? inPerM * CACHE_READ_MULT : undefined);
+  const cacheWritePerM = tier?.cacheWritePerM ?? catalog?.cacheWritePerM
+    ?? (typeof inPerM === "number" ? inPerM * (catalog?.provider === "anthropic" ? CACHE_WRITE_5M_MULT : 1) : undefined);
+  const cacheWrite1hPerM = typeof inPerM === "number"
+    ? inPerM * (catalog?.provider === "anthropic" ? CACHE_WRITE_1H_MULT : 1)
+    : undefined;
+  const inCost = typeof inPerM === "number" ? ((t.input || 0) / 1_000_000) * inPerM * inputMultiplier : 0;
+  const cacheReadCost = typeof cacheReadPerM === "number" ? ((t.cacheRead || 0) / 1_000_000) * cacheReadPerM * inputMultiplier : 0;
+  const cacheWriteCost = typeof cacheWritePerM === "number" ? ((cacheWrite5m + unclassifiedCacheWrite) / 1_000_000) * cacheWritePerM * inputMultiplier : 0;
+  const cacheWrite1hCost = typeof cacheWrite1hPerM === "number" ? (cacheWrite1h / 1_000_000) * cacheWrite1hPerM * inputMultiplier : 0;
+  const outCost = typeof outPerM === "number" ? ((t.output || 0) / 1_000_000) * outPerM * outputMultiplier : 0;
+  return inCost + cacheReadCost + cacheWriteCost + cacheWrite1hCost + outCost;
+}
+
+/** Provider/harness bill when present; otherwise the deterministic list-price estimate. */
+export function effectiveTurnCostUsd(record: TurnUsageRecord): number | undefined {
+  return typeof record.costUsd === "number" && Number.isFinite(record.costUsd)
+    ? record.costUsd
+    : estimatedTurnCostUsd(record);
 }
 
 function addTurn(into: SeriesTotals, record: TurnUsageRecord, midMs?: number): void {
@@ -296,12 +363,18 @@ function addTurn(into: SeriesTotals, record: TurnUsageRecord, midMs?: number): v
   into.output += record.tokens.output || 0;
   into.turns += 1;
   const total = turnTokensTotal(record.tokens);
+  const reported = typeof record.costUsd === "number" && Number.isFinite(record.costUsd) ? record.costUsd : undefined;
   const est = estimatedTurnCostUsd(record);
-  if (est === undefined) {
+  if (est !== undefined) into.estCostUsd += est;
+  if (reported !== undefined) {
+    into.effectiveCostUsd += reported;
+    into.reportedCostTurns += 1;
+  } else if (est !== undefined) {
+    into.effectiveCostUsd += est;
+    into.estimatedCostTurns += 1;
+  } else {
     into.unpricedTurns += 1;
     into.unpricedTokens += total;
-  } else {
-    into.estCostUsd += est;
   }
   if (OVERHEAD_TRIGGERS.has(record.trigger)) {
     into.overheadTokens += total;
@@ -461,7 +534,7 @@ export function aggregateUsage(records: TurnUsageRecord[], query: TokenUsageQuer
     return row;
   };
 
-  const byEst = (a: RollupRow, b: RollupRow) => b.estCostUsd - a.estCostUsd || b.output - a.output;
+  const byEst = (a: RollupRow, b: RollupRow) => b.effectiveCostUsd - a.effectiveCostUsd || b.output - a.output;
   const partyRows = [...parties.values()].map((row) => finalize(row, partyIvals.get(row.key))).sort(byEst);
   const memberRows = [...members.values()].map((row) => finalize(row, memberIvals.get(row.key))).sort(byEst);
   const triggerRows = [...triggers.values()].map((row) => finalize(row, triggerIvals.get(row.key))).sort(byEst);

@@ -17,6 +17,7 @@ import { EnvironmentBlockedError, errorEventPayload } from "./environmentError";
 import { emptyMcpSnapshot } from "../shared/mcp";
 import type { McpServerInfo, McpServerSnapshot, McpServerState } from "../shared/mcp";
 import { DefaultTurnCostResolver, TurnUsage } from "./costing";
+import { tokenBreakdownFromClaudeUsage } from "./claudeUsage";
 import type { TurnTokenBreakdown } from "../shared/tokenUsage";
 import { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { buildModelRoutes, displayModelFor, inferModelProvider, ModelProviderId, ModelRoute, ModelRouteConfig, runtimeModelFor, visionForModel } from "./modelRegistry";
@@ -1949,21 +1950,6 @@ function tokenBreakdownFromRouterOrHarness(
     cacheRead: routerUsage.tokens.cacheRead,
     cacheWrite: routerUsage.tokens.cacheWrite,
   };
-}
-
-function tokenBreakdownFromClaudeUsage(usage: unknown): TurnTokenBreakdown | undefined {
-  const record = asRecord(usage);
-  if (!record) {
-    return undefined;
-  }
-  const input = numberValue(record.input_tokens);
-  const cacheRead = numberValue(record.cache_read_input_tokens);
-  const cacheWrite = numberValue(record.cache_creation_input_tokens);
-  const output = numberValue(record.output_tokens);
-  if (input == null && cacheRead == null && cacheWrite == null && output == null) {
-    return undefined;
-  }
-  return { input, cacheRead, cacheWrite, output };
 }
 
 /**
