@@ -99,6 +99,8 @@ await new Promise((res) => setTimeout(res, 40));
 const modal = document.querySelector(".wb-tool-modal");
 assert(Boolean(modal), "이미지 클릭이 전체 보기 오버레이를 연다");
 assert(modal.classList.contains("is-wide"), "이미지용으로 넓은 셸을 쓴다");
+assert(modal.classList.contains("is-image-viewer"), "이미지 전용 전체창 셸을 쓴다");
+assert(modal.parentElement?.parentElement === document.body, "오버레이가 패널 밖 document.body 포털에 열린다");
 assert(modal.getAttribute("role") === "dialog" && modal.getAttribute("aria-modal") === "true", "확대 뷰가 모달 대화상자로 노출된다");
 assert(Boolean(modal.getAttribute("aria-labelledby")) && Boolean(document.getElementById(modal.getAttribute("aria-labelledby"))), "대화상자 제목이 접근성 이름에 연결된다");
 assert(document.activeElement?.getAttribute("aria-label") === "닫기", "열리면 닫기 버튼으로 포커스가 이동한다");

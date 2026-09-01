@@ -64,6 +64,7 @@ expandButtons[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true })
 await new Promise((res) => setTimeout(res, 40));
 const modal = document.querySelector(".wb-tool-modal");
 assert(Boolean(modal), "clicking '전체 보기' opens the popup");
+assert(modal?.parentElement?.parentElement === document.body, "message popup is mounted at the application window root");
 assert((modal?.textContent || "").includes("paragraph 39"), "popup shows the FULL message (including the clipped tail)");
 // [#16] INVERTED ON PURPOSE. This used to require the popup to close on a
 // backdrop click — the defect, recorded as if it were the intent. The app's rule

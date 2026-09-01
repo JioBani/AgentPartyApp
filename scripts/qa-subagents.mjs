@@ -161,6 +161,7 @@ assert(Boolean(expand), "…and offers 전체 보기");
 expand.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
 await settle();
 const popup = document.querySelector(".wb-tool-modal");
+assert(popup?.parentElement?.parentElement === document.body, "delegated-task popup is mounted at the application window root");
 assert(Boolean(popup) && popup.textContent.includes("40. 리팩터링"), "전체 보기 opens the FULL prompt in a popup (nothing is lost)");
 
 console.log(failures.length ? `\nSUBAGENTS FAILED (${failures.length})` : "\nSUBAGENTS PASSED");

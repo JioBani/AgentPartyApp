@@ -59,7 +59,7 @@ async function main() {
     const within = (appRoot + path.sep).toLowerCase().startsWith(root.toLowerCase() + path.sep);
     assert(Boolean(appRoot) && within, `running build is THIS worktree (appRoot=${appRoot || "<missing>"})`);
     const windows = (await get("/api/windows")).windows || [];
-    assert(windows[0]?.workspacePath === ws, `window serves the e2e workspace (${windows[0]?.workspacePath})`);
+    assert(windows[0]?.workspacePath?.toLowerCase() === ws.toLowerCase(), `window serves the e2e workspace (${windows[0]?.workspacePath})`);
 
     await post("/api/qa/seed", {
       party: "transcript image e2e",
@@ -89,7 +89,7 @@ async function main() {
     assert(dropped.ok && attachCount >= 1, `입력창에 이미지가 첨부됐다 (ok=${dropped.ok}, thumbs=${attachCount})`);
     assert((await cdp.eval(`document.querySelectorAll(".wb-attachment-copy").length`)) === 0, "입력창 첨부 복사 버튼은 없다");
 
-    await post("/api/qa/input", { selector: "textarea.wb-composer-textarea", text: "이 이미지 확인해줘", key: "Enter", modifiers: ["control"] });
+    await post("/api/qa/input", { selector: ".wb-composer-editor", text: "이 이미지 확인해줘", key: "Enter", modifiers: ["control"] });
     await delay(1500);
 
     const present = await cdp.eval(`({
@@ -105,10 +105,32 @@ async function main() {
     let overlay = await cdp.eval(`({
       open: !!document.querySelector(".wb-tool-modal"),
       wide: !!document.querySelector(".wb-tool-modal.is-wide"),
+      imageViewer: !!document.querySelector(".wb-tool-modal.is-image-viewer"),
       fit: !!document.querySelector(".wb-image-viewer.is-fit"),
       zoom: document.querySelector("[data-image-zoom]")?.getAttribute("data-image-zoom") || null,
+      portal: document.querySelector(".wb-tool-modal-backdrop")?.parentElement === document.body,
+      geometry: (() => {
+        const backdrop = document.querySelector(".wb-tool-modal-backdrop")?.getBoundingClientRect();
+        const modal = document.querySelector(".wb-tool-modal")?.getBoundingClientRect();
+        return {
+          viewport: [innerWidth, innerHeight],
+          backdrop: backdrop && [Math.round(backdrop.left), Math.round(backdrop.top), Math.round(backdrop.right), Math.round(backdrop.bottom)],
+          modal: modal && [Math.round(modal.left), Math.round(modal.top), Math.round(modal.right), Math.round(modal.bottom)],
+        };
+      })(),
     })`);
-    assert(overlay.open && overlay.wide && overlay.fit, `크게 보기 오버레이가 맞춤으로 열린다 (${JSON.stringify(overlay)})`);
+    assert(overlay.open && overlay.wide && overlay.imageViewer && overlay.fit && overlay.portal, `크게 보기 오버레이가 창 전체 포털에서 맞춤으로 열린다 (${JSON.stringify(overlay)})`);
+    assert(
+      overlay.geometry?.backdrop?.[0] === 0 && overlay.geometry?.backdrop?.[1] === 0 &&
+        overlay.geometry?.backdrop?.[2] === overlay.geometry?.viewport?.[0] && overlay.geometry?.backdrop?.[3] === overlay.geometry?.viewport?.[1],
+      `이미지 배경이 AgentParty 창 전체를 덮는다 (${JSON.stringify(overlay.geometry)})`,
+    );
+    assert(
+      overlay.geometry?.modal?.[0] === 12 && overlay.geometry?.modal?.[1] === 12 &&
+        overlay.geometry?.modal?.[2] === overlay.geometry?.viewport?.[0] - 12 && overlay.geometry?.modal?.[3] === overlay.geometry?.viewport?.[1] - 12,
+      `이미지 보기가 창 전체 영역을 12px 안쪽까지 사용한다 (${JSON.stringify(overlay.geometry?.modal)})`,
+    );
+    await post("/api/capture", { path: path.join(shotDir, "transcript-image-window-overlay.png") });
 
     await cdp.eval(`document.querySelector("[data-image-zoom]")?.click()`);
     await delay(100);
