@@ -693,7 +693,7 @@ export interface InitialAppState {
   pendingApprovals?: PendingApproval[];
   resumableSessions?: ResumableSessionInfo[];
   resumableSessionsError?: string;
-  /** §8 first-install offer. Absent on the guide stage (never offer there). */
+  /** Retired §8 startup offer compatibility state; always non-pending. */
   guideOffer?: { pending: boolean; shown: boolean };
 }
 

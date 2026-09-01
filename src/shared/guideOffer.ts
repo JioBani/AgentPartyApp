@@ -1,8 +1,10 @@
 /**
- * First-install guide offer (§8).
+ * Disabled startup guide offer (§8 compatibility state).
  *
- * Record that the popup was *shown*, not that the user finished the guide.
- * An existing settings.json with no record is an upgrade — never offer.
+ * The guide remains available from F1, the navigation rail and the automation
+ * API, but startup must never redirect to authentication or open a popup. Old
+ * pending records are migrated to `shown: true` so they cannot reappear after
+ * an update or a later renderer change.
  */
 
 export interface GuideOfferRecord {
@@ -15,26 +17,9 @@ export interface GuideOfferView {
   shown: boolean;
 }
 
-export function resolveGuideOffer(input: {
-  record: GuideOfferRecord | null;
-  settingsExistedAtBoot: boolean;
-}): { view: GuideOfferView; write?: GuideOfferRecord } {
-  if (input.record?.shown) {
+export function resolveGuideOffer(record: GuideOfferRecord | null): { view: GuideOfferView; write?: GuideOfferRecord } {
+  if (record?.shown) {
     return { view: { pending: false, shown: true } };
   }
-  if (input.record && !input.record.shown) {
-    return { view: { pending: true, shown: false } };
-  }
-  if (input.settingsExistedAtBoot) {
-    return { view: { pending: false, shown: true }, write: { shown: true } };
-  }
-  return { view: { pending: true, shown: false }, write: { shown: false } };
-}
-
-/** What the workbench should do with a live offer + auth state. */
-export function nextGuideOfferAction(pending: boolean, connected: boolean): "idle" | "auth" | "show" {
-  if (!pending) {
-    return "idle";
-  }
-  return connected ? "show" : "auth";
+  return { view: { pending: false, shown: true }, write: { shown: true } };
 }

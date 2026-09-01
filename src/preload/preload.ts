@@ -176,9 +176,9 @@ const api = {
   listWindows: () => ipcRenderer.invoke("window:list"),
   /** Opens (or focuses) the guide stage window. Same path as POST /api/guide/open. */
   openGuide: (): Promise<GuideScreenInfo> => ipcRenderer.invoke("guide:open"),
-  /** First-install offer (§8). Same path as GET /api/guide/offer. */
+  /** Disabled startup-offer compatibility state. Same as GET /api/guide/offer. */
   getGuideOffer: (): Promise<{ pending: boolean; shown: boolean }> => ipcRenderer.invoke("guide:offer"),
-  /** Records that the offer popup was shown. Same path as POST /api/guide/offer. */
+  /** Persists the non-pending compatibility state. Same as POST /api/guide/offer. */
   markGuideOfferShown: (): Promise<{ pending: boolean; shown: boolean }> => ipcRenderer.invoke("guide:offer:shown"),
   listParty: () => ipcRenderer.invoke("party:list"),
   createParty: (input: unknown) => ipcRenderer.invoke("party:createParty", input),

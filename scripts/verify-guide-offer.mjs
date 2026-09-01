@@ -1,6 +1,6 @@
 /**
- * First-install offer (§8): upgrade must not show the popup; a fresh userData
- * must. No model call. Uses GET /api/guide/offer + POST /api/measure.
+ * Disabled startup offer (§8 compatibility): neither an upgrade nor a fresh
+ * userData may show or redirect into the guide. No model call.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -103,10 +103,12 @@ async function runPhase(label, { port, userData, workspace, writeSettings }) {
     } catch (error) {
       dialog = { error: error instanceof Error ? error.message : String(error) };
     }
+    const activeView = await post("/api/measure", { selector: ".nav-item.active", attributes: ["data-view"] });
     console.log(`\n=== ${label} ===`);
     console.log("offer", offer);
     console.log("dialog", dialog.error || `count=${(dialog.elements || []).length}`);
-    return { offer, dialog };
+    console.log("activeView", activeView.elements?.[0]?.attributes?.["data-view"] || "missing");
+    return { offer, dialog, activeView: activeView.elements?.[0]?.attributes?.["data-view"] };
   } finally {
     kill();
     await new Promise((resolve) => setTimeout(resolve, 800));
@@ -120,8 +122,9 @@ const upgrade = await runPhase("upgrade (existing settings.json)", {
   workspace: path.join(tmp, "agentparty-guide-offer-upgrade-ws"),
   writeSettings: true,
 });
-assert(upgrade.offer.pending === false && upgrade.offer.shown === true, "upgrade is shown, not pending");
+assert(upgrade.offer.pending === false && upgrade.offer.shown === true, "upgrade keeps the startup offer disabled");
 assert(Boolean(upgrade.dialog.error), `upgrade must not show the popup: ${JSON.stringify(upgrade.dialog)}`);
+assert(upgrade.activeView === "workbench", "upgrade starts in the workbench instead of redirecting to guide/auth");
 
 const fresh = await runPhase("first install (no settings.json)", {
   port: 47997,
@@ -129,16 +132,12 @@ const fresh = await runPhase("first install (no settings.json)", {
   workspace: path.join(tmp, "agentparty-guide-offer-fresh-ws"),
   writeSettings: false,
 });
-if (fresh.offer.pending && !fresh.offer.shown) {
-  console.log("  (no connected account on this host — popup correctly deferred to auth)");
-  assert(Boolean(fresh.dialog.error), "unconnected first install must not show the popup before auth");
-} else {
-  assert(fresh.offer.shown === true, "first install marks shown once the popup is up");
-  assert(!fresh.dialog.error && (fresh.dialog.elements || []).length > 0, "first install shows the popup");
-}
+assert(fresh.offer.pending === false && fresh.offer.shown === true, "fresh install keeps the startup offer disabled");
+assert(Boolean(fresh.dialog.error), "fresh install does not show the guide popup");
+assert(fresh.activeView === "workbench", "fresh install starts in the workbench instead of redirecting to guide/auth");
 
 const again = JSON.parse(fs.readFileSync(path.join(tmp, "agentparty-guide-offer-fresh-ud", "guide-offer.json"), "utf8"));
-assert(typeof again.shown === "boolean", "offer file exists after first boot");
+assert(again.shown === true, "fresh install persists the disabled offer state");
 
 if (failures.length) {
   console.error(`\nFAILED ${failures.length}:\n- ${failures.join("\n- ")}`);

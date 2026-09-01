@@ -55,9 +55,6 @@ import { TokenUsageView } from "./usage/TokenUsageView";
 import type { DiscordBridgeStatus } from "../shared/discordBridge";
 import { appendBlock, applyEvents, buildTranscriptSave, markApprovalResolved, mergeRestoredTranscript, normalizeTranscriptBlocks, nowTime, removeBlock, upsertSession } from "../shared/transcriptEvents";
 import { applySubagentEvents } from "./app/subagentEvents";
-import { hasConnectedAccount } from "../shared/guideAuth";
-import { nextGuideOfferAction } from "../shared/guideOffer";
-import { GuideOfferDialog } from "./app/GuideOfferDialog";
 import { GuideView } from "./guide/GuideView";
 import { createI18n, I18nProvider } from "./i18n/I18nProvider";
 import type { AppLocale } from "../shared/appLocale";
@@ -125,8 +122,6 @@ export function App() {
   // is fetched once and kept live via the "update:status" channel.
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | undefined>();
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
-  const [guideOfferOpen, setGuideOfferOpen] = useState(false);
-  const guideOfferHandled = useRef(false);
   const [discord, setDiscord] = useState<DiscordBridgeStatus | undefined>();
   const [usageRefreshing, setUsageRefreshing] = useState(false);
   // Transient status/error line (session start failures, etc.), surfaced as a toast.
@@ -697,28 +692,6 @@ export function App() {
       }
     }
   }, [views]);
-
-  useEffect(() => {
-    const offer = state.guideOffer;
-    if (!offer || guideOfferHandled.current) {
-      return;
-    }
-    const action = nextGuideOfferAction(offer.pending, hasConnectedAccount(state.auth));
-    if (action === "idle") {
-      return;
-    }
-    if (action === "auth") {
-      setCurrentView("auth");
-      return;
-    }
-    guideOfferHandled.current = true;
-    setGuideOfferOpen(true);
-    void window.agentParty.markGuideOfferShown().then((next) => {
-      setState((current) => ({ ...current, guideOffer: next }));
-    }).catch((error) => {
-      setPartyNotice(`가이드 안내를 기록하지 못했습니다: ${error instanceof Error ? error.message : String(error)}`);
-    });
-  }, [state.guideOffer, state.auth]);
 
   useEffect(() => {
     void window.agentParty.getInitialState().then((next) => {
@@ -2357,19 +2330,6 @@ export function App() {
           )}
         </main>
       </div>
-
-      {/* Opens even when the status fetch has not landed (or failed): the dialog
-          can re-check from inside, and a button that does nothing would be the
-          silent no-op this project forbids. */}
-      {guideOfferOpen && (
-        <GuideOfferDialog
-          onAccept={() => {
-            setGuideOfferOpen(false);
-            void openGuide();
-          }}
-          onDismiss={() => setGuideOfferOpen(false)}
-        />
-      )}
 
       {updateModalOpen && (
         <UpdateModal
