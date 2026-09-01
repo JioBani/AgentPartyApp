@@ -20,7 +20,6 @@ import { usePartyMembers } from "../app/partyMemberPrefs";
 import { LocalizedText, localized, useI18n } from "../i18n/I18nProvider";
 import { nextTranscriptMountLimit, PROGRESSIVE_TRANSCRIPT_GAP_MS } from "./transcriptScheduling";
 import type { SessionSpawnState } from "../../shared/sessionSpawn";
-import { useWorkbenchOverlayTarget } from "./WorkbenchOverlay";
 
 interface TranscriptProps {
   view: MemberView;
@@ -1307,7 +1306,6 @@ function DetailModal({ title, onClose, actions, wide, imageViewer, dismissOnBack
   dismissOnBackdrop?: boolean;
   children: ReactNode;
 }) {
-  const workbenchOverlayTarget = useWorkbenchOverlayTarget();
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -1351,7 +1349,7 @@ function DetailModal({ title, onClose, actions, wide, imageViewer, dismissOnBack
   }, []);
   return createPortal(
     <div
-      className={"wb-tool-modal-backdrop" + (imageViewer ? " is-image-viewer" : "") + (workbenchOverlayTarget ? " is-workarea-scoped" : "")}
+      className={"wb-tool-modal-backdrop" + (imageViewer ? " is-image-viewer" : "")}
       onMouseDown={(event) => {
         if (dismissOnBackdrop && event.target === event.currentTarget) onClose();
       }}
@@ -1373,7 +1371,7 @@ function DetailModal({ title, onClose, actions, wide, imageViewer, dismissOnBack
         <div className="wb-tool-modal-body">{children}</div>
       </div>
     </div>,
-    workbenchOverlayTarget ?? document.body,
+    document.body,
   );
 }
 

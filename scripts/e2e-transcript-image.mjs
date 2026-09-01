@@ -108,15 +108,13 @@ async function main() {
       imageViewer: !!document.querySelector(".wb-tool-modal.is-image-viewer"),
       fit: !!document.querySelector(".wb-image-viewer.is-fit"),
       zoom: document.querySelector("[data-image-zoom]")?.getAttribute("data-image-zoom") || null,
-      portal: document.querySelector(".wb-tool-modal-backdrop")?.parentElement?.matches("[data-workbench-overlay-root]") || false,
+      portal: document.querySelector(".wb-tool-modal-backdrop")?.parentElement === document.body,
       geometry: (() => {
         const backdrop = document.querySelector(".wb-tool-modal-backdrop")?.getBoundingClientRect();
         const modal = document.querySelector(".wb-tool-modal")?.getBoundingClientRect();
-        const workarea = document.querySelector(".wb-workarea")?.getBoundingClientRect();
         const panel = document.querySelector(".wb-panel")?.getBoundingClientRect();
         return {
           viewport: [innerWidth, innerHeight],
-          workarea: workarea && [Math.round(workarea.left), Math.round(workarea.top), Math.round(workarea.right), Math.round(workarea.bottom)],
           panel: panel && [Math.round(panel.left), Math.round(panel.top), Math.round(panel.right), Math.round(panel.bottom)],
           backdrop: backdrop && [Math.round(backdrop.left), Math.round(backdrop.top), Math.round(backdrop.right), Math.round(backdrop.bottom)],
           modal: modal && [Math.round(modal.left), Math.round(modal.top), Math.round(modal.right), Math.round(modal.bottom)],
@@ -125,17 +123,17 @@ async function main() {
     })`);
     assert(overlay.open && overlay.wide && overlay.imageViewer && overlay.fit && overlay.portal, `크게 보기 오버레이가 창 전체 포털에서 맞춤으로 열린다 (${JSON.stringify(overlay)})`);
     assert(
-      JSON.stringify(overlay.geometry?.backdrop) === JSON.stringify(overlay.geometry?.workarea) &&
-        overlay.geometry?.backdrop?.[0] > 0 &&
+      overlay.geometry?.backdrop?.[0] === 0 && overlay.geometry?.backdrop?.[1] === 0 &&
+        overlay.geometry?.backdrop?.[2] === overlay.geometry?.viewport?.[0] &&
+        overlay.geometry?.backdrop?.[3] === overlay.geometry?.viewport?.[1] &&
         overlay.geometry?.backdrop?.[2] - overlay.geometry?.backdrop?.[0] > overlay.geometry?.panel?.[2] - overlay.geometry?.panel?.[0],
-      `이미지 배경이 사이드바를 비우고 전체 탭 작업영역을 덮는다 (${JSON.stringify(overlay.geometry)})`,
+      `이미지 배경이 AgentParty 창 전체를 덮는다 (${JSON.stringify(overlay.geometry)})`,
     );
     assert(
-      overlay.geometry?.modal?.[0] === overlay.geometry?.workarea?.[0] + 12 &&
-        overlay.geometry?.modal?.[1] === overlay.geometry?.workarea?.[1] + 12 &&
-        overlay.geometry?.modal?.[2] === overlay.geometry?.workarea?.[2] - 12 &&
-        overlay.geometry?.modal?.[3] === overlay.geometry?.workarea?.[3] - 12,
-      `이미지 보기가 탭 작업영역을 12px 안쪽까지 사용한다 (${JSON.stringify(overlay.geometry?.modal)})`,
+      overlay.geometry?.modal?.[0] === 40 && overlay.geometry?.modal?.[1] === 40 &&
+        overlay.geometry?.modal?.[2] === overlay.geometry?.viewport?.[0] - 40 &&
+        overlay.geometry?.modal?.[3] === overlay.geometry?.viewport?.[1] - 40,
+      `이미지 보기가 창 전체에서 상하좌우 40px 여백을 둔다 (${JSON.stringify(overlay.geometry?.modal)})`,
     );
     await post("/api/capture", { path: path.join(shotDir, "transcript-image-window-overlay.png") });
 

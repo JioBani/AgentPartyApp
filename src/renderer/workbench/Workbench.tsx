@@ -42,7 +42,6 @@ import { PermissionModal } from "./PermissionModal";
 import { SessionStatusModal } from "./SessionStatusModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
-import { WorkbenchOverlayTargetProvider } from "./WorkbenchOverlay";
 
 interface WorkbenchProps {
   parties: PartyDefinition[];
@@ -193,7 +192,6 @@ export function Workbench(props: WorkbenchProps) {
   const [compactTarget, setCompactTarget] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [subUi, setSubUi] = useState<SubagentUiState>(loadSubagentUi);
-  const [overlayTarget, setOverlayTarget] = useState<HTMLDivElement | null>(null);
 
   const workAreaRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ member: string; x: number; y: number; active: boolean } | null>(null);
@@ -613,12 +611,11 @@ export function Workbench(props: WorkbenchProps) {
   }, [registeredParties, parties, views, activePartyId, workingByParty, memberCountByParty]);
 
   return (
-    <WorkbenchOverlayTargetProvider target={overlayTarget}>
-      <div
-        className="wb-root"
-        data-party-id={partyKey}
-        data-layout-party={seededPartyRef.current === partyKey ? partyKey : ""}
-      >
+    <div
+      className="wb-root"
+      data-party-id={partyKey}
+      data-layout-party={seededPartyRef.current === partyKey ? partyKey : ""}
+    >
       <PartySidebar
         activePartyId={activePartyId}
         views={views}
@@ -710,7 +707,6 @@ export function Workbench(props: WorkbenchProps) {
             <span><LocalizedText id="STR-2292" /></span>
           </div>
         )}
-        <div className="wb-workarea-overlay-root" data-workbench-overlay-root="1" ref={setOverlayTarget} />
       </div>
 
       {drag && (
@@ -778,8 +774,7 @@ export function Workbench(props: WorkbenchProps) {
           onClose={() => setPartyGateTarget(null)}
         />
       )}
-      </div>
-    </WorkbenchOverlayTargetProvider>
+    </div>
   );
 }
 

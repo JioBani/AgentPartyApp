@@ -2525,27 +2525,11 @@ body.wb-resizing {
   max-height: 92vh;
 }
 
-.wb-tool-modal-backdrop.is-workarea-scoped {
-  position: absolute;
-  z-index: auto;
-  pointer-events: auto;
-}
-
-.wb-tool-modal-backdrop.is-workarea-scoped .wb-tool-modal:not(.is-image-viewer) {
-  width: min(900px, 92%);
-  max-height: 86%;
-}
-
-.wb-tool-modal-backdrop.is-workarea-scoped .wb-tool-modal.is-wide:not(.is-image-viewer) {
-  width: min(1100px, 96%);
-  max-height: 92%;
-}
-
-/* Image inspection belongs to the complete tab workspace, not to the member
-   panel that launched it. The shared work-area portal keeps previews above
-   every member panel without obscuring the navigation sidebars. */
+/* Image inspection uses the complete application window like every other
+   transcript preview, while retaining enough edge space to feel like a dialog
+   rather than a second frameless window. */
 .wb-tool-modal-backdrop.is-image-viewer {
-  padding: 12px;
+  padding: 40px;
 }
 
 .wb-tool-modal.is-image-viewer {
@@ -2560,13 +2544,6 @@ body.wb-resizing {
   min-height: 0;
   padding: 12px;
   overflow: hidden;
-}
-
-.wb-workarea-overlay-root {
-  position: absolute;
-  inset: 0;
-  z-index: 1200;
-  pointer-events: none;
 }
 
 .wb-tool-modal-body {
