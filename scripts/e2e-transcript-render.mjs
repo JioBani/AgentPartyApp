@@ -332,16 +332,17 @@ async function collapsedToolOpensItsPopup() {
   const modal = await measureOne(".wb-tool-modal", []);
   ok(Boolean(modal && modal.box?.height > 0), `the popup is on screen (${modal ? Math.round(modal.box.width) + "×" + Math.round(modal.box.height) : "not rendered"})`);
   const backdrop = await measureOne(".wb-tool-modal-backdrop", []);
-  const viewport = await measureOne("body", []);
+  const workarea = await measureOne(".wb-workarea", []);
   const panel = await measureOne(".wb-panel", []);
   ok(
-    Boolean(backdrop && viewport &&
-      Math.abs(backdrop.box.left - viewport.box.left) <= 1 &&
-      Math.abs(backdrop.box.top - viewport.box.top) <= 1 &&
-      Math.abs(backdrop.box.width - viewport.box.width) <= 1 &&
-      Math.abs(backdrop.box.height - viewport.box.height) <= 1),
-    `the full-view backdrop covers the AgentParty window (${backdrop ? Math.round(backdrop.box.width) + "×" + Math.round(backdrop.box.height) : "missing"})`,
+    Boolean(backdrop && workarea &&
+      Math.abs(backdrop.box.left - workarea.box.left) <= 1 &&
+      Math.abs(backdrop.box.top - workarea.box.top) <= 1 &&
+      Math.abs(backdrop.box.width - workarea.box.width) <= 1 &&
+      Math.abs(backdrop.box.height - workarea.box.height) <= 1),
+    `the full-view backdrop covers exactly the tab workspace (${backdrop ? Math.round(backdrop.box.width) + "×" + Math.round(backdrop.box.height) : "missing"})`,
   );
+  ok(Boolean(backdrop && backdrop.box.left > 0), "the popup leaves the navigation and party/member sidebars visible");
   ok(Boolean(backdrop && panel && backdrop.box.width > panel.box.width), "the popup is not constrained to the member panel");
 
   const still = await measureOne(".wb-tool", ["open"]);
