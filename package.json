@@ -307,6 +307,7 @@
         "provider": "github",
         "owner": "JioBani",
         "repo": "AgentParty-releases",
+        "channel": "${channel}",
         "releaseType": "draft"
       }
     ],
