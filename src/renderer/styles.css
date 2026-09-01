@@ -444,6 +444,16 @@
   50% { opacity: .3; }
 }
 
+/* Minimized/hidden windows keep painting (backgroundThrottling is disabled for
+   /api/capture), so their infinite decorations — spinners, pulses, typing dots —
+   hold the renderer at full frame rate with nobody watching. The main process
+   flags the window state and App mirrors it onto this root class. */
+.wb-occluded *,
+.wb-occluded *::before,
+.wb-occluded *::after {
+  animation-play-state: paused !important;
+}
+
 /* ---------- Workbench root ---------- */
 .wb-root {
   flex: 1;
@@ -1778,18 +1788,29 @@ body.wb-resizing {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-6);
+}
+
+/* Ctrl+wheel text zoom: App sets --wb-font-scale from the persisted setting.
+   The scale is a transform on this inner wrapper, NOT `zoom` on the scroller:
+   `zoom` demotes every animation in the subtree to main-thread style recalc +
+   paint at 60fps, while a transform leaves descendants compositable. Width is
+   compensated so the scaled content still fills the scroller exactly, and the
+   min-height compensation keeps empty states vertically centered. */
+.wb-transcript-scale {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  /* Ctrl+wheel text zoom: App sets --wb-font-scale from the persisted setting.
-     `zoom` scales the transcript content proportionally within its scroll area. */
-  zoom: var(--wb-font-scale, 1);
+  padding: var(--space-6);
+  transform: scale(var(--wb-font-scale, 1));
+  transform-origin: top left;
+  width: calc(100% / var(--wb-font-scale, 1));
+  min-height: calc(100% / var(--wb-font-scale, 1));
+  box-sizing: border-box;
 }
 
 /* Keep each message/card at its natural height: when the pane shrinks (e.g. the
    composer grows), the transcript SCROLLS instead of compressing the cards. */
-.wb-transcript > * {
+.wb-transcript-scale > * {
   flex-shrink: 0;
   /* A transcript card is a flex item. Without a zero minimum, an unbroken
      runtime value (MCP transport type, URL, path, request id, …) becomes the
@@ -1798,9 +1819,13 @@ body.wb-resizing {
   max-width: 100%;
   box-sizing: border-box;
   overflow-wrap: anywhere;
+  /* Skip layout and paint for offscreen cards; the estimate is replaced by the
+     real size once a card has been rendered. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 100px;
 }
 
-.wb-transcript.density-narrow {
+.wb-transcript.density-narrow .wb-transcript-scale {
   padding: var(--space-5);
 }
 
@@ -2547,16 +2572,16 @@ body.wb-resizing {
   max-height: 92vh;
 }
 
-/* Image inspection belongs to the application window, not to the transcript
-   panel that launched it. The portal puts this shell under document.body; the
-   viewport-sized dialog then leaves only a small, consistent dismissal rim. */
+/* Image inspection uses the complete application window like every other
+   transcript preview, while retaining enough edge space to feel like a dialog
+   rather than a second frameless window. */
 .wb-tool-modal-backdrop.is-image-viewer {
-  padding: 12px;
+  padding: 40px;
 }
 
 .wb-tool-modal.is-image-viewer {
-  width: calc(100vw - 24px);
-  height: calc(100vh - 24px);
+  width: 100%;
+  height: 100%;
   max-width: none;
   max-height: none;
 }

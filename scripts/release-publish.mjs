@@ -5,7 +5,7 @@
 // 절차: 패키징 → 공개 저장소 업로드 → 릴리스 게시(본문 UTF-8) → 자산 200 확인.
 // 자세한 설명은 docs/RELEASE_FAST.md.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const ENV_FILE =
@@ -28,6 +28,8 @@ function tokenFromEnvFile(file) {
 
 const version = JSON.parse(readFileSync("package.json", "utf8")).version;
 const tag = `v${version}`;
+const prerelease = /-(alpha|beta|rc)\./.test(version);
+const feed = prerelease ? "beta.yml" : "latest.yml";
 const notesArg = process.argv.indexOf("--notes");
 const notes =
   notesArg > -1 ? process.argv[notesArg + 1] : `AgentParty ${version}`;
@@ -60,6 +62,9 @@ async function api(method, url, body) {
 if (!skipBuild) run("npm", ["run", "build"]);
 // draft 릴리스로 올라간다(package.json build.publish.releaseType).
 run("npx", ["electron-builder", "--win", "--x64", "--publish", "always"]);
+if (!existsSync(path.join("release", feed))) {
+  throw new Error(`업데이트 피드가 생성되지 않았습니다: release/${feed}`);
+}
 
 const base = `https://api.github.com/repos/${OWNER}/${REPO}`;
 const releases = await api("GET", `${base}/releases?per_page=100`);
@@ -71,11 +76,10 @@ const published = await api("PATCH", `${base}/releases/${draft.id}`, {
   name: tag,
   body: notes,
   draft: false,
-  prerelease: /-(alpha|beta|rc)\./.test(version),
+  prerelease,
 });
 
 // 익명 다운로드 경로가 실제로 열려 있는지 확인한다.
-const feed = published.prerelease ? "beta.yml" : "latest.yml";
 const required = [feed, `AgentParty-Setup-${version}.exe`];
 const checks = [];
 for (const name of required) {

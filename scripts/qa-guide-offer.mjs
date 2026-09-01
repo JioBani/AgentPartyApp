@@ -1,4 +1,4 @@
-import { nextGuideOfferAction, resolveGuideOffer } from "../dist/shared/guideOffer.js";
+import { resolveGuideOffer } from "../dist/shared/guideOffer.js";
 
 const failures = [];
 function assert(condition, message) {
@@ -10,23 +10,16 @@ function assert(condition, message) {
   }
 }
 
-const first = resolveGuideOffer({ record: null, settingsExistedAtBoot: false });
-assert(first.view.pending === true && first.view.shown === false, "first install is pending");
-assert(first.write && first.write.shown === false, "first install writes pending record");
+const first = resolveGuideOffer(null);
+assert(first.view.pending === false && first.view.shown === true, "first install does not offer the guide at startup");
+assert(first.write?.shown === true, "first install persists the disabled startup offer");
 
-const upgrade = resolveGuideOffer({ record: null, settingsExistedAtBoot: true });
-assert(upgrade.view.pending === false && upgrade.view.shown === true, "existing settings.json is an upgrade — never offer");
-assert(upgrade.write && upgrade.write.shown === true, "upgrade writes shown so a later boot does not flip");
+const pending = resolveGuideOffer({ shown: false });
+assert(pending.view.pending === false && pending.view.shown === true, "an old pending record is disabled after updating");
+assert(pending.write?.shown === true, "an old pending record is migrated to shown");
 
-const pending = resolveGuideOffer({ record: { shown: false }, settingsExistedAtBoot: true });
-assert(pending.view.pending === true, "a pending first-install survives a later settings.json write");
-
-const done = resolveGuideOffer({ record: { shown: true }, settingsExistedAtBoot: false });
+const done = resolveGuideOffer({ shown: true });
 assert(done.view.pending === false && done.view.shown === true, "shown stays shown");
-
-assert(nextGuideOfferAction(false, true) === "idle", "not pending → idle");
-assert(nextGuideOfferAction(true, false) === "auth", "pending + no account → auth first");
-assert(nextGuideOfferAction(true, true) === "show", "pending + connected → show popup");
 
 if (failures.length) {
   console.error(`FAILED ${failures.length}\n- ${failures.join("\n- ")}`);

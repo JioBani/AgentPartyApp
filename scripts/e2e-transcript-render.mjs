@@ -34,6 +34,7 @@ const shotDir = path.join(os.tmpdir(), "agentparty-w2-shots");
 // A URL that is unmistakable in the IPC log and harmless if the OS browser does
 // open it (the handler ends in a real `shell.openExternal`).
 const LINK = "https://example.com/agentparty-w2-e2e";
+const windowOverlayOnly = process.argv.includes("--window-overlay-only");
 
 let base = "";
 const failures = [];
@@ -77,7 +78,7 @@ async function main() {
     await assertRunningBuildIsThisWorktree();
     // The served workspace must be OURS — never the user's real one.
     const windows = (await get("/api/windows")).windows || [];
-    ok(windows[0]?.workspacePath === ws, `window serves the e2e workspace (${windows[0]?.workspacePath})`);
+    ok(windows[0]?.workspacePath?.toLowerCase() === ws.toLowerCase(), `window serves the e2e workspace (${windows[0]?.workspacePath})`);
 
     await post("/api/qa/seed", {
       party: "w2 transcript e2e",
@@ -86,17 +87,21 @@ async function main() {
     await post("/api/navigation", { view: "workbench" });
     await post("/api/qa/open", { panels: [["renderer"]] });
 
-    await linkOpensInOsBrowser();
-    await oneClickCopy();
-    // The indicator leg runs before the subagent leg: the drill-in detail is an
-    // overlay that covers the panel header the indicator lives in.
-    await progressIndicator();
-    await longSubagentTaskCollapses();
-    await harnessIsVisible();
-    await codeBlockSurvivesInterjection();
-    await modalsIgnoreOutsideClicks();
-    await collapsedToolOpensItsPopup();
-    await deadMemberReadsAsDisconnected();
+    if (windowOverlayOnly) {
+      await collapsedToolOpensItsPopup();
+    } else {
+      await linkOpensInOsBrowser();
+      await oneClickCopy();
+      // The indicator leg runs before the subagent leg: the drill-in detail is an
+      // overlay that covers the panel header the indicator lives in.
+      await progressIndicator();
+      await longSubagentTaskCollapses();
+      await harnessIsVisible();
+      await codeBlockSurvivesInterjection();
+      await modalsIgnoreOutsideClicks();
+      await collapsedToolOpensItsPopup();
+      await deadMemberReadsAsDisconnected();
+    }
 
     await post("/api/window/close", {}).catch(() => {});
     await waitForExit(child);
@@ -326,6 +331,19 @@ async function collapsedToolOpensItsPopup() {
 
   const modal = await measureOne(".wb-tool-modal", []);
   ok(Boolean(modal && modal.box?.height > 0), `the popup is on screen (${modal ? Math.round(modal.box.width) + "×" + Math.round(modal.box.height) : "not rendered"})`);
+  const backdrop = await measureOne(".wb-tool-modal-backdrop", []);
+  const viewport = await measureOne("body", []);
+  const panel = await measureOne(".wb-panel", []);
+  ok(
+    Boolean(backdrop && viewport &&
+      Math.abs(backdrop.box.left - viewport.box.left) <= 1 &&
+      Math.abs(backdrop.box.top - viewport.box.top) <= 1 &&
+      Math.abs(backdrop.box.width - viewport.box.width) <= 1 &&
+      Math.abs(backdrop.box.height - viewport.box.height) <= 1),
+    `the full-view backdrop covers the AgentParty window (${backdrop ? Math.round(backdrop.box.width) + "×" + Math.round(backdrop.box.height) : "missing"})`,
+  );
+  ok(Boolean(modal && viewport && modal.box.left >= 40 && viewport.box.width - modal.box.right >= 40 && modal.box.top >= 40 && viewport.box.height - modal.box.bottom >= 40), "the popup keeps margin on every window edge");
+  ok(Boolean(backdrop && panel && backdrop.box.width > panel.box.width), "the popup is not constrained to the member panel");
 
   const still = await measureOne(".wb-tool", ["open"]);
   ok(still?.attributes?.open === null || still?.attributes?.open === undefined, "…and the block behind it did not spring open");

@@ -60,6 +60,11 @@ interface TranscriptProps {
 const TAIL_BLOCKS = 450;
 const INITIAL_PAINT_BLOCKS = 20;
 
+// How long a captured scroll ratio stays authoritative around a font-scale
+// change (gesture ticks + the post-remount frames where the wrapper is still
+// reaching its real height). See pendingRatioRef in TranscriptView.
+const RESTORE_WINDOW_MS = 900;
+
 function TranscriptView({ view, density, actions, detail = "full" }: TranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Whether the view is pinned to the bottom (true unless the user scrolled up).
@@ -133,21 +138,119 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
   };
 
   // New content keeps the bottom pinned (only if the user hasn't scrolled up).
-  useLayoutEffect(stickToBottom, [view.transcript.length, lastText]);
+  // Depend on the last block's text LENGTH, not its content: the pin only needs
+  // to run when the block grew, and the full string as a dep would make React
+  // compare the whole streamed text on every render.
+  useLayoutEffect(stickToBottom, [view.transcript.length, lastText.length]);
+
+  // An unpinned view's position, as a fraction of the scroll range, waiting to
+  // be re-applied around a font-scale change. The remounted wrapper reaches its
+  // real height asynchronously (content-visibility renders cards over several
+  // frames), so the restore runs from the ResizeObserver below — re-applied on
+  // every wrapper resize inside RESTORE_WINDOW_MS instead of once at a guessed
+  // moment.
+  const pendingRatioRef = useRef<{ ratio: number; until: number } | null>(null);
+  // First call of a burst captures the current ratio; calls inside the window
+  // only keep the already-captured (earlier, less distorted) ratio alive.
+  const holdOrCaptureRatio = (node: HTMLElement) => {
+    const pending = pendingRatioRef.current;
+    if (pending && performance.now() <= pending.until) {
+      pending.until = performance.now() + RESTORE_WINDOW_MS;
+    } else {
+      const range = node.scrollHeight - node.clientHeight;
+      pendingRatioRef.current = range > 0
+        ? { ratio: node.scrollTop / range, until: performance.now() + RESTORE_WINDOW_MS }
+        : null;
+    }
+  };
+
+  // Ctrl+wheel adjusts the transcript font scale. The listener must be
+  // non-passive (preventDefault suppresses scrolling while zooming), and it is
+  // registered on this one scroller on purpose: a window-level non-passive
+  // wheel listener disables compositor ("threaded") scrolling for the entire
+  // document, serializing every wheel tick behind main-thread work. App owns
+  // the scale setting and listens for this event.
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const onWheelZoom = (event: WheelEvent) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      // An unpinned view's position must be captured BEFORE the scale changes:
+      // the new scale reshapes scrollHeight immediately, so a later capture
+      // reads a distorted ratio.
+      if (!stickRef.current) {
+        holdOrCaptureRatio(node);
+      }
+      window.dispatchEvent(new CustomEvent("wb-font-zoom", { detail: event.deltaY < 0 ? 1 : -1 }));
+    };
+    node.addEventListener("wheel", onWheelZoom, { passive: false });
+    return () => node.removeEventListener("wheel", onWheelZoom);
+  }, []);
+
+  // A font-scale change only moves the wrapper's transform; Chromium keeps the
+  // raster translation it computed for the previous scale (crbug.com/40431598),
+  // so text already painted stays rastered for the OLD scale — visibly blurred.
+  // Remounting the wrapper (key below) forces a fresh paint record at the new
+  // scale. Debounced so a multi-tick Ctrl+wheel gesture rebuilds once, not per
+  // tick; exact scroll positions do not survive a zoom anyway (text re-wraps),
+  // so an unpinned view is restored by ratio.
+  const [scaleEpoch, setScaleEpoch] = useState(0);
+  useEffect(() => {
+    let timer: number | undefined;
+    const onScaleApplied = () => {
+      clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const node = scrollRef.current;
+        // Fallback capture for changes that did not come through this pane's
+        // wheel handler (HTTP settings, another pane's gesture): the ratio is
+        // then read after the scale already moved — approximate, but it keeps
+        // the reader in the same region. A wheel-captured ratio wins.
+        if (node && !stickRef.current) {
+          holdOrCaptureRatio(node);
+        }
+        setScaleEpoch((epoch) => epoch + 1);
+      }, 300);
+    };
+    window.addEventListener("wb-font-scale-applied", onScaleApplied);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("wb-font-scale-applied", onScaleApplied);
+    };
+  }, []);
 
   // When the scroll area resizes (e.g. the composer auto-grows and shrinks this
   // pane), re-pin to the bottom so the whole conversation appears to scroll up
   // together — instead of the top staying put while the latest messages hide
-  // behind the composer.
+  // behind the composer. Re-registered per scale epoch: the wrapper observed
+  // below is replaced by the remount.
   useEffect(() => {
     const node = scrollRef.current;
     if (!node || typeof ResizeObserver === "undefined") {
       return;
     }
-    const observer = new ResizeObserver(() => stickToBottom());
+    const observer = new ResizeObserver(() => {
+      const el = scrollRef.current;
+      const pending = pendingRatioRef.current;
+      if (el && pending) {
+        if (performance.now() <= pending.until) {
+          // Post-remount restore of an unpinned view — see pendingRatioRef.
+          el.scrollTop = pending.ratio * (el.scrollHeight - el.clientHeight);
+          return;
+        }
+        pendingRatioRef.current = null;
+      }
+      stickToBottom();
+    });
     observer.observe(node);
+    // Also observe the scale wrapper: a font-scale change (or late content
+    // growth such as an image finishing) changes the CONTENT height without
+    // resizing the scroller, which would otherwise silently unpin the bottom.
+    if (node.firstElementChild) {
+      observer.observe(node.firstElementChild);
+    }
     return () => observer.disconnect();
-  }, []);
+  }, [scaleEpoch]);
 
   const onScroll = () => {
     const node = scrollRef.current;
@@ -158,6 +261,11 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
 
   return (
     <div className={"wb-transcript density-" + density} ref={scrollRef} onScroll={onScroll}>
+      {/* Font scaling lives on this inner wrapper as a transform. The scroller
+          itself must stay unscaled: CSS `zoom` on it forced every animation in
+          the subtree onto the main thread (60fps style recalc + paint of the
+          whole transcript), while a transform keeps descendants compositable. */}
+      <div className="wb-transcript-scale" key={scaleEpoch}>
       {view.transcriptLoading ? (
         <div className="wb-transcript-empty wb-transcript-loading" role="status" aria-live="polite">
           <LoaderCircle size={17} className="wb-spin" />
@@ -190,6 +298,7 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
         />
       ))}
       {!view.transcriptLoading && view.busy && <TypingIndicator />}
+      </div>
     </div>
   );
 }

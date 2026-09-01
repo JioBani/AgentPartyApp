@@ -109,8 +109,33 @@ async function main() {
       fit: !!document.querySelector(".wb-image-viewer.is-fit"),
       zoom: document.querySelector("[data-image-zoom]")?.getAttribute("data-image-zoom") || null,
       portal: document.querySelector(".wb-tool-modal-backdrop")?.parentElement === document.body,
+      geometry: (() => {
+        const backdrop = document.querySelector(".wb-tool-modal-backdrop")?.getBoundingClientRect();
+        const modal = document.querySelector(".wb-tool-modal")?.getBoundingClientRect();
+        const panel = document.querySelector(".wb-panel")?.getBoundingClientRect();
+        return {
+          viewport: [innerWidth, innerHeight],
+          panel: panel && [Math.round(panel.left), Math.round(panel.top), Math.round(panel.right), Math.round(panel.bottom)],
+          backdrop: backdrop && [Math.round(backdrop.left), Math.round(backdrop.top), Math.round(backdrop.right), Math.round(backdrop.bottom)],
+          modal: modal && [Math.round(modal.left), Math.round(modal.top), Math.round(modal.right), Math.round(modal.bottom)],
+        };
+      })(),
     })`);
-    assert(overlay.open && overlay.wide && overlay.imageViewer && overlay.fit && overlay.portal, `크게 보기 오버레이가 창 전체 body 포털에서 맞춤으로 열린다 (${JSON.stringify(overlay)})`);
+    assert(overlay.open && overlay.wide && overlay.imageViewer && overlay.fit && overlay.portal, `크게 보기 오버레이가 창 전체 포털에서 맞춤으로 열린다 (${JSON.stringify(overlay)})`);
+    assert(
+      overlay.geometry?.backdrop?.[0] === 0 && overlay.geometry?.backdrop?.[1] === 0 &&
+        overlay.geometry?.backdrop?.[2] === overlay.geometry?.viewport?.[0] &&
+        overlay.geometry?.backdrop?.[3] === overlay.geometry?.viewport?.[1] &&
+        overlay.geometry?.backdrop?.[2] - overlay.geometry?.backdrop?.[0] > overlay.geometry?.panel?.[2] - overlay.geometry?.panel?.[0],
+      `이미지 배경이 AgentParty 창 전체를 덮는다 (${JSON.stringify(overlay.geometry)})`,
+    );
+    assert(
+      overlay.geometry?.modal?.[0] === 40 && overlay.geometry?.modal?.[1] === 40 &&
+        overlay.geometry?.modal?.[2] === overlay.geometry?.viewport?.[0] - 40 &&
+        overlay.geometry?.modal?.[3] === overlay.geometry?.viewport?.[1] - 40,
+      `이미지 보기가 창 전체에서 상하좌우 40px 여백을 둔다 (${JSON.stringify(overlay.geometry?.modal)})`,
+    );
+    await post("/api/capture", { path: path.join(shotDir, "transcript-image-window-overlay.png") });
 
     await post("/api/appearance/theme", { theme: "agentparty-dark" });
     const compactBounds = await post("/api/qa/window/bounds", { width: 1100, height: 720 });
@@ -141,9 +166,9 @@ async function main() {
       `앱의 최소 창 크기 1100x720에서 검증한다 (bounds=${JSON.stringify(compactBounds.bounds)}, viewport=${JSON.stringify(compactGeometry.viewport)})`,
     );
     assert(
-      compactGeometry.modal?.[0] === 12 && compactGeometry.modal?.[1] === 12 &&
-        compactGeometry.modal?.[2] === compactGeometry.viewport?.[0] - 12 && compactGeometry.modal?.[3] === compactGeometry.viewport?.[1] - 12,
-      `이미지 팝업이 작은 창의 12px 안쪽 전체 영역을 쓴다 (${JSON.stringify(compactGeometry.modal)})`,
+      compactGeometry.modal?.[0] === 40 && compactGeometry.modal?.[1] === 40 &&
+        compactGeometry.modal?.[2] === compactGeometry.viewport?.[0] - 40 && compactGeometry.modal?.[3] === compactGeometry.viewport?.[1] - 40,
+      `이미지 팝업이 작은 창에서도 상하좌우 40px 여백을 둔다 (${JSON.stringify(compactGeometry.modal)})`,
     );
     assert(
       compactGeometry.close?.every((value, index) => index % 2 === 0 ? value >= 0 && value <= compactGeometry.viewport[0] : value >= 0 && value <= compactGeometry.viewport[1]),
@@ -175,9 +200,9 @@ async function main() {
       return { viewport: [innerWidth, innerHeight], modal: modal && [Math.round(modal.left), Math.round(modal.top), Math.round(modal.right), Math.round(modal.bottom)], fit: !!document.querySelector(".wb-image-viewer.is-fit"), theme: document.documentElement.getAttribute("data-theme") };
     })()`);
     assert(
-      largeGeometry.modal?.[0] === 12 && largeGeometry.modal?.[1] === 12 &&
-        largeGeometry.modal?.[2] === largeGeometry.viewport?.[0] - 12 && largeGeometry.modal?.[3] === largeGeometry.viewport?.[1] - 12,
-      `큰 창에서도 팝업이 전체 창에 맞는다 (${JSON.stringify(largeGeometry)})`,
+      largeGeometry.modal?.[0] === 40 && largeGeometry.modal?.[1] === 40 &&
+        largeGeometry.modal?.[2] === largeGeometry.viewport?.[0] - 40 && largeGeometry.modal?.[3] === largeGeometry.viewport?.[1] - 40,
+      `큰 창에서도 팝업이 상하좌우 40px 여백을 둔다 (${JSON.stringify(largeGeometry)})`,
     );
     assert(
       largeBounds.bounds?.width === 1400 && largeBounds.bounds?.height === 900 &&

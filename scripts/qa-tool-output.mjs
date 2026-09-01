@@ -86,6 +86,7 @@ expandBtn?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 await new Promise((res) => setTimeout(res, 40));
 const modal = document.querySelector(".wb-tool-modal");
 assert(Boolean(modal), "clicking expand opens the full-view popup");
+assert(modal?.parentElement?.parentElement === document.body, "tool popup is mounted at the application window root");
 const modalText = modal?.textContent || "";
 assert(modalText.includes(longCommand), "popup shows the FULL command (untruncated)");
 assert(modalText.includes("line 0:") && modalText.includes("line 149:"), "popup shows the full result (first + last line)");

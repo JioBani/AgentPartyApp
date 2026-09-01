@@ -3564,16 +3564,15 @@ user's parties, workspace, or saved UI state.
 
 ### `GET /api/guide/offer`
 
-`{ pending, shown }`. First-install popup state (§8). `pending` is true only
-on a brand-new userData that has not yet been shown the
-*"가이드를 먼저 보시겠습니까?"* dialog. An existing `settings.json` with no
-offer record is treated as an **upgrade** — `shown: true`, never offered.
-There is no "finished the guide" flag.
+`{ pending: false, shown: true }`. Compatibility state for the retired startup
+guide prompt (§8). AgentParty never opens or redirects into the guide during
+startup. The guide remains available through F1, the navigation rail and
+`POST /api/guide/open`. Old pending records are migrated to `shown: true`.
 
 ### `POST /api/guide/offer`
 
-Body `{ "shown": true }` only. Records that the popup was presented. Same
-AppController method as the dialog appearing. Anything else is an error.
+Body `{ "shown": true }` only. Compatibility endpoint that persists the
+non-pending state. Anything else is an error.
 
 ### `GET /api/guide`
 

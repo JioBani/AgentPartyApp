@@ -1,6 +1,6 @@
 /**
- * Persists the §8 first-install offer. Separate from settings.json so an
- * upgrade (existing settings, no record) can be told apart from a first boot.
+ * Keeps the retired §8 startup-offer API compatible. Missing and old pending
+ * records are normalized to shown so no launch can surface the guide prompt.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -8,22 +8,10 @@ import { getUserDataDir } from "./userDataDir";
 import { log } from "./logger";
 import { resolveGuideOffer, type GuideOfferRecord, type GuideOfferView } from "../shared/guideOffer";
 
-let settingsExistedAtBoot: boolean | undefined;
 let cached: GuideOfferView | undefined;
-
-function settingsPath(): string {
-  return path.join(getUserDataDir(), "settings.json");
-}
 
 function offerPath(): string {
   return path.join(getUserDataDir(), "guide-offer.json");
-}
-
-function bootHadSettings(): boolean {
-  if (settingsExistedAtBoot === undefined) {
-    settingsExistedAtBoot = fs.existsSync(settingsPath());
-  }
-  return settingsExistedAtBoot;
 }
 
 function readRecord(): GuideOfferRecord | null {
@@ -56,10 +44,7 @@ export function getGuideOffer(): GuideOfferView {
   if (cached) {
     return cached;
   }
-  const resolved = resolveGuideOffer({
-    record: readRecord(),
-    settingsExistedAtBoot: bootHadSettings(),
-  });
+  const resolved = resolveGuideOffer(readRecord());
   if (resolved.write) {
     writeRecord(resolved.write);
   }
@@ -70,12 +55,11 @@ export function getGuideOffer(): GuideOfferView {
 export function markGuideOfferShown(): GuideOfferView {
   writeRecord({ shown: true });
   cached = { pending: false, shown: true };
-  log("info", "guide", "first-install offer marked shown");
+  log("info", "guide", "startup guide offer kept disabled");
   return cached;
 }
 
 /** Test-only: drop the process-local snapshot so a later call re-reads disk. */
 export function resetGuideOfferCacheForTests(): void {
-  settingsExistedAtBoot = undefined;
   cached = undefined;
 }

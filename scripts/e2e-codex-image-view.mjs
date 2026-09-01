@@ -236,7 +236,7 @@ async function main() {
     assert(Number(beforeOpen.count || 0) === 0, "collapsed native and exec tools mount no image elements");
 
     const lazyShot = path.join(outDir, "codex-exec-image-open.png");
-    const openedExec = await post("/api/capture", { path: lazyShot, click: ".wb-transcript > details.wb-tool:last-of-type > summary" });
+    const openedExec = await post("/api/capture", { path: lazyShot, click: ".wb-transcript-scale > details.wb-tool:last-of-type > summary" });
     assert(openedExec.applied?.clicked === true, "the ordinary tool disclosure opens through the real UI");
     await delay(500);
     const afterOpen = await post("/api/measure", { selector: "details.wb-tool[open] img.wb-tool-image", limit: 5, attributes: ["src"] });

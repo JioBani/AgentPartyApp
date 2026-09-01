@@ -176,9 +176,9 @@ const api = {
   listWindows: () => ipcRenderer.invoke("window:list"),
   /** Opens (or focuses) the guide stage window. Same path as POST /api/guide/open. */
   openGuide: (): Promise<GuideScreenInfo> => ipcRenderer.invoke("guide:open"),
-  /** First-install offer (§8). Same path as GET /api/guide/offer. */
+  /** Disabled startup-offer compatibility state. Same as GET /api/guide/offer. */
   getGuideOffer: (): Promise<{ pending: boolean; shown: boolean }> => ipcRenderer.invoke("guide:offer"),
-  /** Records that the offer popup was shown. Same path as POST /api/guide/offer. */
+  /** Persists the non-pending compatibility state. Same as POST /api/guide/offer. */
   markGuideOfferShown: (): Promise<{ pending: boolean; shown: boolean }> => ipcRenderer.invoke("guide:offer:shown"),
   listParty: () => ipcRenderer.invoke("party:list"),
   createParty: (input: unknown) => ipcRenderer.invoke("party:createParty", input),
@@ -260,6 +260,14 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("settings:update", listener);
     return () => ipcRenderer.off("settings:update", listener);
+  },
+  /** Window minimized/hidden state. backgroundThrottling is off (for /api/capture),
+      so the page's visibilityState never leaves "visible" and the renderer cannot
+      detect this on its own; the main process forwards the window events. */
+  onWindowRenderState: (callback: (payload: { occluded: boolean }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: { occluded: boolean }) => callback(payload);
+    ipcRenderer.on("window:render-state", listener);
+    return () => ipcRenderer.off("window:render-state", listener);
   },
   onAppearanceUpdate: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

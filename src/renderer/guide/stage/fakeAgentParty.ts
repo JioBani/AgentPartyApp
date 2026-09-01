@@ -337,6 +337,7 @@ export function createFakeAgentParty(): FakeAgentParty {
     onModelsUpdate: (callback) => subscribe(callback),
     onPartyGroupsUpdate: (callback) => subscribe(callback),
     onSettingsUpdate: (callback) => subscribe(callback),
+    onWindowRenderState: (callback) => subscribe(callback),
     onAuthUpdate: (callback) => subscribe(callback),
     onNativeCliAuthProgress: (callback) => subscribe(callback),
     onDiscordUpdate: (callback) => subscribe(callback),

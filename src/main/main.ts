@@ -238,6 +238,20 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
 
   placeWindowOnDisplay(window);
 
+  // With backgroundThrottling off, a minimized/hidden window keeps painting at
+  // full rate and its page never reports "hidden". Tell the renderer so it can
+  // pause decorative animations nobody can see (they otherwise keep the
+  // renderer producing frames continuously).
+  const sendRenderState = () => {
+    if (!window.isDestroyed()) {
+      window.webContents.send("window:render-state", { occluded: window.isMinimized() || !window.isVisible() });
+    }
+  };
+  window.on("minimize", sendRenderState);
+  window.on("restore", sendRenderState);
+  window.on("hide", sendRenderState);
+  window.on("show", sendRenderState);
+
   const entry = registry().register(window, workspacePath);
   window.on("closed", () => {
     log("info", "window", "window closed", { id: entry.id });
