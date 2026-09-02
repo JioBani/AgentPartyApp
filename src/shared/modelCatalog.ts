@@ -4,6 +4,13 @@
  * control. Both the main process (model registry, router) and the renderer
  * (Runtime modal) read the same data, so adding a model means adding one JSON
  * entry. No per-model logic lives in code.
+ *
+ * The bundled JSON is only the release-time snapshot: the main process
+ * overlays the remotely published catalog (see src/main/remoteModelCatalog.ts)
+ * via {@link applyModelCatalog}, so new models reach users without an app
+ * release. The renderer keeps its bundled copy — it consumes model data
+ * through the main process's `models:list`/`models:update` payloads, and its
+ * direct catalog reads are display-only fallbacks.
  */
 import catalog from "./modelCatalog.json";
 
@@ -154,10 +161,76 @@ export interface CatalogModel {
   vision?: VisionSpec;
 }
 
-const MODELS: CatalogModel[] = (catalog as { models: CatalogModel[] }).models;
+/**
+ * The catalog schema version this build understands. A remote payload with a
+ * DIFFERENT major version is rejected whole (never half-parsed into broken
+ * routing); additive fields within the same version are ignore-safe.
+ */
+export const MODEL_CATALOG_SCHEMA_VERSION = 1;
+
+const CATALOG_PROVIDERS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "cursor", "deepseek", "xai"]);
+
+let MODELS: CatalogModel[] = validateModelCatalogPayload(catalog).models;
 
 export function modelCatalog(): CatalogModel[] {
   return MODELS;
+}
+
+/**
+ * Replaces the in-memory catalog with a validated payload's models. Called by
+ * the main process when the remote catalog (or its cache) loads; every reader
+ * goes through the accessor functions in this module, so the swap is atomic
+ * from their point of view. Callers are responsible for pushing rebuilt model
+ * routes to open windows afterwards.
+ */
+export function applyModelCatalog(models: CatalogModel[]): void {
+  MODELS = models;
+}
+
+/**
+ * Validates an untrusted catalog payload (remote fetch or disk cache) and
+ * returns its typed models. Throws with a specific reason on ANY structural
+ * problem — the caller falls back to the previous catalog and surfaces the
+ * error; a half-valid payload must never be applied.
+ */
+export function validateModelCatalogPayload(payload: unknown): { models: CatalogModel[] } {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("catalog payload is not an object");
+  }
+  const record = payload as { schemaVersion?: unknown; models?: unknown };
+  if (record.schemaVersion !== MODEL_CATALOG_SCHEMA_VERSION) {
+    throw new Error(
+      `unsupported catalog schemaVersion ${JSON.stringify(record.schemaVersion)} (this build understands ${MODEL_CATALOG_SCHEMA_VERSION})`,
+    );
+  }
+  if (!Array.isArray(record.models) || record.models.length === 0) {
+    throw new Error("catalog payload has no models array");
+  }
+  const seen = new Set<string>();
+  for (const [index, entry] of record.models.entries()) {
+    if (!entry || typeof entry !== "object") {
+      throw new Error(`models[${index}] is not an object`);
+    }
+    const model = entry as Partial<CatalogModel>;
+    if (typeof model.id !== "string" || !model.id.trim()) {
+      throw new Error(`models[${index}] is missing a string id`);
+    }
+    if (typeof model.label !== "string" || !model.label.trim()) {
+      throw new Error(`models[${index}] (${model.id}) is missing a string label`);
+    }
+    if (typeof model.provider !== "string" || !CATALOG_PROVIDERS.has(model.provider)) {
+      throw new Error(`models[${index}] (${model.id}) has unknown provider ${JSON.stringify(model.provider)}`);
+    }
+    if (typeof model.subscription !== "boolean") {
+      throw new Error(`models[${index}] (${model.id}) is missing the boolean subscription flag`);
+    }
+    const key = model.id.toLowerCase();
+    if (seen.has(key)) {
+      throw new Error(`duplicate model id ${model.id}`);
+    }
+    seen.add(key);
+  }
+  return { models: record.models as CatalogModel[] };
 }
 
 export function catalogModelById(id: string): CatalogModel | undefined {

@@ -19,6 +19,19 @@ export const modelRoutes: MethodRoute[] = [
     handler: (_p, ctx) => ctx.controller.refreshCodexModels(ctx.workspace),
   },
   {
+    // Which model catalog is in effect (remote/cache/bundled) and the last
+    // remote fetch outcome — a failed fetch surfaces here, never silently.
+    name: "models.catalogStatus",
+    http: "GET /api/models/catalog",
+    handler: (_p, ctx) => ctx.controller.getModelCatalogStatus(),
+  },
+  {
+    // Force-fetches the published remote catalog now (normally polled ~6h).
+    name: "models.refreshCatalog",
+    http: "POST /api/models/catalog/refresh",
+    handler: (_p, ctx) => ctx.controller.refreshModelCatalog(),
+  },
+  {
     // Account-global provider rate limits — no workspace scope.
     name: "usage.get",
     http: "GET /api/usage",

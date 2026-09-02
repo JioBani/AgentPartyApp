@@ -17,6 +17,7 @@ import type { EngineRegistry } from "./engine/engineRegistry";
 import { spawnWslEngine } from "./engine/transport/wslEngine";
 import { RemoteEngineClient } from "./engine/transport/remoteEngineClient";
 import { setUserDataDir } from "./userDataDir";
+import { startRemoteModelCatalog } from "./remoteModelCatalog";
 import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceArgFromArgv } from "../shared/workspaceLocation";
 import { WindowRegistry } from "./windowRegistry";
 import type { MemberPermissionInput, SessionView, StartPartyMemberInput, TranscriptSave, WindowInfo } from "../shared/types";
@@ -744,6 +745,13 @@ ${body}
     },
   });
   mobileLink?.setController(appController);
+  // Remote model catalog: cached copy applies synchronously, then the published
+  // catalog is fetched (and re-fetched periodically). Whenever a different
+  // catalog lands, rebuilt model routes are pushed to every window through the
+  // same path Codex discovery uses — open pickers update live.
+  startRemoteModelCatalog(() => {
+    void appController?.notifyCodexModelsChanged();
+  });
   automationApi = new AutomationApiServer({
     port: settings.automationApiPort,
     controller: appController,

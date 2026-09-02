@@ -51,6 +51,7 @@ import type { EngineRegistry } from "../engine/engineRegistry";
 import type { WindowEntry, WindowInfo, WindowRegistry } from "../windowRegistry";
 import { runSessionAction } from "./sessionActions";
 import { MODEL_PROVIDERS } from "../../shared/modelProviders";
+import { refreshRemoteModelCatalog, remoteModelCatalogStatus, type RemoteCatalogStatus } from "../remoteModelCatalog";
 import type { SubscriptionProxyController } from "../subscriptionProxyService";
 import type { SubscriptionProxyProvider } from "../../core/subscriptionProxy";
 import { getSubscriptionProxyStatus, subscriptionProxyConfig } from "../../core/subscriptionProxy";
@@ -628,16 +629,38 @@ export class AppController {
   }
 
   // --- Model routes ---------------------------------------------------------
-  /** Current selectable model routes + Codex catalog discovery state. */
-  async listModels(workspacePath: string): Promise<{ ok: true; modelRoutes: unknown[]; modelProviders: typeof MODEL_PROVIDERS; harnesses: unknown[]; codexModels: CodexModelDiscoveryState }> {
+  /**
+   * Current selectable model routes + Codex catalog discovery state. `catalog`
+   * reports which model catalog built the routes (remote/cache/bundled) so a
+   * stale or failed remote fetch is visible to the UI and automation clients.
+   */
+  async listModels(workspacePath: string): Promise<{ ok: true; modelRoutes: unknown[]; modelProviders: typeof MODEL_PROVIDERS; harnesses: unknown[]; codexModels: CodexModelDiscoveryState; catalog: RemoteCatalogStatus }> {
     const codexModels = await this.engineFor(workspacePath).listCodexModels();
-    return { ok: true, ...publicModelDiscovery(codexModels) };
+    return { ok: true, ...publicModelDiscovery(codexModels), catalog: remoteModelCatalogStatus() };
   }
 
   /** Re-runs Codex catalog discovery and returns the fresh state. */
   async refreshCodexModels(workspacePath: string): Promise<{ ok: true; modelRoutes: unknown[]; modelProviders: typeof MODEL_PROVIDERS; harnesses: unknown[]; codexModels: CodexModelDiscoveryState }> {
     const codexModels = await this.engineFor(workspacePath).listCodexModels(true);
     return { ok: true, ...publicModelDiscovery(codexModels) };
+  }
+
+  /**
+   * Where the model catalog currently in effect came from (remote/cache/bundled),
+   * with the last fetch outcome — a failed fetch is visible here, not silent.
+   */
+  getModelCatalogStatus(): { ok: true; catalog: RemoteCatalogStatus } {
+    return { ok: true, catalog: remoteModelCatalogStatus() };
+  }
+
+  /**
+   * Force-fetches the published remote catalog now. A changed catalog pushes
+   * rebuilt model routes to every window via the callback wired in main.ts;
+   * the returned status carries the outcome either way.
+   */
+  async refreshModelCatalog(): Promise<{ ok: true; catalog: RemoteCatalogStatus }> {
+    const catalog = await refreshRemoteModelCatalog();
+    return { ok: true, catalog };
   }
 
   /**

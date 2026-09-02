@@ -1491,6 +1491,45 @@ install. It does not return Cursor credentials or make a model call.
 Re-runs Codex model discovery and returns the same shape as `GET /api/models`
 after the fresh discovery settles.
 
+### `GET /api/models/catalog`
+
+Reports which **model catalog** built the current routes. The catalog is
+published remotely (the public release repo the auto-updater already uses) so
+new models reach users without an app release; the app falls back
+remote → disk cache → bundled snapshot, and every fallback is visible here —
+never silent. `GET /api/models` carries the same object as `catalog`.
+
+```json
+{
+  "ok": true,
+  "catalog": {
+    "source": "remote",
+    "url": "https://raw.githubusercontent.com/JioBani/AgentParty-releases/main/modelCatalog.json",
+    "modelCount": 42,
+    "fetchedAt": "2026-09-02T04:12:00.000Z",
+    "lastCheckedAt": "2026-09-02T04:12:00.000Z"
+  }
+}
+```
+
+- `source` — `remote` (live fetch this run), `cache` (last good remote from
+  disk), or `bundled` (release-time snapshot; the app never fails to start for
+  lack of network).
+- `lastError` — present when the newest fetch or cache load was rejected
+  (network failure, invalid payload, unsupported `schemaVersion`). The
+  previously applied catalog stays in effect.
+
+Publishing an update is `npm run catalog:publish` from the source repo (also
+runs automatically inside `release:win`); users pick it up within ~5 minutes
+on their next poll (~6h cycle) or app start.
+
+### `POST /api/models/catalog/refresh`
+
+Force-fetches the published remote catalog now and returns the same
+`{ ok, catalog }` shape. When the catalog actually changed, rebuilt model
+routes are pushed to every window (`models:update`), so open pickers update
+live.
+
 ### `GET /api/usage`
 
 Current account/provider-scoped rate-limit usage — the data behind the titlebar

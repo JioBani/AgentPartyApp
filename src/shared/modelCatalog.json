@@ -1,5 +1,6 @@
 {
-  "_about": "Single source of truth for model routing, leaderboard metrics and reasoning control. Anthropic is native on Claude Code and uses local Claude OAuth on Codex; OpenAI is native on Codex and uses local Codex OAuth on Claude Code; provider=openrouter models use OpenRouter on either harness. The selected harness process never changes. Add a model by adding one entry.",
+  "_about": "Single source of truth for model routing, leaderboard metrics and reasoning control. Anthropic is native on Claude Code and uses local Claude OAuth on Codex; OpenAI is native on Codex and uses local Codex OAuth on Claude Code; provider=openrouter models use OpenRouter on either harness. The selected harness process never changes. Add a model by adding one entry, then run `npm run catalog:publish` to ship it to all users without an app release (docs/기획 노트 — 원격 모델 카탈로그.md).",
+  "schemaVersion": 1,
   "models": [
     {
       "id": "claude-fable-5[1m]",
