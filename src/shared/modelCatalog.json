@@ -3,6 +3,44 @@
   "schemaVersion": 1,
   "models": [
     {
+      "id": "claude-fable-5-1[1m]",
+      "label": "Fable 5.1",
+      "provider": "anthropic",
+      "subscription": true,
+      "claudeSubscriptionModel": "claude-fable-5-1",
+      "orModelId": "anthropic/claude-fable-5-1",
+      "description": "Fable 5.1, the newest Mythos-class frontier model. Adaptive thinking is always on (cannot be disabled); safety classifiers may refuse a request. Pricing/effort assumed same as Fable 5 — verify against the live API.",
+      "context": "1M",
+      "perf": 5,
+      "costTier": 5,
+      "inPerM": 10,
+      "outPerM": 50,
+      "ioPerM": 20,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "high"
+        },
+        "thinking": {
+          "modes": [
+            "adaptive"
+          ],
+          "default": "adaptive"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
+    },
+    {
       "id": "claude-fable-5[1m]",
       "label": "Fable",
       "provider": "anthropic",
