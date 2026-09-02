@@ -1,6 +1,5 @@
 /**
- * Member mention in the composer, opened by `m:` (or `m` spelled out,
- * `member:`).
+ * Member mention candidates for the composer's triggerless completion.
  *
  * Separate from the `/` command palette on purpose. That one triggers only when
  * the WHOLE draft is the command (it bails on any whitespace) and replaces the
@@ -9,9 +8,9 @@
  * token under it — different rules, different code, and `/` keeps behaving
  * exactly as it does today.
  *
- * The trigger is only how the list is OPENED. A mention still looks like
- * `@alice` and still serializes to `@alice`, so sent messages and the transcript
- * tokenizer are untouched by the trigger change.
+ * Typing the beginning of a member name opens the list. A selected mention still
+ * looks like `@alice` and serializes to `@alice`, so sent messages and the
+ * transcript tokenizer are untouched.
  */
 import { rankByFuzzyAny } from "./fuzzyMatch";
 
@@ -51,13 +50,12 @@ export function mentionTitle(name: string): string {
 /*
  * Detection lives in `completionModel.ts`.
  *
- * `m:` (members) and `a:` (models) are the same mechanism — a prefix word, a
- * colon, then a query — so they are recognised by one function. Two regexes
- * over one syntax would be two places for the "must start a word" rule to drift.
+ * Members and models are recognised by the same word detector, so there is one
+ * place for the "must start a word" and reserved-punctuation rules to live.
  */
 
 /**
- * Members offered for `:m`, in party order.
+ * Members offered for the current word, in party order.
  *
  * `exclude` is the member whose conversation this is: mentioning the person you
  * are already talking to is noise. Only real party members ever appear —

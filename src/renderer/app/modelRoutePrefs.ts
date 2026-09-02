@@ -3,12 +3,12 @@ import type { RouteLike } from "../workbench/routes";
 
 /**
  * A one-value publish/subscribe channel carrying the model routes from `App`
- * down to the composer, which needs them for `:a` completion and gets nothing
- * else from the layers in between.
+ * down to the composer, which needs them for triggerless completion and gets
+ * nothing else from the layers in between.
  *
  * Same shape and same reason as `app/partyMemberPrefs.ts`: not a second source
  * of truth — nothing writes here except {@link usePublishModelRoutes}, and the
- * composer never fetches routes on its own. That is what guarantees `:a` can
+ * composer never fetches routes on its own. That guarantees completion can
  * only ever complete a model the app actually has a route for; there is no
  * second catalog to drift.
  */

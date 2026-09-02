@@ -1,5 +1,5 @@
 /**
- * `a:` model completion — a chain of pickers that writes TEXT.
+ * Triggerless member/model completion — a chain of pickers that writes TEXT.
  *
  * ## It changes nothing
  *
@@ -33,7 +33,7 @@ import { PROVIDER_DOTS, PROVIDER_LABELS, routeProvider, type ProviderId } from "
 import type { RouteLike } from "./routes";
 
 /**
- * The steps a `:a` completion can walk, in order.
+ * The steps a model completion can walk, in order.
  *
  * Provider comes FIRST because it is the cut that makes the rest small: 66
  * routes is a scan, one provider's handful is a choice. It also matches how the
@@ -45,7 +45,7 @@ export type ChainStage = "provider" | "model" | "effort" | "thinking" | "service
 /**
  * What a chosen row becomes in the message.
  *
- * `member` is here even though members are not part of the `:a` chain, because
+ * `member` is here even though members are not part of the model chain, because
  * both lists render and select through the same code — one row type keeps the
  * popover and the key handling from needing to know which list they are in.
  */
@@ -82,8 +82,8 @@ export interface CompletionSection {
   rows: CompletionRow[];
 }
 
-/** Which list a trigger opens. */
-export type CompletionKind = "model" | "member";
+/** Which lists a detected word opens. Legacy explicit triggers narrow the list. */
+export type CompletionKind = "all" | "model" | "member";
 
 export interface CompletionTrigger {
   kind: CompletionKind;
@@ -103,7 +103,7 @@ export interface CompletionTrigger {
 /** Most rows offered at once; past this the list is a scan, not a pick. */
 export const COMPLETION_LIMIT = 8;
 
-/** Short and long spelling open the same list; the long one is its own label. */
+/** Legacy short and long spellings remain accepted for existing drafts. */
 const TRIGGERS: Record<string, CompletionKind> = {
   a: "model",
   agent: "model",
@@ -121,30 +121,28 @@ const TRIGGERS: Record<string, CompletionKind> = {
 const SEPARATORS = [":", ";"];
 
 /**
- * Finds an active completion trigger immediately before the caret.
+ * Finds the active word immediately before the caret.
  *
- * ## Why `:a` and not `@`
+ * ## Triggerless by default
  *
- * `@` is reserved by the harnesses — Codex opens its skill/plugin/file picker on
- * it, Claude Code opens file mentions. Taking it here would collide with
- * whatever each harness decides next, separately, forever. A colon plus a word
- * sits outside that argument, and it names what it summons in letters instead
- * of asking anyone to memorise a symbol.
+ * A normal identifier word opens one combined list of matching members,
+ * providers, harnesses and models. This deliberately behaves like an editor's
+ * symbol completion: typing `i` can offer member `impl`; typing `c` can offer
+ * Claude, Codex and Cursor. No prefix has to be remembered.
  *
- * ## Accepted spellings
+ * ## Legacy spellings
  *
  * `:a` `;a` `a:` `a;` and the same four for `agent`, `m`, `member` — in any
- * case. The separator may lead or follow because both are the same gesture, and
- * `;` is the unshifted twin of `:`. Only the WORD is fixed.
+ * case — still narrow the list to models or members. Keeping them costs no
+ * ambiguity and avoids breaking text restored from an older draft.
  *
  * ## Why this does not fire by accident
  *
- * The whole thing must START a word — preceded by the beginning of the draft,
- * whitespace, or an opening bracket — and the word before the separator must be
- * one of the four. That rules out the colons ordinary text is full of:
- * `C:\Users` (word `c`), `http://…`, `10:30`, `wsl+Ubuntu-22.04:/home`,
- * `8080:8080`. The query then stops at whitespace, so a trigger can never
- * swallow the rest of the sentence.
+ * The token must START a word — preceded by the beginning of the draft,
+ * whitespace, or an opening bracket. Triggerless tokens are identifiers only:
+ * a letter/digit/Hangul character followed by letters, digits, `_`, `-` or `.`.
+ * `/`, `@`, paths, URLs and punctuation therefore keep their existing meaning.
+ * The query stops at whitespace, so completion never swallows a sentence.
  */
 export function detectCompletion(draft: string, caret: number): CompletionTrigger | null {
   const upToCaret = draft.slice(0, Math.max(0, caret));
@@ -158,8 +156,8 @@ export function detectCompletion(draft: string, caret: number): CompletionTrigge
   if (!token) {
     return null;
   }
-  // Matched against the KEYS pressed, not the glyphs shown: with the IME on `:a`
-  // arrives as `:ㅁ`. Same keystrokes, same intent.
+  // Matched against the KEYS pressed, not only the glyphs shown: with the IME
+  // on, a Latin member/model query may arrive as Hangul from the same keys.
   const typed = (hasHangul(token) ? qwertyFromHangul(token) : token).toLowerCase();
   // Longest spellings first, so `agent` is read as one word rather than `a`
   // followed by "gent".
@@ -173,13 +171,25 @@ export function detectCompletion(draft: string, caret: number): CompletionTrigge
   const body = leading ? typed.slice(1) : typed;
   const word = words.find((candidate) =>
     leading ? body.startsWith(candidate) : body.startsWith(candidate) && SEPARATORS.includes(body[candidate.length]));
-  if (!word) {
+  if (word) {
+    // Keys consumed by the legacy trigger itself: the word plus its separator.
+    const consumed = word.length + 1;
+    const queries = dedupe([rawAfter(token, consumed), typed.slice(consumed)]);
+    return { kind: TRIGGERS[word], queries, start: upToCaret.length - token.length, end: upToCaret.length };
+  }
+
+  // Do not steal command, mention, path, URL or punctuation syntax. A dot and
+  // hyphen are allowed after the first character because model ids commonly
+  // contain both (`gpt-5.6`), while the first character must be a real word.
+  if (!/^[\p{L}\p{N}_][\p{L}\p{N}_.-]*$/u.test(token)) {
     return null;
   }
-  // Keys consumed by the trigger itself: the word plus its one separator.
-  const consumed = word.length + 1;
-  const queries = dedupe([rawAfter(token, consumed), typed.slice(consumed)]);
-  return { kind: TRIGGERS[word], queries, start: upToCaret.length - token.length, end: upToCaret.length };
+  return {
+    kind: "all",
+    queries: dedupe([token, typed]),
+    start: upToCaret.length - token.length,
+    end: upToCaret.length,
+  };
 }
 
 /**
@@ -278,7 +288,7 @@ export function providerStageSections(routes: readonly RouteLike[], queries: rea
   // Models appear here ONLY once something has been typed.
   //
   // Someone who knows the model's name should not have to walk through its
-  // provider to reach it — `:ahaiku` goes straight there, and choosing it skips
+  // provider to reach it — typing `haiku` goes straight there, and choosing it skips
   // to that model's own options. But listing all 66 with an empty query would
   // undo the reason provider comes first, so the short list stays the default
   // and the long one is what a query buys.
@@ -319,6 +329,7 @@ export function modelRows(routes: readonly RouteLike[], provider?: string): Comp
       secondary: providerOf(route),
       value,
       kind: "model",
+      provider: routeProvider(route),
       route,
     });
   }
@@ -431,7 +442,7 @@ export function flattenRows(sections: readonly CompletionSection[]): CompletionR
 }
 
 /**
- * Member rows for `:m`.
+ * Member rows for the first completion stage.
  *
  * The label keeps the `@`, because a mention IS `@name` — the row should read as
  * the thing about to be inserted, not as the trigger that found it. Candidate

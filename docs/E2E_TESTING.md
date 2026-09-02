@@ -98,6 +98,7 @@ the mockup to the tenth of a pixel.
 | `qa-message-preview` | sent/received **message** bodies (user + channel) preview by default and open the FULL text in a popup via "전체 보기"; short messages show in full with no expand control |
 | `qa-harness-badge` | the execution harness shown wherever a member is identified ([P-8]): the shared `harnessLabel`/`harnessShort` helper (full + short names, an UNKNOWN harness id surfaced as-is instead of mapped to a guess, no default for a member with none), and the TabStrip DOM — each tab carries ITS OWN badge, the tooltip names the harness in full, and the badge yields to the member name when narrow. The sidebar row's badge is covered by `qa-render`. |
 | `qa-command-palette` | composer `/` command/skill palette: harness-aware trigger, **live harness-reported inventory** (plugin/MCP/custom commands) merged with static built-ins, filter, action vs insert select |
+| `qa-composer-completion` | Triggerless composer completion: one letter can find a member/provider/model, a member created while a query is open appears without another keystroke, Tab commits a member mention or advances provider → model, durable versioned tags restore the exact selected labels in the transcript while malformed lookalikes remain literal, deleting a mistaken provider closes its now-stale model list, while deleting only a model keeps the provider and reopens that provider's full model list, reserved `/` and `@` syntax stays untouched, and an open list never steals the configured Enter/Ctrl+Enter send gesture |
 | `qa-default-profile` | member-creation default derived per-harness (`defaultMemberProfileOf`); RuntimeModal **harness lock** after first turn |
 | `qa-harness-defaults` | **per-harness creation defaults** (harness-general): `harnessDefaultsOf`/`defaultMemberProfileOf` resolve each harness's own defaults; `buildPartyMember` creates a member from ITS harness's defaults (Codex → codex default model + 2-axis policy, Claude → claude default + permission mode); legacy flat settings.json migrates into `harnessDefaults["claude-code"]` |
 | `qa-codex-policy` | Codex two-axis safety model: presets (Read Only/Auto/Full Access) + sandbox×approval + guardian; RuntimeModal shows it for Codex only |
@@ -492,6 +493,23 @@ writing to the **real OS clipboard** through `POST /api/clipboard/image` (the sa
 method behind the composer's copy button), asserting the response reports the
 image actually written and that undecodable bytes are an error rather than a
 silent empty write. Capture: `composer-input-e2e.png`.
+
+`node scripts/e2e-composer-completion.mjs` (or
+`npm run test:e2e:composer-completion`) boots the real app and drives the
+contenteditable composer through `POST /api/qa/input`: `i` exposes the live
+`impl` member and Tab inserts `@impl`; `cl` exposes Claude, Tab inserts its
+provider, and the next live popover contains only that provider's models. It
+also keeps an unmatched member query open, creates that member through the
+public API, and proves the row appears without another input event. It
+then Backspaces that mistaken Claude token, proves the model popover closes,
+types `co`, and walks Codex → a Codex model instead. It then deletes only that
+model and proves the full Codex model list reopens while the Codex provider
+token remains. It selects a model again, sends the message, and verifies the
+real transcript restores selectable provider/model chips rather than exposing
+their durable storage wrapper. The same run sends plain
+`cl` with Ctrl+Enter while the list is open, proving triggerless discovery
+cannot hijack message send. It uses the live route catalog but makes no
+provider/model call.
 
 `node scripts/e2e-auto-compact.mjs` (or `npm run test:e2e:auto-compact`) boots the
 real app on an isolated userData + temp workspace (offline — mock members, no

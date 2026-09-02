@@ -58,7 +58,7 @@ const EDGE = 8;
  *
  * ## One popover for every list
  *
- * `:m` (members) and `:a` (models, then effort, then thinking…) render through
+ * Members, providers, models and the chained model options all render through
  * this same component. They differ only in their rows, so a second
  * implementation would only be a second place for the placement maths and the
  * focus rules to go wrong — and the two lists would slowly stop looking alike.
@@ -66,9 +66,8 @@ const EDGE = 8;
  *
  * ## The heading carries the discovery
  *
- * `:a` is not a symbol anyone guesses, so the popover says what it is showing
- * ("모델", "Effort") and what the keys do. The list teaches its own syntax at
- * the moment it appears, which is the only moment the user is looking.
+ * The popover says what it is showing ("멤버", "모델", "Effort") and what the
+ * keys do. The list teaches its keyboard flow at the moment the user needs it.
  *
  * Rendered in a portal so it is never clipped by the composer's own box, and
  * flipped below the caret when there is no room above.

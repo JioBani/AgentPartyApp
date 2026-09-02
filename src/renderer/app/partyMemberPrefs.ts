@@ -1,10 +1,10 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useLayoutEffect, useSyncExternalStore } from "react";
 import type { MentionCandidate } from "../workbench/mentionModel";
 
 /**
  * A one-value publish/subscribe channel carrying the CURRENT party's members
- * from `App` down to the composer, which needs them for `@` completion and gets
- * nothing else from the layers in between.
+ * from `App` down to the composer, which needs them for triggerless completion
+ * and gets nothing else from the layers in between.
  *
  * Same shape and same reason as `app/composerPrefs.ts` and
  * `app/favoriteModelPrefs.ts`: not a second source of truth — nothing writes
@@ -27,7 +27,10 @@ function snapshot(): MentionCandidate[] {
 
 /** Publishes the members App holds. Call once, from the party-state owner. */
 export function usePublishPartyMembers(members: MentionCandidate[]): void {
-  useEffect(() => {
+  // Publish before paint. With a passive effect the sidebar could already show
+  // a newly created member while an open composer still read the previous
+  // catalog snapshot until the next effect turn.
+  useLayoutEffect(() => {
     const changed =
       members.length !== current.length ||
       members.some((member, index) => {

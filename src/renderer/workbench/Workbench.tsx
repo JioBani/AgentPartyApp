@@ -152,14 +152,14 @@ export function Workbench(props: WorkbenchProps) {
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
   const partyKey = activePartyId || "default";
 
-  // `:m` completion offers these and only these. Published from the same `views`
+  // Member completion offers these and only these. Published from the same `views`
   // the workbench already renders, so the popover cannot name a member the party
   // does not have — a mention of nobody would simply go nowhere.
   usePublishPartyMembers(useMemo(
     () => views.map((view) => ({ name: view.name, color: view.color, status: statusLabel(view.status) })),
     [views],
   ));
-  // Same arrangement for `:a`: the composer completes models from the routes the
+  // Same arrangement for models: the composer completes from the routes the
   // rest of the workbench already picks from, so the text it writes can only
   // name a model the app actually knows how to run.
   usePublishModelRoutes(routes);

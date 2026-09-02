@@ -16,6 +16,7 @@ import { collectDisplayImages, hasDisplayImages, isRenderableImage, type Display
 import { isTranscriptAtCap } from "../../shared/transcriptCap";
 import { memberColorVars } from "../theme/memberColors";
 import { MessageText } from "./messageTokens";
+import { messageTagMatches } from "../../shared/messageTags";
 import { usePartyMembers } from "../app/partyMemberPrefs";
 import { LocalizedText, localized, useI18n } from "../i18n/I18nProvider";
 import { nextTranscriptMountLimit, PROGRESSIVE_TRANSCRIPT_GAP_MS } from "./transcriptScheduling";
@@ -1236,6 +1237,12 @@ export function previewOf(text: string): string {
       break;
     }
   }
+  // Never cut a valid durable tag in half. A partial marker would leak the
+  // storage representation into the otherwise rich transcript preview.
+  const crossingTag = messageTagMatches(text).find((tag) => tag.index < end && tag.end > end);
+  if (crossingTag) {
+    end = crossingTag.index;
+  }
   const clipped = text.slice(0, end);
   return `${clipped.replace(/\s+$/, "")} …`;
 }
@@ -1339,9 +1346,11 @@ export function ExpandableText({ text, title, markdown, chips, sourceLocation }:
       )}
       {full && (
         <DetailModal title={title} onClose={() => setFull(false)}>
-          {/* The full view stays literal: this is where someone goes to read the
-              exact string that was sent, paths and all. */}
-          {markdown ? <Markdown text={text} sourceLocation={sourceLocation} /> : <pre className="wb-pre wb-expandable-full">{text}</pre>}
+          {markdown
+            ? <Markdown text={text} sourceLocation={sourceLocation} />
+            : chips
+              ? <pre className="wb-pre wb-expandable-full"><MessageText text={text} members={members} /></pre>
+              : <pre className="wb-pre wb-expandable-full">{text}</pre>}
         </DetailModal>
       )}
     </>

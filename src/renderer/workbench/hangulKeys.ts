@@ -3,13 +3,12 @@
  *
  * ## Why
  *
- * The composer triggers are Latin (`:a`, `:m`), but the IME is usually left on.
- * Typing `:a` with 한글 mode active produces `:ㅁ`, and nothing opens. That is not
- * a typo the user can see — the keys pressed were correct, and the app simply
- * refuses. Converting `ㅁ` back to `a` makes the trigger work under either IME
- * state, which is what the user actually means both times.
+ * Member, provider and model names are often Latin, but the IME is usually left
+ * on. Typing `impl` with 한글 mode active produces `ㅑㅡㅔㅣ`. That is not a typo
+ * the user can see — the intended keys were correct. Reading those glyphs back
+ * as keys makes triggerless completion work under either IME state.
  *
- * The same applies to the filter text: `:ㅁ햐` is `:ahai` typed in 한글 mode.
+ * The same applies to chained model filters typed inside the popover.
  *
  * ## What this is not
  *

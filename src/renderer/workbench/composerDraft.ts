@@ -19,6 +19,7 @@
  * and the loss would be silent.
  */
 import { fileReference, quoteReferencePath, type FileReference, type ReferenceKind } from "../../shared/fileReferences";
+import { createMessageTag, isMessageTagKind, type MessageTagKind } from "../../shared/messageTags";
 import { tokenizeMessage } from "./messageTokens";
 import { mentionTitle } from "./mentionModel";
 
@@ -28,12 +29,11 @@ const KIND_ATTR = "data-ref-kind";
 /** Marks a mention chip and carries the member name it stands for. */
 const MENTION_ATTR = "data-mention";
 /**
- * Marks an `a:` completion chip and carries the EXACT text it writes.
+ * Marks a model/provider completion chip and carries the EXACT text it writes.
  *
- * Separate from the mention attribute because the two serialize differently: a
- * mention is written back with its `@`, a model id bare. That fork is the whole
- * reason this attribute exists — `@claude-haiku-4-5-20251001` is not something
- * anyone would type, and prefixing it would corrupt the id it stands for.
+ * Separate from the mention attribute because mentions keep their established
+ * `@name` representation, while completion tokens use a durable AgentParty tag
+ * carrying both the exact value and the label the user selected.
  */
 const TOKEN_ATTR = "data-token";
 /** Which kind of value the token holds. Styling and tooltip only. */
@@ -104,9 +104,9 @@ export function createMentionChip(doc: Document, name: string, color: string): H
 
   const at = doc.createElement("span");
   at.className = "wb-mention-chip-at";
-  // The chip is unchanged by F-14: `m:` is only how the picker is OPENED. What a
-  // mention looks like and what it serializes to stay `@name`, so sent messages
-  // and `tokenizeMessage()` need no migration.
+  // Completion only changes how the mention is found. What a mention looks like
+  // and what it serializes to stay `@name`, so sent messages and
+  // `tokenizeMessage()` need no migration.
   at.textContent = "@";
   chip.appendChild(at);
   chip.appendChild(doc.createTextNode(name));
@@ -114,14 +114,14 @@ export function createMentionChip(doc: Document, name: string, color: string): H
 }
 
 /**
- * Builds a `//` completion chip.
+ * Builds a provider/model completion chip.
  *
  * `label` is what the user reads (`Haiku 4.5`); `value` is what the message
  * carries (`claude-haiku-4-5-20251001`). The tooltip shows the value, because
  * the point of the chip is that an exact string is going out and the user should
  * be able to check which one without sending first.
  */
-export function createTokenChip(doc: Document, kind: string, label: string, value: string): HTMLElement {
+export function createTokenChip(doc: Document, kind: MessageTagKind, label: string, value: string): HTMLElement {
   const chip = doc.createElement("span");
   chip.className = "wb-token-chip";
   chip.setAttribute("contenteditable", "false");
@@ -160,13 +160,13 @@ export function serializeDraft(root: HTMLElement): string {
         out += `@${mention}`;
         continue;
       }
-      // An `a:` token writes its value bare — no prefix. This is the one place
-      // the two chip kinds part ways: `@alice` addresses somebody, while
-      // `claude-haiku-4-5-20251001` IS the string, and decorating it would
-      // break the id it stands for.
       const token = el.getAttribute(TOKEN_ATTR);
       if (token) {
-        out += token;
+        const kind = el.getAttribute(TOKEN_KIND_ATTR);
+        const label = el.textContent || token;
+        // Only chips created from the allow-listed completion kinds are tagged.
+        // A damaged/foreign DOM node stays readable instead of losing its text.
+        out += isMessageTagKind(kind) ? createMessageTag({ kind, value: token, label }) : token;
         continue;
       }
       if (el.tagName === "BR") {
@@ -296,6 +296,10 @@ export function rehydrateDraft(
     if (token.kind === "path") {
       const known = refByPath.get(token.path);
       root.appendChild(createChip(doc, known || fileReference(token.path)));
+      continue;
+    }
+    if (token.kind === "tag") {
+      root.appendChild(createTokenChip(doc, token.tagKind, token.label, token.value));
       continue;
     }
     root.appendChild(doc.createTextNode(token.text));

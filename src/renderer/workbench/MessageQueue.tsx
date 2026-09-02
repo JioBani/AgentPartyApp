@@ -20,6 +20,9 @@ import { buildQueueView, type QueueRowView } from "./queueView";
 import type { MemberView, PanelDensity } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { usePartyMembers } from "../app/partyMemberPrefs";
+import { messageTagsToDisplayText } from "../../shared/messageTags";
+import { MessageText } from "./messageTokens";
 
 interface MessageQueueProps {
   view: MemberView;
@@ -30,6 +33,7 @@ interface MessageQueueProps {
 }
 
 export function MessageQueue({ view, density, actions, onEditBack }: MessageQueueProps) {
+  const partyMembers = usePartyMembers();
   const [openRows, setOpenRows] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState("");
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -375,7 +379,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                     />
                     {row.cutIn && <span className="wb-queue-cutin" title={localized("STR-1817")}><LocalizedText id="STR-1816" /></span>}
                   </div>
-                  <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.open ? undefined : row.text} onClick={() => { if (!row.open) { toggleRow(row.id); } }}>{row.text}</span>
+                  <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.open ? undefined : messageTagsToDisplayText(row.text)} onClick={() => { if (!row.open) { toggleRow(row.id); } }}><MessageText text={row.text} members={partyMembers} /></span>
                   <div className="wb-queue-row-actions">
                     <button type="button" className="wb-queue-btn" data-queue-action="expand" title={row.expandLabel} aria-label={row.expandLabel} aria-expanded={row.open} onClick={() => toggleRow(row.id)}>
                       {row.open ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
@@ -541,7 +545,7 @@ export function MessageQueue({ view, density, actions, onEditBack }: MessageQueu
                     message and left the controls floating beside empty space;
                     here it takes the row's slack and clips, and the full text
                     is one click (or the tooltip) away. */}
-                <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.open ? undefined : row.text} onClick={() => { if (!row.open) { toggleRow(row.id); } }}>{row.text}</span>
+                <span className={"wb-queue-text" + (row.open ? " is-open" : "")} title={row.open ? undefined : messageTagsToDisplayText(row.text)} onClick={() => { if (!row.open) { toggleRow(row.id); } }}><MessageText text={row.text} members={partyMembers} /></span>
                 {/* One control well, right-aligned and in the same order on
                     every row, so the delete never lands where the expand was. */}
                 <div className="wb-queue-row-actions">

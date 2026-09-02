@@ -3954,7 +3954,7 @@ body.wb-resizing {
   color: var(--text-0);
 }
 
-/* Chips that sit INSIDE a line of text — a mention, an `:a` token, a dropped
+/* Chips that sit INSIDE a line of text — a mention, a completion token, a dropped
    path. They share one alignment rule: `vertical-align: middle` centres the chip
    on the surrounding text's midline, which tracks the text's font size. The old
    rule was a flat `-3px` nudge off the baseline — correct at exactly one font
@@ -3991,7 +3991,7 @@ body.wb-resizing {
   font-weight: 700;
 }
 
-/* An `:a` token — a model, harness, effort, thinking mode or service tier.
+/* A completion token — a model, harness, effort, thinking mode or service tier.
    Deliberately quieter than a mention chip: a mention points at a person and
    carries their identity colour, while this is a literal string being spelled
    correctly on the user's behalf. It reads as text that has been tidied, not as
@@ -4020,6 +4020,15 @@ body.wb-resizing {
 .wb-token-chip[data-token-kind="serviceTier"] {
   color: var(--text-2);
   font-weight: 500;
+}
+
+/* Composer chips are atomic editing units. Transcript/queue chips are ordinary
+   output and must remain selectable so drag-copy works like the surrounding
+   sentence. */
+.wb-mention-chip.is-static,
+.wb-token-chip.is-static {
+  user-select: text;
+  cursor: text;
 }
 
 /* Section labels inside the completion popover (models vs harnesses). Same

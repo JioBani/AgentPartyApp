@@ -1,8 +1,9 @@
 /**
- * Renders a sent message's text with its mentions and paths as chips.
+ * Renders a sent message's text with its mentions, completion tags and paths as
+ * chips.
  *
  * A message is stored as plain text — that is deliberate, because plain text is
- * exactly what the model receives. So the transcript re-recognises the two
+ * exactly what the model receives. So the transcript re-recognises the three
  * things that were chips while typing and draws them the same way. Without this
  * a mention reads as bare `@name` and a dropped path fills the bubble with an
  * absolute path, and neither looks like what the user composed.
@@ -13,11 +14,13 @@
  * towards leaving text alone.
  */
 import { describePath } from "../../shared/fileReferences";
+import { messageTagMatches, type MessageTagKind } from "../../shared/messageTags";
 import { EVERYONE, mentionTitle } from "./mentionModel";
 
 export type MessageToken =
   | { kind: "text"; text: string }
   | { kind: "mention"; name: string }
+  | { kind: "tag"; tagKind: MessageTagKind; value: string; label: string; raw: string }
   | { kind: "path"; path: string };
 
 /** A quoted run, or a bare token that starts like an absolute path. */
@@ -45,8 +48,21 @@ export function tokenizeMessage(text: string, memberNames: readonly string[]): M
     }
   };
 
-  // Paths first: a path can contain an `@`, and matching mentions first would
-  // cut one in half.
+  // Durable tags first: their encoded payload may contain characters meaningful
+  // to the path/mention recognisers and must remain one indivisible token.
+  let cursor = 0;
+  for (const match of messageTagMatches(text)) {
+    pushPlainTokens(text.slice(cursor, match.index), names, push);
+    push({ kind: "tag", tagKind: match.kind, value: match.value, label: match.label, raw: match.raw });
+    cursor = match.end;
+  }
+  pushPlainTokens(text.slice(cursor), names, push);
+  return tokens;
+}
+
+function pushPlainTokens(text: string, names: readonly string[], push: (token: MessageToken) => void): void {
+  // Paths before mentions: a path can contain an `@`, and matching mentions
+  // first would cut one in half.
   let cursor = 0;
   for (const match of text.matchAll(PATH_PATTERN)) {
     const at = match.index ?? 0;
@@ -59,7 +75,6 @@ export function tokenizeMessage(text: string, memberNames: readonly string[]): M
     cursor = at + match[0].length;
   }
   pushMentions(text.slice(cursor), names, push);
-  return tokens;
 }
 
 function pushMentions(text: string, names: readonly string[], push: (token: MessageToken) => void): void {
@@ -107,11 +122,25 @@ export function MessageText({ text, members }: MessageTextProps) {
           return (
             <span
               key={index}
-              className="wb-mention-chip"
+              className="wb-mention-chip is-static"
               style={{ ["--member" as string]: colorOf.get(token.name) || (token.name === EVERYONE ? "var(--text-1)" : undefined) }}
               title={mentionTitle(token.name)}
             >
               <span className="wb-mention-chip-at">@</span>{token.name}
+            </span>
+          );
+        }
+        if (token.kind === "tag") {
+          return (
+            <span
+              key={index}
+              className="wb-token-chip is-static"
+              data-message-tag="v1"
+              data-token-kind={token.tagKind}
+              data-token-value={token.value}
+              title={token.value}
+            >
+              {token.label}
             </span>
           );
         }

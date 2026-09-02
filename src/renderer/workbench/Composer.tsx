@@ -186,21 +186,22 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
     onAction: runPaletteAction,
   });
 
-  // --- `:m` members / `:a` models -----------------------------------------
+  // --- Triggerless members / providers / models ----------------------------
   // Deliberately not part of the `/` palette: that one fires only when the whole
   // draft is the command, while these happen mid-sentence and replace just the
   // token under the caret. Keeping them apart leaves `/` untouched.
   //
-  // `:a` is a CHAIN — model, then whatever that model supports (effort, then
-  // thinking, then service tier). Stage 1 is driven by the text under the caret;
-  // every stage after it is driven by `chain` below, because by then the model
-  // is already a chip and there is no trigger text left to detect.
+  // A normal word opens one combined member/provider/model list. The model side
+  // is a CHAIN — provider, model, then whatever that model supports (effort,
+  // thinking, service tier). Stage 1 is driven by the word under the caret;
+  // every stage after it is driven by `chain`, because the first choice is
+  // already a chip and there is no source word left to detect.
   const partyMembers = usePartyMembers();
   const modelRoutes = useModelRoutes();
   const [completionDismissed, setCompletionDismissed] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   /**
-   * The `:a` chain in progress.
+   * The model chain in progress.
    *
    * `stages`/`at` is the walk; `provider`/`model` are what has been chosen so far
    * and decide what the remaining stages offer; `chips` lets Backspace take a
@@ -211,6 +212,12 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
   const [chain, setChain] = useState<
     { stages: ChainStage[]; at: number; chips: HTMLElement[]; provider?: string; model?: CompletionRow; query: string } | null
   >(null);
+  /**
+   * Every completion chip in dependency order, retained even when the visible
+   * chain has reached its end. Native contenteditable deletion happens after
+   * that point too: deleting a model must still know which provider to reopen.
+   */
+  const completionTrail = useRef<Array<{ chip: HTMLElement; row: CompletionRow }>>([]);
   /** The caret's own text node and offset — a trigger never spans nodes. */
   const [caretText, setCaretText] = useState("");
   /** Viewport position of the caret, so the popover can sit against it. */
@@ -218,10 +225,10 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
 
   const trigger = useMemo(() => detectCompletion(caretText, caretText.length), [caretText]);
   /**
-   * The stage being shown: a live chain wins, otherwise the text trigger. `:a`
-   * with no chain yet is stage 1, which is the provider list.
+   * The stage being shown: a live chain wins, otherwise any detected word that
+   * can name a model starts at the provider list.
    */
-  const stage: ChainStage | null = chain ? chain.stages[chain.at] ?? null : trigger?.kind === "model" ? "provider" : null;
+  const stage: ChainStage | null = chain ? chain.stages[chain.at] ?? null : trigger && trigger.kind !== "member" ? "provider" : null;
 
   /**
    * The one list. Everything else is derived from it, so what the popover shows
@@ -237,9 +244,13 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
     if (!trigger) {
       return [];
     }
-    return trigger.kind === "member"
-      ? memberSections(mentionCandidates(partyMembers, view.name, trigger.queries))
+    const members = trigger.kind === "model"
+      ? []
+      : memberSections(mentionCandidates(partyMembers, view.name, trigger.queries));
+    const models = trigger.kind === "member"
+      ? []
       : sectionsForStage("provider", modelRoutes, {}, trigger.queries);
+    return [...members, ...models];
   }, [chain, stage, trigger, partyMembers, view.name, modelRoutes]);
 
   const rows: CompletionRow[] = useMemo(() => flattenRows(resolved), [resolved]);
@@ -278,7 +289,9 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
    */
   const completionTitle = trigger?.kind === "member" && !chain
     ? "멤버"
-    : resolved.length === 1 ? resolved[0].label : stage ? STAGE_LABELS[stage] : "모델";
+    : resolved.length === 1 ? resolved[0].label
+      : trigger?.kind === "all" && !chain ? "자동완성"
+        : stage ? STAGE_LABELS[stage] : "모델";
 
   useEffect(() => { setActiveIndex(0); }, [trigger?.queries.join(" "), trigger?.kind, chain?.at]);
   useEffect(() => { if (!trigger && !chain) { setCompletionDismissed(false); } }, [trigger, chain]);
@@ -297,7 +310,7 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
     return { node: range.startContainer as Text, offset: range.startOffset };
   }
 
-  /** Re-reads the text before the caret, which is what arms `@`. */
+  /** Re-reads the text before the caret, which drives triggerless completion. */
   function syncCaret() {
     const point = caretPoint();
     setCaretText(point ? (point.node.nodeValue || "").slice(0, point.offset) : "");
@@ -333,10 +346,45 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
   }
 
   /** The editor changed: its serialization becomes the draft. */
-  function syncDraft() {
+  function syncDraft(options: FormEvent | { allowDetachedChainChip?: boolean } = {}) {
     const root = editorRef.current;
     if (!root) {
       return;
+    }
+    const allowDetachedChainChip = "allowDetachedChainChip" in options && options.allowDetachedChainChip === true;
+    // Native contenteditable deletion owns the DOM before React sees the input
+    // event. Reconcile the semantic completion path with those removed nodes.
+    // A deleted MODEL returns to the models of its still-present provider; a
+    // deleted provider closes the path. Controlled stage-back navigation opts
+    // out because its key handler replaces the chain itself.
+    if (!allowDetachedChainChip) {
+      const detachedAt = completionTrail.current.findIndex(({ chip }) => !root.contains(chip));
+      if (detachedAt >= 0) {
+        const removed = completionTrail.current[detachedAt];
+        // Options after the removed choice depend on it and cannot stay valid.
+        // Remove them visibly instead of leaving e.g. an orphan effort token.
+        for (const dependent of completionTrail.current.slice(detachedAt + 1)) {
+          if (root.contains(dependent.chip)) {
+            removeChip(dependent.chip);
+          }
+        }
+        const remaining = completionTrail.current.slice(0, detachedAt).filter(({ chip }) => root.contains(chip));
+        completionTrail.current = remaining;
+        const provider = [...remaining].reverse().find(({ row }) => row.kind === "provider");
+        const reopenProvider = provider?.row.provider || (removed.row.kind === "model" ? removed.row.provider : undefined);
+        if (removed.row.kind === "model" && reopenProvider) {
+          setChain({
+            stages: ["model"],
+            at: 0,
+            chips: remaining.map(({ chip }) => chip),
+            provider: reopenProvider,
+            query: "",
+          });
+        } else {
+          setChain(null);
+        }
+        setCompletionDismissed(false);
+      }
     }
     const text = serializeDraft(root);
     revisionRef.current += 1;
@@ -356,10 +404,10 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
   /**
    * Writes the chosen row into the editor as a chip and reports where it landed.
    *
-   * Stage 1 replaces the `:a…` / `:m…` text under the caret. Later stages have no
-   * trigger text to replace — the model is already a chip — so they append at the
-   * caret instead. Either way only the token is touched: the rest of the
-   * sentence, and every chip in it, is left alone.
+   * Stage 1 replaces the matching word under the caret. Later stages have no
+   * source word to replace — the previous choice is already a chip — so they
+   * append at the caret instead. Either way only the token is touched: the rest
+   * of the sentence, and every chip in it, is left alone.
    */
   function insertRowChip(row: CompletionRow, replaceTrigger: boolean): HTMLElement | null {
     const point = caretPoint();
@@ -406,7 +454,7 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
 
   /**
    * Accepts a row. `advance` is the difference between Enter/Tab and `→`: both
-   * commit, only the first walks on to the next stage of an `:a` chain.
+   * commit, only the first walks on to the next stage of a model chain.
    */
   function applyCompletionChoice(row: CompletionRow, advance: boolean) {
     const first = !chain;
@@ -415,6 +463,14 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
       return;
     }
     const chips = first ? [chip] : [...chain!.chips, chip];
+    if (row.kind === "member") {
+      completionTrail.current = [];
+    } else {
+      const connected = first
+        ? []
+        : completionTrail.current.filter((entry) => editorRef.current?.contains(entry.chip));
+      completionTrail.current = [...connected, { chip, row }];
+    }
     // What follows depends on WHAT was chosen, not on how far along we are:
     // a provider opens the model list, a model opens whatever that model
     // supports, and a harness or a member has nothing after it at all.
@@ -428,7 +484,7 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
         stages: nextStages,
         at: 0,
         chips,
-        provider: row.kind === "provider" ? row.provider : chain?.provider,
+        provider: row.kind === "provider" ? row.provider : chain?.provider || row.provider,
         model: row.kind === "model" ? row : chain?.model,
         query: "",
       });
@@ -458,6 +514,13 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
     if (!completionOpen) {
       return false;
     }
+    const enterIsSend = event.key === "Enter" && sendsOnEnter(prefs.sendKey, {
+      ctrlOrMeta: event.ctrlKey || event.metaKey,
+      shift: event.shiftKey,
+    });
+    if (enterIsSend) {
+      return false;
+    }
     const current = () => rows[Math.min(activeIndex, rows.length - 1)];
     switch (event.key) {
       case "ArrowDown":
@@ -468,8 +531,18 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
         event.preventDefault();
         setActiveIndex((i) => (i - 1 + rows.length) % rows.length);
         return true;
-      case "Enter":
       case "Tab":
+        event.preventDefault();
+        applyCompletionChoice(current(), true);
+        return true;
+      case "Enter":
+        // A triggerless list can be open during completely ordinary prose. It
+        // must never steal the composer's configured send/newline key; Tab is
+        // the explicit completion gesture the user asked for. Legacy explicit
+        // triggers and an already-entered chain keep their old Enter support.
+        if (trigger?.kind === "all" && !chain) {
+          return false;
+        }
         event.preventDefault();
         applyCompletionChoice(current(), true);
         return true;
@@ -507,8 +580,9 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
           if (last) {
             removeChip(last);
           }
+          completionTrail.current = completionTrail.current.filter(({ chip }) => editorRef.current?.contains(chip));
           setChain({ ...chain, at: chain.at - 1, chips: chain.chips.slice(0, chain.at), query: "" });
-          syncDraft();
+          syncDraft({ allowDetachedChainChip: true });
           return true;
         }
         return false;
@@ -548,6 +622,9 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
       return;
     }
     renderedRef.current = draft;
+    completionTrail.current = [];
+    setChain(null);
+    setCompletionDismissed(false);
     rehydrateDraft(root, draft, knownRefs.current, partyMembers);
     if (document.activeElement === root) {
       setCaret(root, endOfDraft(root));
@@ -787,8 +864,8 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
     if (palette.handleKeyDown(event)) {
       return;
     }
-    // …and so does the completion popover, so Enter picks a member or a model
-    // instead of sending a half-typed `:mnam`.
+    // …and so does the completion popover. A triggerless first stage claims
+    // Tab, while an explicit/continued chain can also claim Enter.
     if (handleCompletionKey(event)) {
       return;
     }
@@ -871,9 +948,8 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
       // What was typed inside the popover. Shown so the filter is never a
       // hidden state the user has to guess at from a shrinking list.
       query={chain?.query}
-      // The heading and this hint are the whole discovery story for `:a`: the
-      // list explains itself at the one moment the user is looking at it.
-      hint={chain ? localized("STR-1593") : "↑↓ · Enter"}
+      // The heading and hint explain the keyboard flow while the list is open.
+      hint={chain ? localized("STR-1593") : "↑↓ · Tab"}
       sections={sections}
       activeIndex={activeIndex}
       onHover={setActiveIndex}
