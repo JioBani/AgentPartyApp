@@ -1550,7 +1550,10 @@ export const auditKoMessages = {
   "STR-3795": "세션 시작 실패",
   "STR-3796": "다시 시작할 수 있습니다",
   "STR-3797": "설정을 고친 뒤 다시 시작하세요",
-  "STR-3798": "세션을 시작하지 못했습니다."
+  "STR-3798": "세션을 시작하지 못했습니다.",
+  "STR-3799": "탭 그룹",
+  "STR-3800": "새 탭 그룹으로 열기",
+  "STR-3801": "현재 보고 있는 탭 그룹이 기본값입니다. 새 그룹으로 열 수도 있습니다."
 } as const;
 
 export type AuditMessageKey = keyof typeof auditKoMessages;

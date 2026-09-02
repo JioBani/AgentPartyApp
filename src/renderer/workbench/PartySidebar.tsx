@@ -23,6 +23,8 @@ import { SIDEBAR_DRAWER_MAX_WIDTH, SIDEBAR_DRAWER_MIN_WIDTH, type SidebarDrawerI
 
 export interface CreateMemberInput {
   name: string;
+  /** Exact workbench panel id that receives the new member. */
+  tabGroup?: string;
   requirement: string;
   runtime: string;
   model?: string;
@@ -44,6 +46,13 @@ export interface CreateMemberInput {
   saveAsDefault?: boolean;
 }
 
+export interface MemberTabGroupOption {
+  /** Exact persisted panel id; required because one member can be split twice. */
+  id: string;
+  /** Human-readable list of the tabs currently in the panel. */
+  label: string;
+}
+
 interface PartySidebarProps {
   /** App-global groups, in display order. */
   groups: PartyGroup[];
@@ -57,6 +66,9 @@ interface PartySidebarProps {
   activePartyId?: string;
   views: MemberView[];
   openMembers: Set<string>;
+  tabGroups: MemberTabGroupOption[];
+  /** Focused panel, used as the default destination in the member wizard. */
+  defaultTabGroupId?: string;
   routes: RouteLike[];
   /** Live Codex catalog discovery state, surfaced by the member wizard. */
   codexModels?: CodexModelDiscoveryState;
@@ -320,7 +332,7 @@ function fitContextMenuToViewport(
  */
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, views, openMembers, drawers, onToggleDrawer, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
+  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, views, openMembers, tabGroups, defaultTabGroupId, drawers, onToggleDrawer, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
   /**
    * The width being dragged RIGHT NOW, if any.
    *
@@ -604,6 +616,8 @@ export function PartySidebar(props: PartySidebarProps) {
         {creating && (
           <MemberWizard
             routes={routes}
+            tabGroups={tabGroups}
+            defaultTabGroupId={defaultTabGroupId}
             codexModels={codexModels}
             onRefreshCodexModels={onRefreshCodexModels}
             defaultProfile={defaultProfile}

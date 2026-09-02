@@ -112,6 +112,12 @@ assert(n.focusedPanelId === spawnedPanel.id && spawnedPanel.active === "spawned"
 const reopened = L.openMemberInNewPanel(n, "alpha");
 assert(reopened.panels.length === 2, "openMemberInNewPanel on an existing member does not add a panel");
 
+const grouped = L.openMemberInTabGroup(n, "partner", n.panels[0].id);
+const betaGroup = grouped?.panels.find((panel) => panel.tabs.includes("beta"));
+assert(betaGroup?.tabs.join(",") === "alpha,beta,partner", "openMemberInTabGroup appends to the exact panel id");
+assert(betaGroup?.active === "partner" && grouped.focusedPanelId === betaGroup.id, "targeted tab-group member becomes active and focused");
+assert(L.openMemberInTabGroup(n, "lost", "closed") === undefined, "unknown/closed tab-group id is rejected without fallback");
+
 console.log("");
 if (failures.length) {
   console.log(`LAYOUT LOGIC FAILED: ${failures.length} assertion(s)`);

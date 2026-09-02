@@ -2320,6 +2320,7 @@ Creates a member inside the selected party, or inside `partyId` when supplied.
 {
   "partyId": "party-id",
   "name": "impl",
+  "tabGroup": "panel-mtjpd910-1",
   "runtime": "claude-code",
   "model": "sonnet",
   "permissionMode": "plan",
@@ -2327,6 +2328,14 @@ Creates a member inside the selected party, or inside `partyId` when supplied.
   "initialTask": "Inspect the current repo."
 }
 ```
+
+`tabGroup` is the exact `id` of an existing open tab group. The new member is
+appended to that group and activated there. The MCP `list` tool exposes the ids;
+the UI passes the selected id directly. A unique member name in that group is
+also accepted as a hand-written convenience, but it is rejected as ambiguous
+when that member has been split into more than one group. Omit `tabGroup` to
+preserve the default behavior of opening a new tab group. A closed or unknown
+target is rejected explicitly; the app never guesses another group.
 
 `location` fixes where the member runs, for its life — `"C:\Project\App"` or
 `"wsl+Ubuntu-24.04:/home/dev/svc"`. It is checked in that environment before the
@@ -3041,6 +3050,13 @@ outside the app process — today Codex, via
 the body is that tool's arguments.
 
 #### `list-locations` and explicit `member-create.location`
+
+`member-create` also accepts `tabGroup`, using the same exact group id as
+`POST /api/party/members`. The `list` tool returns
+`tabGroups: [{ id, anchor, members, active }]`; pass the chosen group's `id`
+back as `tabGroup`. A unique open member name is accepted for concise manual
+calls, but `id` is required when the same member appears in multiple split
+groups. Omitting `tabGroup` creates a new tab group.
 
 `list-locations` returns the currently supported execution hosts and the
 app-global default/recent cwd suggestions. A suggestion with `problem` remains

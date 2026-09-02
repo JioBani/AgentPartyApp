@@ -540,6 +540,14 @@ export interface CreateMemberInput {
   partyId?: string;
   name: string;
   /**
+   * Existing panel id (from MCP `list().tabGroups[].id`) or, when unambiguous,
+   * the name of a member open in that panel. Omit for a new panel.
+   *
+   * The UI sends the exact id. Accepting a unique member name keeps hand-written
+   * MCP calls concise without choosing arbitrarily when a split duplicates a tab.
+   */
+  tabGroup?: string;
+  /**
    * Serialized execution location (`C:\proj` or `wsl+Ubuntu:/srv`), fixed for
    * the member's life. Optional on the type so a caller that omits it is
    * rejected with a reason rather than silently given the app's own cwd.

@@ -129,19 +129,37 @@ const codex = await bridge.createMember({ name: "cx", role: "x", harness: "codex
 assert(codex.ok && svc.list().members.find((m) => m.name === "cx")?.runtime === "codex", "member-create accepts codex harness");
 assert(captured.length === 2, "codex member-create starts a codex session");
 assert(JSON.stringify(svc.list().members.find((m) => m.name === "cx")?.codexPolicy) === JSON.stringify(initialCodexPolicy), "member-create persists an explicit initial Codex policy");
+assert(svc.getPartyLayout(partyId)?.panels.some((panel) => panel.tabs.length === 1 && panel.tabs[0] === "cx"), "member-create without tabGroup opens its own new tab group");
+const invalidGroup = await bridge.createMember({ name: "lost", role: "must not be created", tabGroup: "closed-member" });
+assert(!invalidGroup.ok && /not open/i.test(invalidGroup.error || ""), "member-create rejects a closed or unknown tabGroup instead of guessing");
+assert(!svc.list().members.some((member) => member.name === "lost"), "invalid tabGroup is validated before the member is created");
+const layoutBeforeAmbiguity = svc.getPartyLayout(partyId);
+svc.setPartyLayout({
+  panels: [
+    { id: "duplicate-a", tabs: ["main"], active: "main", weight: 1 },
+    { id: "duplicate-b", tabs: ["main"], active: "main", weight: 1 },
+  ],
+  focusedPanelId: "duplicate-a",
+}, partyId);
+const ambiguousGroup = await bridge.createMember({ name: "ambiguous", role: "must not be created", tabGroup: "main" });
+assert(!ambiguousGroup.ok && /ambiguous/i.test(ambiguousGroup.error || ""), "member-name shorthand is rejected when a split makes it ambiguous");
+assert(!svc.list().members.some((member) => member.name === "ambiguous"), "ambiguous shorthand does not half-create a member");
+svc.setPartyLayout(layoutBeforeAmbiguity, partyId);
 const changedCodexPolicy = { sandbox: "workspace-write", approval: "never", guardian: true };
 const changedCx = await bridge.setPermission("cx", { codexPolicy: changedCodexPolicy });
 assert(changedCx.ok && JSON.stringify(svc.list().members.find((m) => m.name === "cx")?.codexPolicy) === JSON.stringify(changedCodexPolicy), "one member can change another Codex member's policy");
 assert(permissionChanges.some((change) => change.codexPolicy?.guardian === true), "live Codex permission change reaches the target adapter");
 
 // --- member-create: claude-code auto-starts + persists reasoning -------------
-const make = await bridge.createMember({ name: "reviewer", role: "Code reviewer", harness: "claude-code", model: "sonnet", reasoning: "enabled", permissionMode: "plan" });
+const make = await bridge.createMember({ name: "reviewer", role: "Code reviewer", tabGroup: "main", harness: "claude-code", model: "sonnet", reasoning: "enabled", permissionMode: "plan" });
 assert(make.ok, "member-create (claude-code) succeeds");
 assert(captured.length === 3, "member-create auto-starts the new member's session");
 const reviewer = svc.list().members.find((m) => m.name === "reviewer");
 assert(reviewer?.reasoning === "enabled", "reasoning is persisted on the created member");
 assert(reviewer?.status === "running", "created member is live");
 assert(reviewer?.permissionMode === "plan", "member-create persists an explicit initial Claude permission");
+const mainPanel = svc.getPartyLayout(partyId)?.panels.find((panel) => panel.tabs.includes("main"));
+assert(mainPanel?.tabs.includes("reviewer") && mainPanel.active === "reviewer", "member-create tabGroup appends to and activates the anchored member's group");
 const beforeDuplicateStart = captured.length;
 const reusedReviewer = svc.startMember("reviewer", { auto: true }, {}, partyId);
 assert(reusedReviewer.session?.id === reviewer?.sessionId && captured.length === beforeDuplicateStart, "concurrent/prewarm start reuses the live session instead of orphaning a duplicate");
@@ -163,6 +181,7 @@ assert(!ghost.ok && /does not exist/i.test(ghost.error || ""), "send to a nonexi
 const listed = await bridge.list();
 const names = (listed.data?.members || []).map((m) => m.name);
 assert(listed.ok && names.includes("main") && names.includes("reviewer"), "list returns the party members");
+assert(listed.data?.tabGroups?.some((group) => group.id && group.anchor === "reviewer" && group.members.includes("main")), "list exposes current tab groups and an exact reusable member-create id");
 assert(listed.data.members.find((m) => m.name === "reviewer")?.harness === "claude-code", "list carries harness per member");
 
 // --- member-remove: main protected, others removable -------------------------

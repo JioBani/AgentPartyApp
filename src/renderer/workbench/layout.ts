@@ -34,7 +34,7 @@ export function layoutFromPanels(spec: string[][]): LayoutState {
  * sidebar click and `POST /api/party/members/:name/open`, so the two must run
  * the same code rather than two implementations that drift.
  */
-export { openMemberTab as openMember } from "../../shared/workbenchLayout";
+export { openMemberTab as openMember, openMemberInNewPanel, openMemberInTabGroup } from "../../shared/workbenchLayout";
 export { panelOf } from "../../shared/workbenchLayout";
 import { nextPanelId, panelOf } from "../../shared/workbenchLayout";
 
@@ -43,25 +43,6 @@ function focusFallback(panels: PanelState[], preferred: string): string {
     return preferred;
   }
   return panels[0]?.id || "";
-}
-
-/**
- * Opens a member in its OWN new panel appended on the right (a new region),
- * instead of merging it into an existing panel's tab strip. Used when a member
- * is created (by the wizard or by an agent via member-create) so it goes live in
- * a fresh slot rather than into the background of the focused panel.
- */
-export function openMemberInNewPanel(state: LayoutState, memberName: string): LayoutState {
-  const existing = panelOf(state, memberName);
-  if (existing) {
-    return {
-      panels: state.panels.map((panel) => (panel.id === existing.id ? { ...panel, active: memberName } : panel)),
-      focusedPanelId: existing.id,
-    };
-  }
-  const panel: PanelState = { id: nextPanelId(), tabs: [memberName], active: memberName, weight: 1 };
-  const panels = [...state.panels, panel];
-  return { panels: normalizeWeights(panels), focusedPanelId: panel.id };
 }
 
 export function focusPanel(state: LayoutState, panelId: string): LayoutState {

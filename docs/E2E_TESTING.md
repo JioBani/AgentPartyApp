@@ -90,6 +90,8 @@ the mockup to the tenth of a pixel.
 | `qa-party-bridge` | in-process party bridge (send/create/remove/permission/list), explicit initial permissions, concrete execution-harness discovery, idempotent start + the session **primer** |
 | `qa-party-mock` | inter-member messaging over the mock harness (engine-level) |
 | `qa-member-wizard` | member-create step wizard + model detail + explicit initial permission step |
+| `qa-member-tab-group` | member-create wizard lists open workbench tab groups and emits the exact selected panel id through the shared create input |
+| `e2e-member-tab-group` | real Electron + local automation API: targeted existing-group placement, default new-group placement, and explicit rejection without half-creation |
 | `qa-member-remove` | sidebar delete via right-click context menu: **member** delete (`삭제하기`, `main` protected) **and party** delete (two-step confirm `파티 삭제…` → `한 번 더 클릭` → `onRemoveParty`) |
 | `qa-member-start-model` | member keeps its own model on first chat (no global fallback) |
 | `qa-channel-render` | message **cards** (channel send/receive) + **party-action** cards (create/remove) |

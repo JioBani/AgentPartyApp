@@ -44,6 +44,8 @@ const PARTY_HOST_IMAGE_FIELD = "__agentpartyHostImage";
 export interface PartyCreateMemberRequest {
   name: string;
   role: string;
+  /** Exact tab-group id from list(), or a unique member name in that group. */
+  tabGroup?: string;
   /** Harness id; `claude-code` and `codex` are supported. */
   harness?: string;
   model?: string;
@@ -253,12 +255,12 @@ export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   send: "Send a message to another member of your party. Errors if the recipient is not running or does not exist. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in, or queue=true to explicitly wait behind the current turn. Legacy interrupt=false is treated as omitted so model-generated false values cannot disable the saved setting.",
-  "member-create": "Create a new member in your party and start its session. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?} to choose Windows or WSL explicitly; omit it to inherit your own execution location.",
+  "member-create": "Create a new member in your party and start its session. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?} to choose Windows or WSL explicitly; omit it to inherit your own execution location.",
   "member-remove": "Remove a member from your party. Cannot remove 'main'.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
   "gate-set": "Set another member's Message Gate — the delivery-time reviewer of that member's OUTGOING messages. mode: inherit|on|off. rule: the communication rule text the reviewer enforces (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate.",
   "party-gate-set": "Set the PARTY-WIDE Message Gate — the default every member with mode 'inherit' follows. enabled: turn the party gate on/off. rule: the communication rule text enforced party-wide. reviewer: {model, effort} for a party-wide headless reviewer (null to use the settings default). This changes the default for EVERY inheriting member at once, so prefer gate-set when only one member should be affected. A member that set mode on/off, or its own rule, keeps overriding this.",
-  list: "List your party's members and their current status.",
+  list: "List your party's members, current status, and tabGroups. Pass a chosen tabGroups[].id to member-create.tabGroup.",
   "list-locations": "List the execution hosts this app supports plus recent and default cwd suggestions. Use a returned host/cwd/distro tuple as member-create.location. Entries with problem are shown for diagnostics but must not be used until repaired.",
   "list-models": "Discover available harnesses, models, and reasoning options for member-create. Called with NO arguments it returns a compact index of every model — label, which harnesses run it, and the id to pass to member-create when that id differs from the label. Pass `harness`, `provider`, and/or `query` to get the FULL detail (effort/thinking options, service tier, pricing, context window) for just the matches; that is the cheap way to answer 'what settings does this one model take'. Filters narrow, they never paginate: dropping them always widens back to everything. A filter that matches nothing is an ERROR listing what does exist, never an empty result — so an empty answer never means 'this model is unavailable'. Routes that cannot currently be used are excluded from detail rows but their count is always reported and `includeUnavailable: true` brings them back with the reason.",
   "member-status": "Check whether a member's turn is running (busy) or stopped (idle/error). Omit name to get every member's turn state.",
@@ -290,6 +292,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     properties: {
       name: { type: "string", description: "New member name (letters, digits, _ or -)." },
       role: { type: "string", description: "Short role description for the new member." },
+      tabGroup: { type: "string", description: "Exact tabGroups[].id returned by list, or a unique member name in that open group. Omit to open a new tab group." },
       harness: { type: "string", description: "Harness id, e.g. claude-code or codex. Defaults to claude-code." },
       model: { type: "string", description: "Model id from list-models." },
       reasoning: { type: "string", description: "Reasoning/thinking mode: adaptive | enabled | disabled." },
@@ -575,9 +578,13 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       if (!memberName || !role) {
         return { ok: false, error: "member-create requires string arguments: name, role." };
       }
+      if (input.tabGroup !== undefined && typeof input.tabGroup !== "string") {
+        return { ok: false, error: "member-create tabGroup must be an existing member name." };
+      }
       return bridge.createMember({
         name: memberName,
         role,
+        tabGroup: typeof input.tabGroup === "string" ? input.tabGroup : undefined,
         harness: typeof input.harness === "string" ? input.harness : undefined,
         model: typeof input.model === "string" ? input.model : undefined,
         reasoning: typeof input.reasoning === "string" ? input.reasoning : undefined,
@@ -772,10 +779,11 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     ),
     tool(
       "member-create",
-      "Create a new member in your party and start its session. You choose the harness, model, and reasoning — call list-models first to see valid options.",
+      "Create a new member in your party and start its session. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that group); omit it for a new group. You choose the harness, model, and reasoning — call list-models first to see valid options.",
       {
         name: z.string().describe("New member name (letters, digits, _ or -)."),
         role: z.string().describe("Short role description for the new member."),
+        tabGroup: z.string().optional().describe("Exact tabGroups[].id returned by list, or a unique member name in that open group. Omit to create a new tab group."),
         harness: z.string().optional().describe("Harness id (e.g. 'claude-code'). Defaults to claude-code."),
         model: z.string().optional().describe("Model id from list-models."),
         reasoning: z.string().optional().describe("Reasoning/thinking mode: adaptive | enabled | disabled."),

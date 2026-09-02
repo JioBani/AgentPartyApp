@@ -134,3 +134,62 @@ export function openMemberTab(layout: WorkbenchLayout, memberName: string): Work
     focusedPanelId: target.id,
   };
 }
+
+function normalizePanelWeights(panels: WorkbenchPanel[]): WorkbenchPanel[] {
+  if (panels.length === 0) {
+    return panels;
+  }
+  const total = panels.reduce((sum, panel) => sum + (panel.weight > 0 ? panel.weight : 1), 0);
+  return panels.map((panel) => ({
+    ...panel,
+    weight: ((panel.weight > 0 ? panel.weight : 1) / total) * panels.length,
+  }));
+}
+
+/** Opens a member in its own new panel, preserving the existing panel ratios. */
+export function openMemberInNewPanel(layout: WorkbenchLayout, memberName: string): WorkbenchLayout {
+  const existing = panelOf(layout, memberName);
+  if (existing) {
+    return {
+      panels: layout.panels.map((panel) => (panel.id === existing.id ? { ...panel, active: memberName } : panel)),
+      focusedPanelId: existing.id,
+    };
+  }
+  const panel: WorkbenchPanel = { id: nextPanelId(), tabs: [memberName], active: memberName, weight: 1 };
+  return {
+    panels: normalizePanelWeights([...layout.panels, panel]),
+    focusedPanelId: panel.id,
+  };
+}
+
+/**
+ * Opens a member beside an existing tab in that tab's panel.
+ *
+ * Returns undefined when the panel id is not currently open. Callers surface
+ * that as an error instead of silently putting the member somewhere else.
+ */
+export function openMemberInTabGroup(
+  layout: WorkbenchLayout,
+  memberName: string,
+  panelId: string,
+): WorkbenchLayout | undefined {
+  const existing = panelOf(layout, memberName);
+  if (existing) {
+    return {
+      panels: layout.panels.map((panel) => (panel.id === existing.id ? { ...panel, active: memberName } : panel)),
+      focusedPanelId: existing.id,
+    };
+  }
+  const target = layout.panels.find((panel) => panel.id === panelId);
+  if (!target) {
+    return undefined;
+  }
+  return {
+    panels: layout.panels.map((panel) => (
+      panel.id === target.id
+        ? { ...panel, tabs: [...panel.tabs, memberName], active: memberName }
+        : panel
+    )),
+    focusedPanelId: target.id,
+  };
+}

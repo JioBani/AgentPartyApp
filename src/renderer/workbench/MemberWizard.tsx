@@ -4,7 +4,7 @@ import type { RouteLike } from "./routes";
 import { routeKey } from "./routes";
 import { modelView } from "./modelCatalog";
 import type { RouteEntry } from "./modelMeters";
-import type { CreateMemberInput } from "./PartySidebar";
+import type { CreateMemberInput, MemberTabGroupOption } from "./PartySidebar";
 import { ModelCatalogModal, type ModelCatalogValue } from "./ModelCatalogModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
@@ -29,6 +29,10 @@ import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface MemberWizardProps {
   routes: RouteLike[];
+  /** Open workbench panels, addressed by one existing member in each panel. */
+  tabGroups?: MemberTabGroupOption[];
+  /** Focused workbench panel, used as the creation target unless changed. */
+  defaultTabGroupId?: string;
   /** Live Codex catalog discovery state — the model step must say when the
    *  codex list is still loading or failed (fallback-only), never silently. */
   codexModels?: CodexModelDiscoveryState;
@@ -119,8 +123,13 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: "runtime", label: "실행 구성" },
   { id: "permission", label: "권한" },
 ];
-export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, submitting = false, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, submitting = false, onCancel, onCreate }: MemberWizardProps) {
   const [name, setName] = useState("");
+  const [tabGroup, setTabGroup] = useState(() => (
+    defaultTabGroupId && tabGroups.some((group) => group.id === defaultTabGroupId)
+      ? defaultTabGroupId
+      : tabGroups[0]?.id || ""
+  ));
   const [stepIndex, setStepIndex] = useState(startStep);
   /** The catalog, opened to choose harness + model + reasoning together. */
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -276,6 +285,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
     }
     onCreate({
       name: name.trim(),
+      tabGroup: tabGroup || undefined,
       requirement: role.trim(),
       runtime: harness,
       model: selected?.route.model,
@@ -318,6 +328,7 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
     // hidden when no default exists) rather than left for the backend to guess.
     onCreate({
       name: name.trim(),
+      tabGroup: tabGroup || undefined,
       requirement: role.trim(),
       runtime: defaultProfile.harness,
       location: cwdPrefs.windowsDefault,
@@ -425,6 +436,21 @@ export function MemberWizard({ routes, codexModels, onRefreshCodexModels, defaul
                 rows={2}
               />
               <p className="wb-wizard-hint"><LocalizedText id="STR-1753" /></p>
+            </section>
+
+            <section className="wb-wizard-section">
+              <div className="wb-modal-label"><LocalizedText id="STR-3799" /></div>
+              <select
+                className="wb-wizard-input"
+                value={tabGroup}
+                onChange={(event) => setTabGroup(event.target.value)}
+              >
+                <option value=""><LocalizedText id="STR-3800" /></option>
+                {tabGroups.map((group) => (
+                  <option key={group.id} value={group.id}>{group.label}</option>
+                ))}
+              </select>
+              <p className="wb-wizard-hint"><LocalizedText id="STR-3801" /></p>
             </section>
 
             {/* Names the defaults rather than just promising them: "기본 설정으로

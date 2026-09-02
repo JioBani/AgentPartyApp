@@ -65,7 +65,15 @@ import {
   type TranscriptSnapshot,
 } from "../../shared/sessionEventStream";
 import { idleSleepTimeoutMs, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
-import { layoutsEqual, sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
+import {
+  EMPTY_LAYOUT,
+  layoutsEqual,
+  openMemberInNewPanel,
+  openMemberInTabGroup,
+  openMemberTab,
+  sanitizeLayout,
+  type WorkbenchLayout,
+} from "../../shared/workbenchLayout";
 import type { SessionManager, SessionPartyBinding } from "../sessionManager";
 import { invokePartyTool, type PartyBridge, type PartyModelQuery, type PartyToolResult } from "../../core/partyBridge";
 import { IMAGE_MEDIA_TYPES, readImageFile } from "../../core/imageFile";
@@ -647,11 +655,42 @@ export class PartyApplicationService {
     if (state.members.some((item) => item.partyId === party.id && item.name === member.name)) {
       throw new Error(`Party member '${member.name}' already exists in '${party.name}'.`);
     }
+    // Creation and placement are one domain mutation. The renderer used to
+    // notice a new member later and invent a new panel locally, which meant MCP
+    // could not choose a group and two windows could briefly disagree.
+    const storedLayout = this.repository.readLayout(workspace, party.id);
+    const firstExisting = state.members.find((item) => item.partyId === party.id);
+    const baseLayout = storedLayout
+      ?? (firstExisting ? openMemberTab(EMPTY_LAYOUT, firstExisting.name) : EMPTY_LAYOUT);
+    const exactGroup = input.tabGroup
+      ? baseLayout.panels.find((panel) => panel.id === input.tabGroup)
+      : undefined;
+    const matchingGroups = exactGroup
+      ? [exactGroup]
+      : input.tabGroup
+        ? baseLayout.panels.filter((panel) => panel.tabs.includes(input.tabGroup as string))
+        : [];
+    if (input.tabGroup && matchingGroups.length > 1) {
+      throw new Error(
+        `Tab group anchor '${input.tabGroup}' is ambiguous because that member is open in multiple groups. `
+        + "Pass the exact tabGroups[].id returned by the list tool.",
+      );
+    }
+    const nextLayout = input.tabGroup
+      ? openMemberInTabGroup(baseLayout, member.name, matchingGroups[0]?.id || "")
+      : openMemberInNewPanel(baseLayout, member.name);
+    if (!nextLayout) {
+      throw new Error(
+        `Tab group '${input.tabGroup}' is not open in party '${party.name}'. `
+        + "Pass tabGroups[].id from the list tool (or a unique open member name), or omit tabGroup to create a new group.",
+      );
+    }
     state.members.push(member);
     this.writeRoleFile(workspace, member, input.initialTask);
     // Member changes touch only this party's detail file (index untouched), so a
     // concurrent process editing another party of the same workspace can't clobber.
     this.persistParty(workspace, state, party.id);
+    this.repository.writeLayout(workspace, party.id, nextLayout);
     log("info", "party", "member created", { workspace, partyId: party.id, member: member.name, runtime: member.runtime });
     return this.result(`Member '${member.name}' created.`, state, member);
   }
@@ -3143,6 +3182,7 @@ export class PartyApplicationService {
           this.createMember({
             partyId: party,
             name: request.name,
+            tabGroup: request.tabGroup,
             requirement: request.role,
             role: request.role,
             // Before party storage became Windows-global, an agent-created
@@ -3279,7 +3319,16 @@ export class PartyApplicationService {
             // read its current on/off + rule + reviewer.
             gate: this.effectiveGateOf(member, state),
           }));
-        return { ok: true, data: { members } };
+        const storedLayout = this.getPartyLayout(party);
+        const visibleLayout = storedLayout
+          ?? (members[0] ? openMemberTab(EMPTY_LAYOUT, members[0].name) : EMPTY_LAYOUT);
+        const tabGroups = visibleLayout.panels.map((panel) => ({
+          id: panel.id,
+          anchor: panel.active,
+          members: [...panel.tabs],
+          active: panel.active,
+        }));
+        return { ok: true, data: { members, tabGroups } };
       },
       listLocations: async () => {
         if (!this.deps.executionLocations) {

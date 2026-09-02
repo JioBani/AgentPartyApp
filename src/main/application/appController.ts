@@ -10,7 +10,7 @@ import {
 } from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
-import { invokePartyToolFromExecutionHost, type PartyToolResult } from "../../core/partyBridge";
+import { invokePartyToolFromExecutionHost, partyToolNameOf, type PartyToolResult } from "../../core/partyBridge";
 import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
@@ -18,7 +18,7 @@ import type { DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentReport } from "../../shared/environment";
 import { probeEnvironment, probeNativeCliAuthentication, runEnvironmentRepair, setMockEnvironmentReport, type EnvironmentRepairResult } from "../environmentService";
 import { GALLERY_ENVIRONMENT_REPORT } from "../../shared/environmentGallery";
-import { EMPTY_LAYOUT, openMemberTab } from "../../shared/workbenchLayout";
+import { EMPTY_LAYOUT, openMemberTab, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
@@ -438,6 +438,12 @@ export class AppController {
     if (!result.changed || !result.layout || !result.partyId) {
       return result;
     }
+    await this.publishPartyLayout(workspacePath, result.partyId, result.layout);
+    return result;
+  }
+
+  /** Pushes a stored layout mutation (including member creation) to its party's windows. */
+  private async publishPartyLayout(workspacePath: string, partyId: string, layout: WorkbenchLayout): Promise<void> {
     const windows = this.globalPartyMode() ? this.deps.windowRegistry.all() : this.deps.windowRegistry.forWorkspace(workspacePath);
     for (const entry of windows) {
       // Only windows actually showing this party — another window of the same
@@ -447,18 +453,24 @@ export class AppController {
       // directly: a window that loaded before this workspace had any party never
       // pinned one, and testing the raw map silently dropped it from the
       // broadcast — the first window of a fresh workspace, i.e. the common case.
-      if (await this.pinnedPartyForWindow(workspacePath, entry.id) !== result.partyId) {
+      if (await this.pinnedPartyForWindow(workspacePath, entry.id) !== partyId) {
         continue;
       }
-      entry.window.webContents.send("party:layout", { partyId: result.partyId, layout: result.layout });
+      entry.window.webContents.send("party:layout", { partyId, layout });
     }
     const mobileTargets = this.globalPartyMode()
       ? new Set([...windows.map((entry) => entry.workspacePath), workspacePath])
       : new Set([workspacePath]);
     for (const target of mobileTargets) {
-      this.deps.mobileLink?.publish("party:layout", { partyId: result.partyId, layout: result.layout }, target);
+      this.deps.mobileLink?.publish("party:layout", { partyId, layout }, target);
     }
-    return result;
+  }
+
+  private async publishStoredPartyLayout(workspacePath: string, partyId: string): Promise<void> {
+    const layout = await this.partyEngine(workspacePath).getPartyLayout(partyId);
+    if (layout) {
+      await this.publishPartyLayout(workspacePath, partyId, layout);
+    }
   }
 
   private windowFor(windowId?: string): BrowserWindow | undefined {
@@ -2136,12 +2148,19 @@ export class AppController {
 
   async createPartyMember(workspacePath: string, input: CreateMemberInput, windowId?: string): Promise<ReturnType<PartyApplicationService["createMember"]>> {
     const location = await this.requireUsableLocation(input.location, workspacePath);
+    const partyId = input.partyId || this.partyForWindow(windowId);
     // The member lands in the party the renderer names, else the window's party.
     const result = await this.mutateParty(workspacePath, (engine) => engine.createMember({
       ...input,
       location: location.serialized,
-      partyId: input.partyId || this.partyForWindow(windowId),
+      partyId,
     }));
+    // Party state must arrive first: the renderer can then adopt this layout
+    // without pruning the just-created member as "not in the party".
+    const createdPartyId = result.member?.partyId || result.currentPartyId || partyId;
+    if (createdPartyId) {
+      await this.publishStoredPartyLayout(workspacePath, createdPartyId);
+    }
     rememberCwd(location.location);
     if (input.saveAsDefault) {
       // Best-effort: the member is already made, and failing to store a
@@ -2208,6 +2227,27 @@ export class AppController {
    * member's tools act inside its own party regardless of what anyone is viewing.
    */
   async invokePartyToolAs(
+    workspacePath: string,
+    member: string,
+    tool: string,
+    args: unknown,
+    partyId?: string,
+    hostPrepared = false,
+  ): ReturnType<PartyApplicationService["invokePartyToolAs"]> {
+    const result = await this.invokePartyToolAsRaw(workspacePath, member, tool, args, partyId, hostPrepared);
+    if (result.ok && partyToolNameOf(tool) === "member-create" && partyId) {
+      // `PartyApplicationService.createMember` persisted placement together with
+      // the member. Publish it after mutateParty's member broadcast, matching
+      // the UI/HTTP ordering above.
+      const owner = this.globalPartyMode()
+        ? workspacePath
+        : await this.deps.engineRegistry.workspaceOwningParty(partyId, workspacePath) || workspacePath;
+      await this.publishStoredPartyLayout(owner, partyId);
+    }
+    return result;
+  }
+
+  private async invokePartyToolAsRaw(
     workspacePath: string,
     member: string,
     tool: string,

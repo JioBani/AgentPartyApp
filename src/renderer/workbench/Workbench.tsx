@@ -17,8 +17,6 @@ import {
   moveTab,
   moveTabToNewPanel,
   openMember,
-  openMemberInNewPanel,
-  panelOf,
   promoteTab,
   pruneLayout,
   resizeAt,
@@ -183,6 +181,16 @@ export function Workbench(props: WorkbenchProps) {
    * while the user is still dragging.
    */
   const syncedLayoutRef = useRef<string>("");
+  /**
+   * Fingerprint currently being adopted from main.
+   *
+   * React runs every effect from the current render before committing the state
+   * update scheduled by an earlier effect. Without this guard, the persistence
+   * effect below sees the OLD local layout in that gap and writes it over the
+   * authoritative incoming layout — most visible when member creation places a
+   * tab and broadcasts it immediately.
+   */
+  const adoptingLayoutRef = useRef<string | null>(null);
   const [runtimeTarget, setRuntimeTarget] = useState<string | null>(null);
   const [permissionTarget, setPermissionTarget] = useState<string | null>(null);
   const [mcpTarget, setMcpTarget] = useState<string | null>(null);
@@ -196,11 +204,6 @@ export function Workbench(props: WorkbenchProps) {
   const workAreaRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ member: string; x: number; y: number; active: boolean } | null>(null);
   const resizeRef = useRef<{ snapshot: LayoutState; leftId: string; rightId: string; startX: number; pairPx: number } | null>(null);
-  // Tracks members already seen for the current party, so only members created
-  // *after* the party is showing auto-open (initial load / party-switch don't).
-  const knownMembersRef = useRef<{ partyKey: string; names: Set<string> }>({ partyKey: "", names: new Set() });
-
-
   useEffect(() => {
     try {
       window.localStorage.setItem(SUBUI_KEY, JSON.stringify(subUi));
@@ -272,6 +275,7 @@ export function Workbench(props: WorkbenchProps) {
       return;
     }
     seededPartyRef.current = partyKey;
+    adoptingLayoutRef.current = serialized;
     syncedLayoutRef.current = serialized;
     setLayout(seedLayout(partyLayout.layout, views));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -290,32 +294,6 @@ export function Workbench(props: WorkbenchProps) {
     });
   }, [validMembers]);
 
-  // Auto-open members created while this party is showing, each in its OWN new
-  // panel (a fresh region) so it goes live immediately instead of to background.
-  // A party switch / first mount only seeds the baseline — it does not auto-open.
-  useEffect(() => {
-    // Wait for the member list to load: seeding the tracker with an empty
-    // pre-load list made every existing member look "just created" a moment
-    // later, auto-opening ALL tabs on relaunch.
-    if (views.length === 0) {
-      return;
-    }
-    const currentNames = new Set(views.map((view) => view.name));
-    const tracker = knownMembersRef.current;
-    if (tracker.partyKey !== partyKey) {
-      knownMembersRef.current = { partyKey, names: currentNames };
-      return;
-    }
-    const added = [...currentNames].filter((name) => !tracker.names.has(name));
-    knownMembersRef.current = { partyKey, names: currentNames };
-    if (added.length === 0) {
-      return;
-    }
-    setLayout((current) => added.reduce((state, name) => (panelOf(state, name) ? state : openMemberInNewPanel(state, name)), current));
-    added.forEach((name) => onMemberOpened(name));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [views, partyKey]);
-
   useEffect(() => {
     // Persist only a layout seeded from a LOADED party; a provisional
     // (pre-load) layout would overwrite the user's stored tabs with nothing.
@@ -323,7 +301,12 @@ export function Workbench(props: WorkbenchProps) {
     // just arrived from another window would bounce it around forever.
     if (seededPartyRef.current === partyKey) {
       const serialized = layoutFingerprint(layout);
-      if (serialized !== syncedLayoutRef.current) {
+      const adopting = adoptingLayoutRef.current;
+      if (adopting && serialized === adopting) {
+        // The authoritative state update has now committed; normal local
+        // persistence can resume on the next user change.
+        adoptingLayoutRef.current = null;
+      } else if (!adopting && serialized !== syncedLayoutRef.current) {
         syncedLayoutRef.current = serialized;
         onPersistLayout(layout);
       }
@@ -424,8 +407,8 @@ export function Workbench(props: WorkbenchProps) {
   }
 
   function handleCreateMember(input: CreateMemberInput) {
-    // The new member is opened in its own panel by the new-member effect below,
-    // once it arrives via the party broadcast (uniform for wizard + agent creates).
+    // Placement is part of the backend creation mutation, so UI, HTTP, MCP and
+    // every window receive the same authoritative layout.
     return onCreateMember(input);
   }
 
@@ -620,6 +603,11 @@ export function Workbench(props: WorkbenchProps) {
         activePartyId={activePartyId}
         views={views}
         openMembers={openMembers}
+        tabGroups={layout.panels.map((panel) => ({
+          id: panel.id,
+          label: panel.tabs.join(" · "),
+        }))}
+        defaultTabGroupId={layout.focusedPanelId || undefined}
         drawers={drawers}
         onToggleDrawer={onToggleDrawer}
         routes={routes}
