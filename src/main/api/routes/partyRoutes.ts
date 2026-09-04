@@ -2,6 +2,7 @@ import { sanitizeAttachments } from "../../../shared/attachments";
 import { parseQueueCommand } from "../../../shared/messageQueue";
 import { buildPartyMcpToolSpecs } from "../../../core/partyBridge";
 import { PARTY_ACTION_NAMES } from "../../engine/partyActions";
+import type { CreateMemberInput } from "../../../shared/types";
 import { ApiError, camelAction, optText, required, text, type MethodRoute } from "../methodRegistry";
 
 /**
@@ -19,6 +20,36 @@ function deliveryOptions(p: Record<string, any>) {
     force: p.force === true,
     forceReason: typeof p.forceReason === "string" ? p.forceReason : undefined,
   };
+}
+
+function stringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || !value.length || value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new ApiError(400, `${field} must be a non-empty array of strings.`);
+  }
+  const values = value.map((item) => String(item).trim());
+  if (new Set(values).size !== values.length) {
+    throw new ApiError(400, `${field} contains duplicate values.`);
+  }
+  return values;
+}
+
+function nonEmptyArray(value: unknown, field: string): unknown[] {
+  if (!Array.isArray(value) || !value.length) {
+    throw new ApiError(400, `${field} must be a non-empty array.`);
+  }
+  return value;
+}
+
+function createMemberInput(value: unknown, label: string): CreateMemberInput {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ApiError(400, `${label} must be an object.`);
+  }
+  const input = value as Record<string, any>;
+  return {
+    ...input,
+    name: required(input.name, `${label}.name`),
+    requirement: required(input.requirement, `${label}.requirement`),
+  } as CreateMemberInput;
 }
 
 export const partyRoutes: MethodRoute[] = [
@@ -141,31 +172,29 @@ export const partyRoutes: MethodRoute[] = [
   {
     name: "party.message",
     http: "POST /api/party/messages",
-    handler: (p, ctx) => ctx.controller.sendPartyMessage(
-      ctx.workspace,
-      text(p.to),
-      text(p.content),
-      text(p.from, ctx.caller || "agent"),
-      sanitizeAttachments(p.attachments),
-      ctx.windowId,
-      deliveryOptions(p),
-      ctx.partyId,
-    ),
+    handler: (p, ctx) => Array.isArray(p.to)
+      ? ctx.controller.sendPartyMessages(
+        ctx.workspace, stringArray(p.to, "to"), text(p.content), text(p.from, ctx.caller || "agent"),
+        sanitizeAttachments(p.attachments), ctx.windowId, deliveryOptions(p), ctx.partyId,
+      )
+      : ctx.controller.sendPartyMessage(
+        ctx.workspace, text(p.to), text(p.content), text(p.from, ctx.caller || "agent"),
+        sanitizeAttachments(p.attachments), ctx.windowId, deliveryOptions(p), ctx.partyId,
+      ),
   },
   {
     name: "party.messageFromHarness",
     http: "POST /api/harness/party/messages",
     remote: false,
-    handler: (p, ctx) => ctx.controller.sendPartyMessage(
-      ctx.workspace,
-      text(p.to),
-      text(p.content),
-      text(p.from, ctx.caller || "agent"),
-      sanitizeAttachments(p.attachments),
-      ctx.windowId,
-      deliveryOptions(p),
-      ctx.partyId,
-    ),
+    handler: (p, ctx) => Array.isArray(p.to)
+      ? ctx.controller.sendPartyMessages(
+        ctx.workspace, stringArray(p.to, "to"), text(p.content), text(p.from, ctx.caller || "agent"),
+        sanitizeAttachments(p.attachments), ctx.windowId, deliveryOptions(p), ctx.partyId,
+      )
+      : ctx.controller.sendPartyMessage(
+        ctx.workspace, text(p.to), text(p.content), text(p.from, ctx.caller || "agent"),
+        sanitizeAttachments(p.attachments), ctx.windowId, deliveryOptions(p), ctx.partyId,
+      ),
   },
   {
     // A human user turn: never gated, unlike a member-originated `member.send`.
@@ -183,11 +212,24 @@ export const partyRoutes: MethodRoute[] = [
   {
     name: "member.create",
     http: "POST /api/party/members",
-    handler: (p, ctx) => ctx.controller.createPartyMember(
-      ctx.workspace,
-      { ...p, name: required(p.name, "name"), requirement: required(p.requirement, "requirement") },
-      ctx.windowId,
-    ),
+    handler: (p, ctx) => {
+      if (p.members === undefined) {
+        return ctx.controller.createPartyMember(ctx.workspace, createMemberInput(p, "member"), ctx.windowId);
+      }
+      if (p.name !== undefined || p.requirement !== undefined) {
+        throw new ApiError(400, "Use either top-level single-member fields or members, not both.");
+      }
+      return ctx.controller.createPartyMembers(
+        ctx.workspace,
+        nonEmptyArray(p.members, "members").map((member, index) => createMemberInput(member, `members[${index}]`)),
+        ctx.windowId,
+      );
+    },
+  },
+  {
+    name: "member.removeBatch",
+    http: "POST /api/party/members/remove",
+    handler: (p, ctx) => ctx.controller.removePartyMembers(ctx.workspace, stringArray(p.name, "name"), ctx.windowId, ctx.partyId),
   },
   {
     // Message queue: what a busy member has been sent but not yet handed.

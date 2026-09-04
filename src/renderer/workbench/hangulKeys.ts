@@ -6,7 +6,7 @@
  * Member, provider and model names are often Latin, but the IME is usually left
  * on. Typing `impl` with 한글 mode active produces `ㅑㅡㅔㅣ`. That is not a typo
  * the user can see — the intended keys were correct. Reading those glyphs back
- * as keys makes triggerless completion work under either IME state.
+ * as keys makes member/model completion work under either IME state.
  *
  * The same applies to chained model filters typed inside the popover.
  *

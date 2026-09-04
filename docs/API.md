@@ -2320,6 +2320,15 @@ Sends a message through the internal AgentParty router. `attachments` is optiona
 }
 ```
 
+`to` may also be a non-empty array to send the same message to several explicit
+members in one request. Duplicate names are rejected before delivery. The batch
+response separates `delivered`, `queuedMembers`, and `failed`, so a queued or
+already-delivered message is not mistaken for a failure and resent:
+
+```json
+{ "to": ["impl", "qa"], "content": "Run the release checks." }
+```
+
 If the target member is bound to an active session, AgentParty injects the message directly into that session as a channel payload. If no active session is bound, the message is recorded with `delivered: false` and no provider call is made. Sending an image to a text-only model is refused with a visible `vision` diagnostic (never silently dropped).
 
 **Message Gate**: when `from` is a member (not `"user"`) and that member's gate is
@@ -2365,6 +2374,20 @@ Creates a member inside the selected party, or inside `partyId` when supplied.
   "permissionMode": "plan",
   "requirement": "implement scoped code changes",
   "initialTask": "Inspect the current repo."
+}
+```
+
+For batch creation, send `members` instead of the top-level single-member
+fields. Every item accepts the same profile, location, and `tabGroup` fields.
+The response contains `created` and `failed`; successful members remain created
+when another item fails, and that partial result is explicit.
+
+```json
+{
+  "members": [
+    { "name": "impl", "requirement": "Implement the change", "runtime": "codex" },
+    { "name": "qa", "requirement": "Verify the change", "runtime": "claude-code" }
+  ]
 }
 ```
 
@@ -2613,6 +2636,12 @@ it on wakes the member if it is currently asleep.
 
 Fully removes a member. This is destructive.
 
+### `POST /api/party/members/remove`
+
+Batch removal. Body: `{ "name": ["impl", "qa"] }`. The response separates
+`removed` and `failed`; `main` remains protected and appears in `failed` if it
+was included. Duplicate or empty names are rejected before deletion begins.
+
 ### `POST /api/party/members/:name/status`
 
 Turn state of one member. `name` `*` (or `all`) returns every member of the
@@ -2750,10 +2779,13 @@ member. Body: `{ "exclude": "main" }` (optional).
 
 ### `POST /api/party/broadcast`
 
-Sends one message to EVERY member of the party except the sender.
+Sends one message to every member of the party except the sender. `exclude` may
+name additional members that must not receive the message. Unknown excluded
+names are rejected before any delivery, preventing a typo from accidentally
+including the intended member.
 
 ```json
-{ "from": "user", "content": "전체 공지: 지금 작업을 마무리하고 상태를 보고하세요.", "interrupt": false }
+{ "from": "user", "content": "전체 공지: 지금 작업을 마무리하고 상태를 보고하세요.", "exclude": ["release-owner"], "interrupt": false }
 ```
 
 Returns per-member delivery: `{ "delivered": ["impl", "test"], "failed": [{ "name": "survey1", "error": "target_member_has_no_active_session" }] }`.
@@ -3087,6 +3119,19 @@ outside the app process — today Codex, via
 `scripts/agentparty-codex-mcp-server.mjs`. `:tool` is a party tool name
 (`send`, `member-create`, `list`, `interrupt`, `broadcast`, `discord-send`, …);
 the body is that tool's arguments.
+
+The coordination tools preserve their single-target forms and add batch forms:
+
+- `send`: `to` is a member name or an array of unique names.
+- `member-create`: use top-level `name`/`role` for one member or
+  `members: [{ name, role, ... }]` for several.
+- `member-remove`: `name` is one member name or an array of unique names.
+- `broadcast`: `exclude: [name, ...]` omits selected members in addition to the
+  calling member.
+
+Batch responses expose per-target `delivered`/`queuedMembers`/`failed`,
+`created`/`failed`, or `removed`/`failed` arrays. A partial failure never erases
+the successful outcomes from the response.
 
 #### `list-locations` and explicit `member-create.location`
 

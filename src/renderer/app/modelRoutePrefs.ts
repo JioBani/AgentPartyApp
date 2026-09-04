@@ -3,7 +3,7 @@ import type { RouteLike } from "../workbench/routes";
 
 /**
  * A one-value publish/subscribe channel carrying the model routes from `App`
- * down to the composer, which needs them for triggerless completion and gets
+ * down to the composer, which needs them for `!` model completion and gets
  * nothing else from the layers in between.
  *
  * Same shape and same reason as `app/partyMemberPrefs.ts`: not a second source

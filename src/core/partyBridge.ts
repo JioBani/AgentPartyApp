@@ -152,7 +152,7 @@ export interface PartyBridge {
   /** Stop a member's in-flight turn; target "all" stops every member except the caller. */
   interrupt(target: string): Promise<PartyToolResult>;
   /** Send a message to every other member of the caller's party. */
-  broadcast(content: string, interrupt?: boolean): Promise<PartyToolResult>;
+  broadcast(content: string, interrupt?: boolean, exclude?: string[]): Promise<PartyToolResult>;
   /** Give THIS member its own Discord channel (creating it if needed). */
   discordConnect(channelName?: string): Promise<PartyToolResult>;
   /** Post one message from THIS member into its Discord channel. */
@@ -217,7 +217,7 @@ export function partyBridgeFromInvoker(
     listModels: (query) => hostInvoke("list-models", query || {}),
     status: (name) => hostInvoke("member-status", name ? { name } : {}),
     interrupt: (target) => hostInvoke("interrupt", { target }),
-    broadcast: (content, interrupt) => hostInvoke("broadcast", { content, ...partyToolDeliveryArgs(interrupt) }),
+    broadcast: (content, interrupt, exclude) => hostInvoke("broadcast", { content, ...partyToolDeliveryArgs(interrupt), exclude }),
     discordConnect: (channelName) => hostInvoke("discord-connect", channelName ? { channelName } : {}),
     discordSend: (content) => hostInvoke("discord-send", { content }),
     discordSendImage: (path, caption) => hostInvoke("discord-send-image", { path, caption }),
@@ -254,9 +254,9 @@ export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "memb
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
-  send: "Send a message to another member of your party. Errors if the recipient is not running or does not exist. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in, or queue=true to explicitly wait behind the current turn. Legacy interrupt=false is treated as omitted so model-generated false values cannot disable the saved setting.",
-  "member-create": "Create a new member in your party and start its session. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?} to choose Windows or WSL explicitly; omit it to inherit your own execution location.",
-  "member-remove": "Remove a member from your party. Cannot remove 'main'.",
+  send: "Send the same message to one or more members of your party. Pass `to` as one member name or an array of names. Batch results separate delivered, queued, and failed recipients. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in, or queue=true to explicitly wait behind the current turn. Legacy interrupt=false is treated as omitted so model-generated false values cannot disable the saved setting.",
+  "member-create": "Create and start one or more members. Use the existing top-level fields for one member, or pass `members` as an array of member objects for a batch. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?} to choose Windows or WSL explicitly; omit it to inherit your own execution location.",
+  "member-remove": "Remove one or more members from your party. Pass `name` as one member name or an array of names. Cannot remove 'main'.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
   "gate-set": "Set another member's Message Gate — the delivery-time reviewer of that member's OUTGOING messages. mode: inherit|on|off. rule: the communication rule text the reviewer enforces (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate.",
   "party-gate-set": "Set the PARTY-WIDE Message Gate — the default every member with mode 'inherit' follows. enabled: turn the party gate on/off. rule: the communication rule text enforced party-wide. reviewer: {model, effort} for a party-wide headless reviewer (null to use the settings default). This changes the default for EVERY inheriting member at once, so prefer gate-set when only one member should be affected. A member that set mode on/off, or its own rule, keeps overriding this.",
@@ -270,14 +270,65 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "discord-send-image": "Upload an image FILE from this machine into your Discord thread, so the user can see a screenshot, chart or diagram instead of reading a description of it. `path` is a path on the machine you are running on. Optional `caption` is posted with it (same 2000-character rule). Over-size images are REJECTED with the limit stated, not silently dropped. Images only — this is not a general file transfer.",
   "attach-image": "Show the user an image in THIS conversation — a screenshot you took, a chart you produced, or a picture on the web. Give `path` (a file on the machine you are running on) or `url` (http/https), not both. The picture is displayed to the USER ONLY: it is not added to your context and you will not see it, so describe in your reply whatever you need the conversation to remember about it. Prefer this over pasting a file path into your text when the point is for a human to LOOK at something.",
   "discord-disconnect": "Stop bridging yourself to Discord. The channel and its history stay in Discord; you simply stop sending and receiving there.",
-  broadcast: "Send a message to EVERY other member of your party at once. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in or queue=true to explicitly wait behind busy recipients.",
+  broadcast: "Send a message to every other member of your party at once. Pass `exclude` with member names that must not receive it. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in or queue=true to explicitly wait behind busy recipients.",
+};
+
+const partyCreateMemberDynamicProperties: Record<string, unknown> = {
+  name: { type: "string", description: "New member name (letters, digits, _ or -)." },
+  role: { type: "string", description: "Short role description for the new member." },
+  tabGroup: { type: "string", description: "Exact tabGroups[].id returned by list, or a unique member name in that open group. Omit to open a new tab group." },
+  harness: { type: "string", description: "Harness id, e.g. claude-code or codex. Defaults to claude-code." },
+  model: { type: "string", description: "Model id from list-models." },
+  reasoning: { type: "string", description: "Reasoning/thinking mode: adaptive | enabled | disabled." },
+  reasoningBudget: { type: "number", description: "Thinking token budget when applicable." },
+  effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
+  serviceTier: { type: "string", description: "Optional service tier from list-models. Omit (or pass 'inherit') to follow the harness's own config; 'standard' forces the default speed; a native id like 'priority' forces Fast (higher credit burn)." },
+  permissionMode: { type: "string", description: "Initial Claude permission: default | acceptEdits | bypassPermissions | plan | dontAsk | auto." },
+  location: {
+    type: "object",
+    description: "Explicit execution host and cwd. Omit to inherit the caller's location; call list-locations for suggestions.",
+    properties: {
+      host: { type: "string", enum: [...MEMBER_EXECUTION_HOSTS], description: "Execution host. WSL is Windows-only; future native hosts extend this field." },
+      cwd: { type: "string", description: "Absolute path in that host's native syntax." },
+      distro: { type: "string", description: "Required when host is wsl; omit for windows." },
+    },
+    required: ["host", "cwd"],
+    additionalProperties: false,
+  },
+  codexPolicy: {
+    type: "object",
+    description: "Initial Codex permission policy.",
+    properties: {
+      sandbox: { type: "string", enum: ["read-only", "workspace-write", "danger-full-access"] },
+      approval: { type: "string", enum: ["untrusted", "on-request", "never"] },
+      guardian: { type: "boolean" },
+    },
+    required: ["sandbox", "approval", "guardian"],
+    additionalProperties: false,
+  },
+  cursorPolicy: {
+    type: "object",
+    description: "Initial Cursor mode and approval policy.",
+    properties: {
+      mode: { type: "string", enum: ["agent", "ask", "plan"] },
+      approval: { type: "string", enum: ["allowlist", "auto-review", "unrestricted"] },
+    },
+    required: ["mode", "approval"],
+    additionalProperties: false,
+  },
 };
 
 const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = {
   send: {
     type: "object",
     properties: {
-      to: { type: "string", description: "Recipient member name in your party." },
+      to: {
+        oneOf: [
+          { type: "string" },
+          { type: "array", items: { type: "string" }, minItems: 1, uniqueItems: true },
+        ],
+        description: "One recipient member name, or a non-empty array of unique member names.",
+      },
       content: { type: "string", description: "Message body." },
       interrupt: { type: "boolean", description: "True forces a cut-in. False is treated as omitted for harness compatibility; use queue=true to force waiting." },
       queue: { type: "boolean", description: "True forces this message to wait behind the recipient's current turn. False is treated as omitted." },
@@ -290,55 +341,35 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
   "member-create": {
     type: "object",
     properties: {
-      name: { type: "string", description: "New member name (letters, digits, _ or -)." },
-      role: { type: "string", description: "Short role description for the new member." },
-      tabGroup: { type: "string", description: "Exact tabGroups[].id returned by list, or a unique member name in that open group. Omit to open a new tab group." },
-      harness: { type: "string", description: "Harness id, e.g. claude-code or codex. Defaults to claude-code." },
-      model: { type: "string", description: "Model id from list-models." },
-      reasoning: { type: "string", description: "Reasoning/thinking mode: adaptive | enabled | disabled." },
-      reasoningBudget: { type: "number", description: "Thinking token budget when applicable." },
-      effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
-      serviceTier: { type: "string", description: "Optional service tier from list-models. Omit (or pass 'inherit') to follow the harness's own config; 'standard' forces the default speed; a native id like 'priority' forces Fast (higher credit burn)." },
-      permissionMode: { type: "string", description: "Initial Claude permission: default | acceptEdits | bypassPermissions | plan | dontAsk | auto." },
-      location: {
-        type: "object",
-        description: "Explicit execution host and cwd. Omit to inherit the caller's location; call list-locations for suggestions.",
-        properties: {
-          host: { type: "string", enum: [...MEMBER_EXECUTION_HOSTS], description: "Execution host. WSL is Windows-only; future native hosts extend this field." },
-          cwd: { type: "string", description: "Absolute path in that host's native syntax." },
-          distro: { type: "string", description: "Required when host is wsl; omit for windows." },
+      ...partyCreateMemberDynamicProperties,
+      members: {
+        type: "array",
+        minItems: 1,
+        description: "Batch of members to create. Do not combine with the top-level single-member fields.",
+        items: {
+          type: "object",
+          properties: partyCreateMemberDynamicProperties,
+          required: ["name", "role"],
+          additionalProperties: false,
         },
-        required: ["host", "cwd"],
-        additionalProperties: false,
-      },
-      codexPolicy: {
-        type: "object",
-        description: "Initial Codex permission policy.",
-        properties: {
-          sandbox: { type: "string", enum: ["read-only", "workspace-write", "danger-full-access"] },
-          approval: { type: "string", enum: ["untrusted", "on-request", "never"] },
-          guardian: { type: "boolean" },
-        },
-        required: ["sandbox", "approval", "guardian"],
-        additionalProperties: false,
-      },
-      cursorPolicy: {
-        type: "object",
-        description: "Initial Cursor mode and approval policy.",
-        properties: {
-          mode: { type: "string", enum: ["agent", "ask", "plan"] },
-          approval: { type: "string", enum: ["allowlist", "auto-review", "unrestricted"] },
-        },
-        required: ["mode", "approval"],
       },
     },
-    required: ["name", "role"],
+    oneOf: [
+      { required: ["name", "role"], not: { required: ["members"] } },
+      { required: ["members"], not: { anyOf: [{ required: ["name"] }, { required: ["role"] }] } },
+    ],
     additionalProperties: false,
   },
   "member-remove": {
     type: "object",
     properties: {
-      name: { type: "string", description: "Member name to remove." },
+      name: {
+        oneOf: [
+          { type: "string" },
+          { type: "array", items: { type: "string" }, minItems: 1, uniqueItems: true },
+        ],
+        description: "One member name, or a non-empty array of unique member names to remove.",
+      },
     },
     required: ["name"],
     additionalProperties: false,
@@ -477,6 +508,12 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
       content: { type: "string", description: "Message body sent to every other member." },
       interrupt: { type: "boolean", description: "True forces a cut-in for busy recipients. False is treated as omitted for harness compatibility; use queue=true to force waiting." },
       queue: { type: "boolean", description: "True forces the message to wait behind busy recipients. False is treated as omitted." },
+      exclude: {
+        type: "array",
+        items: { type: "string" },
+        uniqueItems: true,
+        description: "Member names to exclude from this broadcast in addition to yourself.",
+      },
     },
     required: ["content"],
     additionalProperties: false,
@@ -548,6 +585,77 @@ export function partyToolNameOf(tool: string): PartyToolName | undefined {
   return (PARTY_TOOL_NAMES as readonly string[]).includes(plain) ? plain as PartyToolName : undefined;
 }
 
+function memberNamesOf(value: unknown, field: string, allowEmpty = false): { names?: string[]; single: boolean; error?: string } {
+  const single = typeof value === "string";
+  const raw = single ? [value] : Array.isArray(value) ? value : undefined;
+  if (!raw || (!allowEmpty && !raw.length) || raw.some((item) => typeof item !== "string" || !item.trim())) {
+    return { single, error: `${field} must be a member name or a non-empty array of member names.` };
+  }
+  const names = raw.map((item) => String(item).trim());
+  if (new Set(names).size !== names.length) {
+    return { single, error: `${field} contains duplicate member names.` };
+  }
+  return { names, single };
+}
+
+function createMemberRequestOf(value: unknown, label: string): { request?: PartyCreateMemberRequest; error?: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { error: `${label} must be a member object.` };
+  }
+  const input = value as Record<string, unknown>;
+  const memberName = typeof input.name === "string" ? input.name.trim() : "";
+  const role = typeof input.role === "string" ? input.role.trim() : "";
+  if (!memberName || !role) {
+    return { error: `${label} requires string fields: name, role.` };
+  }
+  if (input.tabGroup !== undefined && typeof input.tabGroup !== "string") {
+    return { error: `${label}.tabGroup must be a tab group id or an existing member name.` };
+  }
+  return {
+    request: {
+      name: memberName,
+      role,
+      tabGroup: typeof input.tabGroup === "string" ? input.tabGroup : undefined,
+      harness: typeof input.harness === "string" ? input.harness : undefined,
+      model: typeof input.model === "string" ? input.model : undefined,
+      reasoning: typeof input.reasoning === "string" ? input.reasoning : undefined,
+      reasoningBudget: typeof input.reasoningBudget === "number" ? input.reasoningBudget : undefined,
+      effort: typeof input.effort === "string" ? input.effort : undefined,
+      serviceTier: typeof input.serviceTier === "string" ? input.serviceTier : undefined,
+      permissionMode: typeof input.permissionMode === "string" ? input.permissionMode : undefined,
+      codexPolicy: input.codexPolicy && typeof input.codexPolicy === "object" ? input.codexPolicy as CodexPolicy : undefined,
+      cursorPolicy: input.cursorPolicy && typeof input.cursorPolicy === "object" ? input.cursorPolicy as CursorPolicy : undefined,
+      location: input.location && typeof input.location === "object" ? input.location as MemberExecutionLocationRequest : undefined,
+    },
+  };
+}
+
+function createMemberRequestsOf(input: Record<string, unknown>): { requests?: PartyCreateMemberRequest[]; single: boolean; error?: string } {
+  if (input.members !== undefined) {
+    if (input.name !== undefined || input.role !== undefined) {
+      return { single: false, error: "member-create accepts either top-level single-member fields or members, not both." };
+    }
+    if (!Array.isArray(input.members) || !input.members.length) {
+      return { single: false, error: "member-create.members must be a non-empty array." };
+    }
+    const requests: PartyCreateMemberRequest[] = [];
+    for (let index = 0; index < input.members.length; index += 1) {
+      const parsed = createMemberRequestOf(input.members[index], `member-create.members[${index}]`);
+      if (parsed.error) return { single: false, error: parsed.error };
+      requests.push(parsed.request as PartyCreateMemberRequest);
+    }
+    const names = requests.map((request) => request.name);
+    if (new Set(names).size !== names.length) {
+      return { single: false, error: "member-create.members contains duplicate member names." };
+    }
+    return { requests, single: false };
+  }
+  const parsed = createMemberRequestOf(input, "member-create");
+  return parsed.error
+    ? { single: true, error: parsed.error }
+    : { requests: [parsed.request as PartyCreateMemberRequest], single: true };
+}
+
 export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdentity, tool: string, args: unknown): Promise<PartyToolResult> {
   const name = partyToolNameOf(tool);
   if (!name) {
@@ -556,53 +664,53 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
   const input = args && typeof args === "object" ? args as Record<string, unknown> : {};
   switch (name) {
     case "send": {
-      const to = typeof input.to === "string" ? input.to : "";
       const content = typeof input.content === "string" ? input.content : "";
-      if (!to || !content) {
-        return { ok: false, error: "send requires string arguments: to, content." };
-      }
+      const targets = memberNamesOf(input.to, "send.to");
+      if (targets.error) return { ok: false, error: targets.error };
+      if (!content) return { ok: false, error: "send requires string argument: content." };
       const delivery = partyToolInterruptOf(input);
       if (delivery.error) return { ok: false, error: delivery.error };
-      return bridge.send(
-        identity.member,
-        to,
-        content,
-        delivery.value,
-        input.force === true,
+      const sendOne = (to: string) => bridge.send(
+        identity.member, to, content, delivery.value, input.force === true,
         typeof input.forceReason === "string" ? input.forceReason : undefined,
       );
+      if (targets.single) return sendOne(targets.names![0]);
+      const delivered: string[] = [];
+      const queuedMembers: string[] = [];
+      const failed: Array<{ name: string; error: string }> = [];
+      for (const target of targets.names!) {
+        const result = await sendOne(target);
+        if (!result.ok) failed.push({ name: target, error: result.error || "not_delivered" });
+        else if ((result.data as { queued?: boolean } | undefined)?.queued) queuedMembers.push(target);
+        else delivered.push(target);
+      }
+      return { ok: delivered.length + queuedMembers.length > 0, ...(delivered.length + queuedMembers.length ? {} : { error: "Message was not delivered to any requested member." }), data: { delivered, queuedMembers, failed } };
     }
     case "member-create": {
-      const memberName = typeof input.name === "string" ? input.name : "";
-      const role = typeof input.role === "string" ? input.role : "";
-      if (!memberName || !role) {
-        return { ok: false, error: "member-create requires string arguments: name, role." };
+      const members = createMemberRequestsOf(input);
+      if (members.error) return { ok: false, error: members.error };
+      if (members.single) return bridge.createMember(members.requests![0]);
+      const created: unknown[] = [];
+      const failed: Array<{ name: string; error: string }> = [];
+      for (const request of members.requests!) {
+        const result = await bridge.createMember(request);
+        if (result.ok) created.push(result.data ?? { name: request.name });
+        else failed.push({ name: request.name, error: result.error || "not_created" });
       }
-      if (input.tabGroup !== undefined && typeof input.tabGroup !== "string") {
-        return { ok: false, error: "member-create tabGroup must be an existing member name." };
-      }
-      return bridge.createMember({
-        name: memberName,
-        role,
-        tabGroup: typeof input.tabGroup === "string" ? input.tabGroup : undefined,
-        harness: typeof input.harness === "string" ? input.harness : undefined,
-        model: typeof input.model === "string" ? input.model : undefined,
-        reasoning: typeof input.reasoning === "string" ? input.reasoning : undefined,
-        reasoningBudget: typeof input.reasoningBudget === "number" ? input.reasoningBudget : undefined,
-        effort: typeof input.effort === "string" ? input.effort : undefined,
-        serviceTier: typeof input.serviceTier === "string" ? input.serviceTier : undefined,
-        permissionMode: typeof input.permissionMode === "string" ? input.permissionMode : undefined,
-        codexPolicy: input.codexPolicy && typeof input.codexPolicy === "object" ? input.codexPolicy as CodexPolicy : undefined,
-        cursorPolicy: input.cursorPolicy && typeof input.cursorPolicy === "object" ? input.cursorPolicy as CursorPolicy : undefined,
-        location: input.location && typeof input.location === "object" ? input.location as MemberExecutionLocationRequest : undefined,
-      });
+      return { ok: created.length > 0, ...(created.length ? {} : { error: "No requested members were created." }), data: { created, failed } };
     }
     case "member-remove": {
-      const memberName = typeof input.name === "string" ? input.name : "";
-      if (!memberName) {
-        return { ok: false, error: "member-remove requires string argument: name." };
+      const members = memberNamesOf(input.name, "member-remove.name");
+      if (members.error) return { ok: false, error: members.error };
+      if (members.single) return bridge.removeMember(members.names![0]);
+      const removed: string[] = [];
+      const failed: Array<{ name: string; error: string }> = [];
+      for (const memberName of members.names!) {
+        const result = await bridge.removeMember(memberName);
+        if (result.ok) removed.push(memberName);
+        else failed.push({ name: memberName, error: result.error || "not_removed" });
       }
-      return bridge.removeMember(memberName);
+      return { ok: removed.length > 0, ...(removed.length ? {} : { error: "No requested members were removed." }), data: { removed, failed } };
     }
     case "member-permission": {
       const memberName = typeof input.name === "string" ? input.name : "";
@@ -683,7 +791,13 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       }
       const delivery = partyToolInterruptOf(input);
       if (delivery.error) return { ok: false, error: delivery.error };
-      return bridge.broadcast(content, delivery.value);
+      let exclude: string[] | undefined;
+      if (input.exclude !== undefined) {
+        const parsed = memberNamesOf(input.exclude, "broadcast.exclude", true);
+        if (parsed.error) return { ok: false, error: parsed.error };
+        exclude = parsed.names;
+      }
+      return bridge.broadcast(content, delivery.value, exclude);
     }
     case "discord-connect":
       return bridge.discordConnect(typeof input.channelName === "string" && input.channelName ? input.channelName : undefined);
@@ -755,65 +869,78 @@ type ToolFactory = (
  * bridge with the caller's identity closure-bound (`from` is never agent input).
  */
 export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, identity: PartyIdentity): unknown[] {
-  const envelope = (result: PartyToolResult): McpToolResult => ({
-    content: [{ type: "text", text: JSON.stringify(result.data ?? { ok: result.ok, error: result.error }) }],
-    isError: !result.ok,
+  const envelope = (result: PartyToolResult): McpToolResult => {
+    const payload = result.data === undefined
+      ? { ok: result.ok, error: result.error }
+      : result.ok
+        ? result.data
+        : { ok: false, error: result.error, data: result.data };
+    return {
+      content: [{ type: "text", text: JSON.stringify(payload) }],
+      isError: !result.ok,
+    };
+  };
+  const memberCreateOptionalFields = {
+    tabGroup: z.string().optional().describe("Exact tabGroups[].id returned by list, or a unique member name in that open group. Omit to create a new tab group."),
+    harness: z.string().optional().describe("Harness id (e.g. 'claude-code'). Defaults to claude-code."),
+    model: z.string().optional().describe("Model id from list-models."),
+    reasoning: z.string().optional().describe("Reasoning/thinking mode: adaptive | enabled | disabled."),
+    reasoningBudget: z.number().optional().describe("Thinking token budget when applicable."),
+    effort: z.string().optional().describe("Effort level: low | medium | high | xhigh | max."),
+    serviceTier: z.string().optional().describe("Optional service tier from list-models. Omit (or 'inherit') to follow the harness's own config; 'standard' forces default speed; 'priority' forces Fast."),
+    permissionMode: z.string().optional().describe("Initial Claude permission mode."),
+    location: z.object({
+      host: z.enum(MEMBER_EXECUTION_HOSTS).describe("Execution host. WSL is Windows-only; future native hosts extend this field."),
+      cwd: z.string().describe("Absolute path in the selected host's native syntax."),
+      distro: z.string().optional().describe("Required when host is wsl; omit for windows."),
+    }).optional().describe("Explicit execution location. Omit to inherit your own; call list-locations for suggestions."),
+    codexPolicy: z.object({
+      sandbox: z.enum(["read-only", "workspace-write", "danger-full-access"]),
+      approval: z.enum(["untrusted", "on-request", "never"]),
+      guardian: z.boolean(),
+    }).optional().describe("Initial Codex permission policy."),
+    cursorPolicy: z.object({
+      mode: z.enum(["agent", "ask", "plan"]),
+      approval: z.enum(["allowlist", "auto-review", "unrestricted"]),
+    }).optional().describe("Initial Cursor mode and approval policy."),
+  };
+  const memberCreateItem = z.object({
+    name: z.string().describe("New member name (letters, digits, _ or -)."),
+    role: z.string().describe("Short role description for the new member."),
+    ...memberCreateOptionalFields,
   });
   return [
     tool(
       "send",
-      "Send a message to another member of your party. Fire-and-forget: it delivers to the recipient's live session (their reply comes back later as their own message). A recipient that is idle, not started, or SLEEPING is started or woken and keeps its conversation. Errors only if it does not exist or was explicitly closed. Omit both delivery flags to use your member override then Runtime default; interrupt=true cuts in and queue=true explicitly waits.",
+      "Send the same message to one or more party members. Pass `to` as one name or an array. Fire-and-forget: replies arrive later as their own messages. Batch results separate delivered, queued, and failed recipients. Omit both delivery flags to use your member override then Runtime default; interrupt=true cuts in and queue=true explicitly waits.",
       {
-        to: z.string().describe("Recipient member name in your party."),
+        to: z.union([z.string(), z.array(z.string()).min(1)]).describe("One recipient name or a non-empty array of unique recipient names."),
         content: z.string().describe("Message body."),
         interrupt: z.boolean().optional().describe("True forces a cut-in. False is treated as omitted for harness compatibility; use queue=true to force waiting."),
         queue: z.boolean().optional().describe("True forces this message to wait behind the recipient's current turn. False is treated as omitted."),
         force: z.boolean().optional().describe("Bypass the Message Gate review and deliver even if your gate would reject (surfaced as a 'forced' badge). Use only when the message must go through. Default false."),
         forceReason: z.string().optional().describe("Why you forced past the gate (recorded and shown). Provide when force=true."),
       },
-      async (args: { to: string; content: string; interrupt?: boolean; queue?: boolean; force?: boolean; forceReason?: string }) => {
-        const delivery = partyToolInterruptOf(args);
-        if (delivery.error) return envelope({ ok: false, error: delivery.error });
-        return envelope(await bridge.send(identity.member, args.to, args.content, delivery.value, args.force === true, args.forceReason));
-      },
+      async (args: { to: string | string[]; content: string; interrupt?: boolean; queue?: boolean; force?: boolean; forceReason?: string }) =>
+        envelope(await invokePartyTool(bridge, identity, "send", args)),
     ),
     tool(
       "member-create",
-      "Create a new member in your party and start its session. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that group); omit it for a new group. You choose the harness, model, and reasoning — call list-models first to see valid options.",
+      "Create and start one or more members. Use the top-level fields for one member, or `members` for a batch. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that group); omit it for a new group. Call list-models first for valid settings.",
       {
-        name: z.string().describe("New member name (letters, digits, _ or -)."),
-        role: z.string().describe("Short role description for the new member."),
-        tabGroup: z.string().optional().describe("Exact tabGroups[].id returned by list, or a unique member name in that open group. Omit to create a new tab group."),
-        harness: z.string().optional().describe("Harness id (e.g. 'claude-code'). Defaults to claude-code."),
-        model: z.string().optional().describe("Model id from list-models."),
-        reasoning: z.string().optional().describe("Reasoning/thinking mode: adaptive | enabled | disabled."),
-        reasoningBudget: z.number().optional().describe("Thinking token budget when applicable."),
-        effort: z.string().optional().describe("Effort level: low | medium | high | xhigh | max."),
-        serviceTier: z.string().optional().describe("Optional service tier from list-models. Omit (or 'inherit') to follow the harness's own config; 'standard' forces default speed; 'priority' forces Fast."),
-        permissionMode: z.string().optional().describe("Initial Claude permission mode."),
-        location: z.object({
-          host: z.enum(MEMBER_EXECUTION_HOSTS).describe("Execution host. WSL is Windows-only; future native hosts extend this field."),
-          cwd: z.string().describe("Absolute path in the selected host's native syntax."),
-          distro: z.string().optional().describe("Required when host is wsl; omit for windows."),
-        }).optional().describe("Explicit execution location. Omit to inherit your own; call list-locations for suggestions."),
-        codexPolicy: z.object({
-          sandbox: z.enum(["read-only", "workspace-write", "danger-full-access"]),
-          approval: z.enum(["untrusted", "on-request", "never"]),
-          guardian: z.boolean(),
-        }).optional().describe("Initial Codex permission policy."),
-        cursorPolicy: z.object({
-          mode: z.enum(["agent", "ask", "plan"]),
-          approval: z.enum(["allowlist", "auto-review", "unrestricted"]),
-        }).optional().describe("Initial Cursor mode and approval policy."),
+        name: z.string().optional().describe("Single-member form: new member name."),
+        role: z.string().optional().describe("Single-member form: short role description."),
+        ...memberCreateOptionalFields,
+        members: z.array(memberCreateItem).min(1).optional().describe("Batch form. Do not combine with top-level name/role fields."),
       },
-      async (args: PartyCreateMemberRequest) =>
-        envelope(await bridge.createMember(args)),
+      async (args: PartyCreateMemberRequest | { members: PartyCreateMemberRequest[] }) =>
+        envelope(await invokePartyTool(bridge, identity, "member-create", args)),
     ),
     tool(
       "member-remove",
-      "Remove a member from your party (cannot remove 'main'). Closes its session if running.",
-      { name: z.string().describe("Member name to remove.") },
-      async (args: { name: string }) => envelope(await bridge.removeMember(args.name)),
+      "Remove one or more members from your party (cannot remove 'main'). Closes running sessions. Batch results report removed and failed names separately.",
+      { name: z.union([z.string(), z.array(z.string()).min(1)]).describe("One member name or a non-empty array of unique member names.") },
+      async (args: { name: string | string[] }) => envelope(await invokePartyTool(bridge, identity, "member-remove", args)),
     ),
     tool(
       "member-permission",
@@ -887,17 +1014,15 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     ),
     tool(
       "broadcast",
-      "Send a message to EVERY other member of your party at once. Omit both delivery flags to use your member override then Runtime default; interrupt=true cuts in and queue=true explicitly waits.",
+      "Send a message to every other member of your party at once. Use exclude to omit selected members. Omit both delivery flags to use your member override then Runtime default; interrupt=true cuts in and queue=true explicitly waits.",
       {
         content: z.string().describe("Message body sent to every other member."),
         interrupt: z.boolean().optional().describe("True forces a cut-in for busy recipients. False is treated as omitted for harness compatibility; use queue=true to force waiting."),
         queue: z.boolean().optional().describe("True forces the message to wait behind busy recipients. False is treated as omitted."),
+        exclude: z.array(z.string()).optional().describe("Member names to exclude in addition to yourself."),
       },
-      async (args: { content: string; interrupt?: boolean; queue?: boolean }) => {
-        const delivery = partyToolInterruptOf(args);
-        if (delivery.error) return envelope({ ok: false, error: delivery.error });
-        return envelope(await bridge.broadcast(args.content, delivery.value));
-      },
+      async (args: { content: string; interrupt?: boolean; queue?: boolean; exclude?: string[] }) =>
+        envelope(await invokePartyTool(bridge, identity, "broadcast", args)),
     ),
     tool(
       "discord-connect",

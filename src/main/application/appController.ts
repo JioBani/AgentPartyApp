@@ -2199,6 +2199,48 @@ export class AppController {
     return result;
   }
 
+  /** Batch form of createPartyMember; validates each cwd, then publishes one coherent party update. */
+  async createPartyMembers(workspacePath: string, inputs: CreateMemberInput[], windowId?: string) {
+    if (!inputs.length) throw new Error("members must be a non-empty array.");
+    const names = inputs.map((input) => input.name);
+    if (new Set(names).size !== names.length) throw new Error("members contains duplicate member names.");
+    const created: Array<{ name: string; status?: string }> = [];
+    const failed: Array<{ name: string; error: string }> = [];
+    const createdPartyIds = new Set<string>();
+    const engine = this.partyEngine(workspacePath);
+    for (const input of inputs) {
+      try {
+        const location = await this.requireUsableLocation(input.location, workspacePath);
+        const partyId = input.partyId || this.partyForWindow(windowId);
+        const result = await engine.createMember({ ...input, location: location.serialized, partyId });
+        created.push({ name: input.name, status: result.member?.status });
+        const createdPartyId = result.member?.partyId || result.currentPartyId || partyId;
+        if (createdPartyId) createdPartyIds.add(createdPartyId);
+        rememberCwd(location.location);
+        if (input.saveAsDefault) {
+          await setDefaultCwd(location.location).catch((error) => {
+            log("warn", "cwd", "could not save default cwd", { location: location.serialized, error: error instanceof Error ? error.message : String(error) });
+          });
+        }
+      } catch (error) {
+        failed.push({ name: input.name, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    if (created.length) {
+      // State first, then layouts: renderers must know every new member before
+      // adopting panels that reference them. One update avoids intermediate,
+      // partially-created batches in other windows.
+      await this.broadcastParty(workspacePath);
+      for (const partyId of createdPartyIds) {
+        await this.publishStoredPartyLayout(workspacePath, partyId);
+      }
+      this.deps.onSettingsChanged();
+      this.publishSettings();
+      await this.syncPartyRegistry(workspacePath);
+    }
+    return { ok: created.length > 0, created, failed };
+  }
+
   /**
    * Resolves the location a party/member will run in, or refuses with the reason.
    *
@@ -2242,6 +2284,33 @@ export class AppController {
 
   sendPartyMessage(workspacePath: string, name: string, content: string, from?: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }, partyId?: string): Promise<ReturnType<PartyApplicationService["sendMessage"]>> {
     return this.mutateParty(workspacePath, (engine) => engine.sendPartyMessage(name, content, from, attachments, partyId || this.partyForWindow(windowId), options));
+  }
+
+  /** Sends one message to multiple explicit recipients, then publishes one coherent result snapshot. */
+  async sendPartyMessages(workspacePath: string, names: string[], content: string, from?: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }, partyId?: string) {
+    if (!names.length) throw new Error("to must be a non-empty array.");
+    if (new Set(names).size !== names.length) throw new Error("to contains duplicate member names.");
+    const delivered: string[] = [];
+    const queuedMembers: string[] = [];
+    const failed: Array<{ name: string; error: string }> = [];
+    const engine = this.partyEngine(workspacePath);
+    const targetPartyId = partyId || this.partyForWindow(windowId);
+    for (const name of names) {
+      try {
+        const result = await engine.sendPartyMessage(name, content, from, attachments, targetPartyId, options);
+        if (result.queued || result.partyMessage?.error === "queued_for_busy_member" || result.partyMessage?.error === "queued_for_sleeping_member") {
+          queuedMembers.push(name);
+        } else if (result.partyMessage?.delivered) {
+          delivered.push(name);
+        } else {
+          failed.push({ name, error: result.partyMessage?.error || "not_delivered" });
+        }
+      } catch (error) {
+        failed.push({ name, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    await this.broadcastParty(workspacePath);
+    return { ok: delivered.length + queuedMembers.length > 0, delivered, queuedMembers, failed };
   }
 
   /**
@@ -2436,6 +2505,29 @@ export class AppController {
     // the summary authoritative immediately after a successful deletion.
     await this.syncPartyRegistry(workspacePath);
     return result;
+  }
+
+  /** Batch form of removePartyMember; applies every deletion before publishing the final party snapshot. */
+  async removePartyMembers(workspacePath: string, names: string[], windowId?: string, partyId?: string) {
+    if (!names.length) throw new Error("name must be a non-empty array.");
+    if (new Set(names).size !== names.length) throw new Error("name contains duplicate member names.");
+    const removed: string[] = [];
+    const failed: Array<{ name: string; error: string }> = [];
+    const engine = this.partyEngine(workspacePath);
+    const targetPartyId = partyId || this.partyForWindow(windowId);
+    for (const name of names) {
+      try {
+        await engine.removeMember(name, targetPartyId);
+        removed.push(name);
+      } catch (error) {
+        failed.push({ name, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    if (removed.length) {
+      await this.syncPartyRegistry(workspacePath);
+      await this.broadcastParty(workspacePath);
+    }
+    return { ok: removed.length > 0, removed, failed };
   }
 
   /** Persists a member's auto-compaction threshold. UI + HTTP share the party-action path. */

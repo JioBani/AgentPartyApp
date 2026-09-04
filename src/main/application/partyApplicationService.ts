@@ -2614,13 +2614,23 @@ export class PartyApplicationService {
    * routing/persistence/optional interrupt); per-member failures — including a
    * gate rejection — are collected, never silently dropped.
    */
-  async broadcastMessage(content: string, from = "user", partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string }): Promise<PartyCommandResult & { delivered: string[]; queuedMembers: string[]; failed: Array<{ name: string; error: string }> }> {
+  async broadcastMessage(content: string, from = "user", partyId?: string, options?: { interrupt?: boolean; force?: boolean; forceReason?: string; exclude?: string[] }): Promise<PartyCommandResult & { delivered: string[]; queuedMembers: string[]; failed: Array<{ name: string; error: string }> }> {
     if (!content.trim()) {
       throw new Error("broadcast requires a non-empty content.");
     }
     const initial = this.ensureMigrated(this.repository.read(this.workspacePath()));
     const party = this.requireParty(initial, partyId);
-    const targets = this.membersOf(initial, party.id).filter((member) => member.name !== from);
+    const partyMembers = this.membersOf(initial, party.id);
+    const normalizedExcluded = (options?.exclude || []).map((name) => normalizeMemberName(name));
+    if (new Set(normalizedExcluded).size !== normalizedExcluded.length) {
+      throw new Error("broadcast.exclude contains duplicate member names.");
+    }
+    const excluded = new Set(normalizedExcluded);
+    const unknownExcluded = [...excluded].filter((name) => !partyMembers.some((member) => member.name === name));
+    if (unknownExcluded.length) {
+      throw new Error(`Cannot exclude unknown member(s): ${unknownExcluded.join(", ")}.`);
+    }
+    const targets = partyMembers.filter((member) => member.name !== from && !excluded.has(member.name));
     if (!targets.length) {
       throw new Error("No other members in the party to broadcast to.");
     }
@@ -2644,7 +2654,7 @@ export class PartyApplicationService {
         failed.push({ name: target.name, error: errorMessage(error) });
       }
     }
-    log("info", "party", "broadcast routed", { partyId: party.id, from, delivered, queued: queuedMembers, failed: failed.map((f) => f.name), interrupt: options?.interrupt ?? "inherited" });
+    log("info", "party", "broadcast routed", { partyId: party.id, from, exclude: [...excluded], delivered, queued: queuedMembers, failed: failed.map((f) => f.name), interrupt: options?.interrupt ?? "inherited" });
     const state = this.ensureMigrated(this.repository.read(this.workspacePath()));
     const reach = queuedMembers.length ? `${delivered.length} delivered, ${queuedMembers.length} queued` : `${delivered.length}`;
     return { ...this.result(`Broadcast reached ${reach}/${targets.length} member(s).`, state, undefined, party.id), delivered, queuedMembers, failed };
@@ -3366,9 +3376,9 @@ export class PartyApplicationService {
           return { ok: false, error: errorMessage(error) };
         }
       },
-      broadcast: async (content, interrupt) => {
+      broadcast: async (content, interrupt, exclude) => {
         try {
-          const result = await this.broadcastMessage(content, selfMember, party, { interrupt });
+          const result = await this.broadcastMessage(content, selfMember, party, { interrupt, exclude });
           notify();
           // `queuedMembers` is reported apart from BOTH: those members will get
           // the message when their current turn ends. Folding them into `failed`

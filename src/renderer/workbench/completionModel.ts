@@ -1,5 +1,6 @@
 /**
- * Triggerless member/model completion — a chain of pickers that writes TEXT.
+ * Triggerless member completion plus `!` model completion — a chain of pickers
+ * that writes TEXT.
  *
  * ## It changes nothing
  *
@@ -82,15 +83,15 @@ export interface CompletionSection {
   rows: CompletionRow[];
 }
 
-/** Which lists a detected word opens. Legacy explicit triggers narrow the list. */
-export type CompletionKind = "all" | "model" | "member";
+/** A normal word searches members; an explicit `!` searches the model catalog. */
+export type CompletionKind = "model" | "member";
 
 export interface CompletionTrigger {
   kind: CompletionKind;
   /**
    * Spellings of the text typed after the trigger word, best first.
    *
-   * More than one when the IME was on: `:ㅁ햐` carries both `햐` (as typed) and
+   * More than one when the IME was on: `!햐` carries both `햐` (as typed) and
    * `gi` (the keys behind it). Matching tries them in order.
    */
   queries: string[];
@@ -103,50 +104,27 @@ export interface CompletionTrigger {
 /** Most rows offered at once; past this the list is a scan, not a pick. */
 export const COMPLETION_LIMIT = 8;
 
-/** Legacy short and long spellings remain accepted for existing drafts. */
-const TRIGGERS: Record<string, CompletionKind> = {
-  a: "model",
-  agent: "model",
-  m: "member",
-  member: "member",
-};
-
-/**
- * Marks that turn a word into a trigger.
- *
- * `;` is the same physical key as `:` without Shift, so it is what a hand that
- * moved on too quickly produces. Accepting both costs nothing and removes a
- * failure the user cannot see the cause of — the word looked right.
- */
-const SEPARATORS = [":", ";"];
-
 /**
  * Finds the active word immediately before the caret.
  *
- * ## Triggerless by default
+ * ## Two deliberately separate surfaces
  *
- * A normal identifier word opens one combined list of matching members,
- * providers, harnesses and models. This deliberately behaves like an editor's
- * symbol completion: typing `i` can offer member `impl`; typing `c` can offer
- * Claude, Codex and Cursor. No prefix has to be remembered.
- *
- * ## Legacy spellings
- *
- * `:a` `;a` `a:` `a;` and the same four for `agent`, `m`, `member` — in any
- * case — still narrow the list to models or members. Keeping them costs no
- * ambiguity and avoids breaking text restored from an older draft.
+ * A normal identifier searches MEMBERS only, so typing `i` can offer `impl`
+ * without also filling ordinary conversation with model names. A leading `!`
+ * searches the MODEL catalog only: `!c` can offer Claude, Codex and Cursor.
+ * An empty `!` opens the unfiltered model first stage.
  *
  * ## Why this does not fire by accident
  *
- * The token must START a word — preceded by the beginning of the draft,
- * whitespace, or an opening bracket. Triggerless tokens are identifiers only:
- * a letter/digit/Hangul character followed by letters, digits, `_`, `-` or `.`.
+ * Either token must START a word — preceded by the beginning of the draft,
+ * whitespace, or an opening bracket. The query is an identifier: a
+ * letter/digit/Hangul character followed by letters, digits, `_`, `-` or `.`.
  * `/`, `@`, paths, URLs and punctuation therefore keep their existing meaning.
  * The query stops at whitespace, so completion never swallows a sentence.
  */
 export function detectCompletion(draft: string, caret: number): CompletionTrigger | null {
   const upToCaret = draft.slice(0, Math.max(0, caret));
-  // The token must not swallow the opening bracket that precedes it, or `(a:`
+  // The token must not swallow the opening bracket that precedes it, or `(!c`
   // reads as one word starting with `(` and never matches.
   const match = /(^|[\s(\[{"'])([^\s(\[{"']*)$/.exec(upToCaret);
   if (!match) {
@@ -156,60 +134,24 @@ export function detectCompletion(draft: string, caret: number): CompletionTrigge
   if (!token) {
     return null;
   }
+  const explicit = token.startsWith("!");
+  const query = explicit ? token.slice(1) : token;
   // Matched against the KEYS pressed, not only the glyphs shown: with the IME
   // on, a Latin member/model query may arrive as Hangul from the same keys.
-  const typed = (hasHangul(token) ? qwertyFromHangul(token) : token).toLowerCase();
-  // Longest spellings first, so `agent` is read as one word rather than `a`
-  // followed by "gent".
-  const words = ["agent", "member", "a", "m"];
+  const typed = (hasHangul(query) ? qwertyFromHangul(query) : query).toLowerCase();
 
-  // Separator BEFORE the word (`:a`) or AFTER it (`a:`), colon or semicolon.
-  // All four are the same reach for the same key — `;` is that key unshifted,
-  // which is what a fast hand produces — so refusing any of them would be the
-  // app being pedantic about a keystroke the user cannot see they got wrong.
-  const leading = SEPARATORS.includes(typed[0]);
-  const body = leading ? typed.slice(1) : typed;
-  const word = words.find((candidate) =>
-    leading ? body.startsWith(candidate) : body.startsWith(candidate) && SEPARATORS.includes(body[candidate.length]));
-  if (word) {
-    // Keys consumed by the legacy trigger itself: the word plus its separator.
-    const consumed = word.length + 1;
-    const queries = dedupe([rawAfter(token, consumed), typed.slice(consumed)]);
-    return { kind: TRIGGERS[word], queries, start: upToCaret.length - token.length, end: upToCaret.length };
-  }
-
-  // Do not steal command, mention, path, URL or punctuation syntax. A dot and
-  // hyphen are allowed after the first character because model ids commonly
-  // contain both (`gpt-5.6`), while the first character must be a real word.
-  if (!/^[\p{L}\p{N}_][\p{L}\p{N}_.-]*$/u.test(token)) {
+  // A dot and hyphen are allowed after the first character because model ids
+  // commonly contain both (`!gpt-5.6`), while the first character must be a
+  // real word. Empty is allowed only for explicit `!`, which opens stage one.
+  if ((!query && !explicit) || (query && !/^[\p{L}\p{N}_][\p{L}\p{N}_.-]*$/u.test(query))) {
     return null;
   }
   return {
-    kind: "all",
-    queries: dedupe([token, typed]),
+    kind: explicit ? "model" : "member",
+    queries: dedupe([query, typed]),
     start: upToCaret.length - token.length,
     end: upToCaret.length,
   };
-}
-
-/**
- * The part of the raw text left after the trigger word consumed `keys` keystrokes.
- *
- * Needed because one Hangul character can stand for several keys (`햐` is `gi`),
- * so the raw text and the converted text run out of step. Walking per character
- * is what keeps `:ㅁ햐` splitting into the word `a` and the query `햐` rather
- * than slicing a syllable in half.
- */
-function rawAfter(raw: string, keys: number): string {
-  let consumed = 0;
-  const chars = [...raw];
-  for (let i = 0; i < chars.length; i++) {
-    consumed += qwertyFromHangul(chars[i]).length;
-    if (consumed >= keys) {
-      return chars.slice(i + 1).join("");
-    }
-  }
-  return "";
 }
 
 function dedupe(values: string[]): string[] {

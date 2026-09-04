@@ -1,5 +1,5 @@
 /*
- * Full-process triggerless completion E2E.
+ * Full-process triggerless-member / `!`-model completion E2E.
  *
  * Launches the real AgentParty app, types through Chromium's input path, reads
  * the real completion rows, and commits with a real Tab key. No provider call is
@@ -67,8 +67,11 @@ try {
   assert(beforeMemberAdd.status === 500, "an unknown member has no completion row before it exists");
   await post("/api/party/members", { name: "zzlive", requirement: "completion catalog live-update QA" });
   await delay(600);
+  // Member creation activates its new panel, just like a real user-visible
+  // create. Focus the original composer and query again before measuring it.
+  await input({ selector: editor, text: "zzlive" });
   const liveMemberRows = await measure(".wb-mention-row .wb-mention-name");
-  assert(liveMemberRows.texts.includes("@zzlive"), "a member created while completion is open appears without another keystroke");
+  assert(liveMemberRows.texts.includes("@zzlive"), "a newly created member is available to triggerless completion");
 
   await input({ selector: editor, text: "i" });
   const memberRows = await measure(".wb-mention-row .wb-mention-name");
@@ -77,8 +80,11 @@ try {
   assert(mention.draft === "@impl ", `Tab commits the member mention (${JSON.stringify(mention.draft)})`);
 
   await input({ selector: editor, text: "cl" });
+  const memberOnlyRows = await postRaw("/api/measure", { selector: ".wb-mention-pop", limit: 5 });
+  assert(memberOnlyRows.status === 500, "plain member completion does not show model providers");
+  await input({ selector: editor, text: "!cl" });
   const providerRows = await measure(".wb-mention-row .wb-mention-name");
-  assert(providerRows.texts.includes("Claude"), "typing 'cl' opens Claude provider completion");
+  assert(providerRows.texts.includes("Claude"), "typing '!cl' opens Claude provider completion");
   const provider = await input({ selector: editor, key: "Tab" });
   assert(provider.draft === `${claudeProviderTag} `, `Tab commits Claude's wrapped provider token (${JSON.stringify(provider.draft)})`);
   const modelRows = await measure(".wb-mention-row .wb-mention-name");
@@ -90,7 +96,7 @@ try {
   const stale = await postRaw("/api/measure", { selector: ".wb-mention-pop", limit: 5 });
   assert(stale.status === 500, "deleting the provider closes its stale model popover");
 
-  await input({ selector: editor, text: "co" });
+  await input({ selector: editor, text: "!co" });
   const replacementRows = await measure(".wb-mention-row .wb-mention-name");
   assert(replacementRows.texts.includes("Codex"), "typing again offers a replacement provider");
   const replacement = await input({ selector: editor, key: "Tab" });
@@ -114,9 +120,9 @@ try {
   const selectable = transcriptTags.elements?.every((element) => element.styles?.["user-select"] === "text");
   assert(selectable, "restored transcript chips remain selectable for copy");
 
-  await input({ selector: editor, text: "cl" });
+  await input({ selector: editor, text: "!cl" });
   const sent = await input({ selector: editor, key: "Enter", modifiers: ["control"] });
-  assert(sent.draft === "", "an open triggerless list never steals Ctrl+Enter from message send");
+  assert(sent.draft === "", "an open bang list never steals Ctrl+Enter from message send");
 
   await post("/api/window/close", {});
   await waitForExit(child);

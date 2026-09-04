@@ -1,9 +1,9 @@
 /*
- * Triggerless composer completion regression.
+ * Triggerless-member / `!`-model composer completion regression.
  *
  * Layer 1 locks the word detector. Layer 2 mounts the real Composer DOM and
- * proves the user-visible keyboard flow: a single letter finds a member, while
- * Tab on a provider immediately advances to that provider's models.
+ * proves the user-visible keyboard flow: a normal word finds members only,
+ * while `!` opens models and Tab advances through the model chain.
  */
 import { JSDOM } from "jsdom";
 import { build } from "esbuild";
@@ -60,19 +60,23 @@ async function bundle(entry, name, external = []) {
   return import(pathToFileURL(output).href);
 }
 
-console.log("\nTriggerless detector:");
+console.log("\nSplit completion detector:");
 const model = await bundle("src/renderer/workbench/completionModel.ts", "completion-model.mjs");
 const tags = await bundle("src/shared/messageTags.ts", "message-tags.mjs");
 const claudeProviderTag = tags.createMessageTag({ kind: "provider", value: "anthropic", label: "Claude" });
 const codexProviderTag = tags.createMessageTag({ kind: "provider", value: "openai", label: "Codex" });
 const solModelTag = tags.createMessageTag({ kind: "model", value: "gpt-5.6-sol", label: "GPT-5.6 Sol" });
-assert(model.detectCompletion("i", 1)?.kind === "all", "one letter opens combined completion");
-assert(model.detectCompletion("ask i", 5)?.queries[0] === "i", "completion works mid-sentence at a word boundary");
-assert(model.detectCompletion("gpt-5.6", 7)?.queries[0] === "gpt-5.6", "model punctuation remains searchable");
+assert(model.detectCompletion("i", 1)?.kind === "member", "one letter opens member completion only");
+assert(model.detectCompletion("ask i", 5)?.kind === "member", "member completion works mid-sentence at a word boundary");
+assert(model.detectCompletion("!", 1)?.queries[0] === "", "bang alone opens the unfiltered model first stage");
+assert(model.detectCompletion("!i", 2)?.kind === "model", "bang plus one letter opens model completion only");
+assert(model.detectCompletion("ask !i", 6)?.queries[0] === "i", "bang completion works mid-sentence at a word boundary");
+assert(model.detectCompletion("!gpt-5.6", 8)?.queries[0] === "gpt-5.6", "model punctuation remains searchable after bang");
+assert(model.detectCompletion("word!i", 6) === null, "bang embedded in a word stays ordinary text");
 assert(model.detectCompletion("/c", 2) === null, "slash commands keep their reserved prefix");
 assert(model.detectCompletion("@impl", 5) === null, "literal mentions keep their reserved prefix");
-assert(model.detectCompletion(":a", 2)?.kind === "model", "legacy model trigger remains compatible");
-assert(model.detectCompletion(":m", 2)?.kind === "member", "legacy member trigger remains compatible");
+assert(model.detectCompletion(":a", 2) === null, "legacy colon syntax no longer opens completion");
+assert(model.detectCompletion(";a", 2) === null, "legacy semicolon syntax no longer opens completion");
 
 console.log("\nDurable message tags:");
 assert(solModelTag === "⟦ap-tag:v1:model:gpt-5.6-sol:GPT-5.6%20Sol⟧", "tag uses the versioned AgentParty-only wire form");
@@ -167,7 +171,10 @@ assert(editor.dataset.draft === "@impl ", "Tab commits the member as an @ mentio
 
 typeWord("cl");
 await tick();
-assert(visibleRows().includes("Claude"), "typing 'cl' offers Claude without a prefix");
+assert(!visibleRows().includes("Claude"), "plain member completion does not show model providers");
+typeWord("!cl");
+await tick();
+assert(visibleRows().includes("Claude"), "typing '!cl' offers Claude");
 press("Tab");
 await tick();
 assert(editor.dataset.draft === `${claudeProviderTag} `, "Tab commits the wrapped Claude provider token");
@@ -178,7 +185,7 @@ editor.dispatchEvent(new window.Event("input", { bubbles: true }));
 await tick();
 assert(!document.querySelector(".wb-mention-pop"), "deleting the provider chip closes its stale model completion");
 
-typeWord("co");
+typeWord("!co");
 await tick();
 assert(visibleRows().includes("Codex"), "typing again can immediately choose a different provider");
 press("Tab");
@@ -212,11 +219,17 @@ assert(staticTags.map((node) => node.textContent).join("|") === "Codex|GPT-5.6 S
 assert(staticTags[1]?.dataset.tokenValue === "gpt-5.6-sol", "restored chip retains the exact model value");
 assert(transcriptRoot.textContent.includes(malformed), "a similar but invalid marker remains literal text");
 
-typeWord("cl");
+typeWord("i");
 await tick();
 press("Enter", { ctrlKey: true });
 await tick();
-assert(calls.some((call) => call[0] === "send" && call[2] === "cl"), "triggerless suggestions never steal Ctrl+Enter send");
+assert(calls.some((call) => call[0] === "send" && call[2] === "i"), "passive member suggestions never steal Ctrl+Enter send");
+
+typeWord("!cl");
+await tick();
+press("Enter", { ctrlKey: true });
+await tick();
+assert(calls.some((call) => call[0] === "send" && call[2] === "!cl"), "bang suggestions never steal Ctrl+Enter send");
 
 console.log(failures.length ? `\nCOMPOSER COMPLETION FAILED (${failures.length})` : "\nCOMPOSER COMPLETION PASSED");
 process.exit(failures.length ? 1 : 0);

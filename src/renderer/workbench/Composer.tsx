@@ -290,8 +290,7 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
   const completionTitle = trigger?.kind === "member" && !chain
     ? "멤버"
     : resolved.length === 1 ? resolved[0].label
-      : trigger?.kind === "all" && !chain ? "자동완성"
-        : stage ? STAGE_LABELS[stage] : "모델";
+      : stage ? STAGE_LABELS[stage] : "모델";
 
   useEffect(() => { setActiveIndex(0); }, [trigger?.queries.join(" "), trigger?.kind, chain?.at]);
   useEffect(() => { if (!trigger && !chain) { setCompletionDismissed(false); } }, [trigger, chain]);
@@ -536,11 +535,11 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
         applyCompletionChoice(current(), true);
         return true;
       case "Enter":
-        // A triggerless list can be open during completely ordinary prose. It
-        // must never steal the composer's configured send/newline key; Tab is
-        // the explicit completion gesture the user asked for. Legacy explicit
-        // triggers and an already-entered chain keep their old Enter support.
-        if (trigger?.kind === "all" && !chain) {
+        // A member list can be open during completely ordinary prose. It must
+        // never steal the composer's configured send/newline key; Tab is the
+        // explicit completion gesture. `!` and an entered model chain keep
+        // Enter support because the user explicitly opened them.
+        if (trigger?.kind === "member" && !chain) {
           return false;
         }
         event.preventDefault();

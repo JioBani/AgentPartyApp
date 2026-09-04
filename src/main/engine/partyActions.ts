@@ -7,6 +7,17 @@ export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" |
 
 type PartyActionHandler = (party: PartyApplicationService, name: string, body: any, partyId?: string) => PartyMutationResult | Promise<PartyMutationResult>;
 
+function optionalStringArray(value: unknown, field: string): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new Error(`${field} must be an array of non-empty strings.`);
+  }
+  if (new Set(value).size !== value.length) {
+    throw new Error(`${field} contains duplicate values.`);
+  }
+  return value;
+}
+
 const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
   // Member-originated sends go through the gated path (Message Gate review); a
   // human user turn uses sendMemberMessage instead and is never gated.
@@ -47,7 +58,12 @@ const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
   // The composer surfaces this only after a Stop went unanswered.
   "force-stop": (party, name, _body, partyId) => party.forceStopMember(name, partyId),
   // Party-wide message; the URL member name is ignored (callers use "*").
-  broadcast: (party, _name, body, partyId) => party.broadcastMessage(String(body.content || ""), String(body.from || "user"), partyId, { interrupt: typeof body.interrupt === "boolean" ? body.interrupt : undefined, force: body.force === true, forceReason: typeof body.forceReason === "string" ? body.forceReason : undefined }),
+  broadcast: (party, _name, body, partyId) => party.broadcastMessage(String(body.content || ""), String(body.from || "user"), partyId, {
+    interrupt: typeof body.interrupt === "boolean" ? body.interrupt : undefined,
+    force: body.force === true,
+    forceReason: typeof body.forceReason === "string" ? body.forceReason : undefined,
+    exclude: optionalStringArray(body.exclude, "broadcast.exclude"),
+  }),
 };
 
 /**

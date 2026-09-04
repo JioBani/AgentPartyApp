@@ -343,6 +343,28 @@ assert(Array.isArray(out.content) && out.content[0].type === "text", "send tool 
 assert(out.isError === false, "successful send is not flagged as error");
 assert(sentTurns.length === n2 + 1 && /from="main"/.test(sentTurns[n2].text), "tool handler stamps from=main (identity, not args)");
 
+// Batch coordination uses the same handlers and preserves per-target results.
+const memberCreateTool = defs.find((d) => d.name === "member-create");
+const batchCreated = await memberCreateTool.handler({ members: [
+  { name: "batch-a", role: "batch worker A", harness: "claude-code" },
+  { name: "batch-b", role: "batch worker B", harness: "claude-code" },
+] });
+const batchCreatedData = JSON.parse(batchCreated.content[0].text);
+assert(batchCreated.isError === false && batchCreatedData.created.length === 2 && batchCreatedData.failed.length === 0, "member-create accepts a members array and reports every created member");
+assert(svc.list().members.some((m) => m.name === "batch-a") && svc.list().members.some((m) => m.name === "batch-b"), "batch-created members are persisted and started");
+const beforeBatchSend = sentTurns.length;
+const batchSent = await sendTool.handler({ to: ["batch-a", "batch-b"], content: "same batch message" });
+const batchSentData = JSON.parse(batchSent.content[0].text);
+assert(batchSent.isError === false && batchSentData.delivered.sort().join() === "batch-a,batch-b" && batchSentData.failed.length === 0, "send accepts multiple recipients and separates delivered from failed");
+assert(sentTurns.length === beforeBatchSend + 2, "multi-recipient send injects exactly one turn per target");
+const duplicateBatchSend = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, { to: ["batch-a", "batch-a"], content: "must not duplicate" });
+assert(!duplicateBatchSend.ok && /duplicate/i.test(duplicateBatchSend.error || ""), "multi-recipient send rejects duplicate targets before delivery");
+const duplicateBatchCreate = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}member-create`, { members: [
+  { name: "duplicate-batch", role: "first" },
+  { name: "duplicate-batch", role: "second" },
+] });
+assert(!duplicateBatchCreate.ok && /duplicate/i.test(duplicateBatchCreate.error || "") && !svc.list().members.some((m) => m.name === "duplicate-batch"), "batch creation rejects duplicate names before creating anything");
+
 // --- Codex dynamic tool glue: same bridge, Codex protocol shape --------------
 console.log("\nCodex dynamic tool assertions:");
 const dynamic = buildPartyDynamicToolSpec();
@@ -350,6 +372,10 @@ assert(dynamic.type === "namespace" && dynamic.name === PARTY_MCP_SERVER, "Codex
 assert(JSON.stringify(dynamic.tools.map((tool) => tool.name)) === JSON.stringify(toolNames), "Codex dynamic tools expose the same canonical party tools");
 const dynamicSendSpec = dynamic.tools.find((tool) => tool.name === "send")?.inputSchema;
 assert(dynamicSendSpec?.properties?.interrupt?.type === "boolean" && dynamicSendSpec?.properties?.queue?.type === "boolean", "member send exposes separate interrupt and queue delivery flags");
+assert(Array.isArray(dynamicSendSpec?.properties?.to?.oneOf), "dynamic send schema exposes string-or-array recipients");
+assert(dynamic.tools.find((tool) => tool.name === "member-create")?.inputSchema?.properties?.members?.type === "array", "dynamic member-create schema exposes the members batch field");
+assert(Array.isArray(dynamic.tools.find((tool) => tool.name === "member-remove")?.inputSchema?.properties?.name?.oneOf), "dynamic member-remove schema exposes string-or-array names");
+assert(dynamic.tools.find((tool) => tool.name === "broadcast")?.inputSchema?.properties?.exclude?.type === "array", "dynamic broadcast schema exposes excluded members");
 const beforeDynamic = sentTurns.length;
 const dynamicOut = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, { to: "buddy", content: "hello from codex" });
 assert(dynamicOut.ok, "Codex dispatcher accepts namespaced party tool names");
@@ -411,6 +437,21 @@ assert(dynamicPermission.ok && svc.list().members.find((m) => m.name === "buddy"
 const dynamicGate = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}gate-set`, { name: "buddy", mode: "on", rule: "Be concise." });
 const buddyGate = svc.list().members.find((m) => m.name === "buddy")?.gate;
 assert(dynamicGate.ok && buddyGate?.mode === "on" && buddyGate?.rule === "Be concise.", "gate-set routes through the bridge and persists the member override");
+
+const excludedBroadcast = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}broadcast`, {
+  content: "only batch-a should receive this batch probe",
+  exclude: ["batch-b"],
+});
+const excludedReach = [...(excludedBroadcast.data?.delivered || []), ...(excludedBroadcast.data?.queuedMembers || []), ...(excludedBroadcast.data?.failed || []).map((item) => item.name)];
+assert(excludedBroadcast.ok && excludedReach.includes("batch-a") && !excludedReach.includes("batch-b"), "broadcast exclude removes selected members from every outcome bucket");
+const unknownExclude = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}broadcast`, { content: "must not send", exclude: ["missing-member"] });
+assert(!unknownExclude.ok && /unknown member/i.test(unknownExclude.error || ""), "broadcast rejects unknown exclusions before sending");
+
+const duplicateRemoval = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}member-remove`, { name: ["batch-a", "batch-a"] });
+assert(!duplicateRemoval.ok && /duplicate/i.test(duplicateRemoval.error || "") && svc.list().members.some((m) => m.name === "batch-a"), "batch removal rejects duplicate names before deleting anything");
+const batchRemoved = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}member-remove`, { name: ["batch-a", "main", "batch-b"] });
+assert(batchRemoved.ok && batchRemoved.data.removed.sort().join() === "batch-a,batch-b" && batchRemoved.data.failed.some((item) => item.name === "main"), "member-remove accepts arrays and reports partial failures without hiding successful removals");
+assert(!svc.list().members.some((m) => m.name === "batch-a" || m.name === "batch-b") && svc.list().members.some((m) => m.name === "main"), "batch removal deletes normal members and preserves main");
 
 // --- session primer: deterministic surface knowledge (no model memory) -------
 console.log("\nParty primer assertions:");
