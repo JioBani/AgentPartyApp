@@ -1,5 +1,11 @@
 # 아이디어
 
+## 우선
+
+- [IDEA-020 · 대화의 특정 지점에서 별도 인스턴스로 분기하고 필요한 결론만 합치기](./IDEA-020-side-conversation.md) · **높음**
+
+## 나머지
+
 - [IDEA-001 · Ollama나 LM Studio의 로컬 모델을 멤버로 선택해 사용하기](./IDEA-001-local-models.md)
 - [IDEA-002 · 파티의 업무 흐름과 공유 진행 상황을 한눈에 보기](./IDEA-002-party-activity-map.md)
 - [IDEA-003 · 브랜치와 파일 변경의 담당 멤버를 바로 알아보기](./IDEA-003-work-ownership-trace.md)
@@ -19,7 +25,6 @@
 - [IDEA-017 · 멤버가 바꾼 코드를 전용 화면에서 비교하고 검토하기](./IDEA-017-diff-review.md)
 - [IDEA-018 · 파일·미리보기·터미널을 워크벤치 안에서 함께 사용하기](./IDEA-018-workspace-panes.md)
 - [IDEA-019 · worktree부터 PR과 CI까지 결과물 상태를 한곳에서 보기](./IDEA-019-git-delivery-view.md)
-- [IDEA-020 · 진행 중 작업을 방해하지 않는 짧은 옆 대화 열기](./IDEA-020-side-conversation.md)
 - [IDEA-021 · 로컬 앱에서 Codex Cloud 작업을 맡기고 결과를 받기](./IDEA-021-cloud-task-delegation.md)
 - [IDEA-022 · 멤버가 브라우저와 화면 작업을 명시적으로 사용하기](./IDEA-022-computer-use.md)
 - [IDEA-023 · 멤버의 목표·기억·성격을 확인하고 조정하기](./IDEA-023-agent-profile-controls.md)
