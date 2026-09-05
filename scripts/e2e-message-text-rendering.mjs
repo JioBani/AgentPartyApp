@@ -237,13 +237,21 @@ async function main() {
 
     const nativeEditCards = await post("/api/measure", {
       selector: '.wb-tool[data-tool-visual="file-change"]',
-      styles: ["border-left-color", "overflow-x"],
+      styles: ["background-color", "border-left-color", "box-shadow", "overflow-x"],
       containedBy: ".wb-transcript",
       limit: 6,
     });
-    ok(nativeEditCards.elements.length === 3, "H) Claude Code, Cursor and Grok native edit calls receive the shared file-change style");
+    ok(nativeEditCards.elements.length === 3, "H) Claude Code, Cursor and Grok native edit calls retain their exact marker");
     ok(nativeEditCards.elements.every((card) => card.containedBy?.fully === true), "H) all native edit cards stay inside the narrow transcript");
     ok(nativeEditCards.elements.every((card) => card.scrollable.horizontal === false), "H) native edit cards have no horizontal overflow");
+    const ordinaryTool = (await post("/api/measure", {
+      selector: '.wb-tool:not([data-tool-visual="file-change"])',
+      styles: ["background-color", "border-left-color", "box-shadow"],
+      limit: 1,
+    })).elements[0];
+    ok(nativeEditCards.elements.every((card) => card.styles["background-color"] === ordinaryTool.styles["background-color"] && card.styles["border-left-color"] === ordinaryTool.styles["border-left-color"] && card.styles["box-shadow"] === ordinaryTool.styles["box-shadow"]), "H) native edits use the same neutral card surface as every other tool");
+    const extraEditIcon = await post("/api/measure", { selector: ".wb-tool-kind-icon", limit: 1 }).catch((error) => ({ error: String(error.message || error) }));
+    ok(Boolean(extraEditIcon.error), "H) native edits show only the outcome glyph, without a second boxed file icon");
     const nativeEditPaths = await post("/api/measure", {
       selector: '.wb-tool[data-tool-visual="file-change"] .wb-tool-arg',
       styles: ["white-space", "overflow", "text-overflow"],
@@ -257,8 +265,24 @@ async function main() {
 
     await post("/api/capture", { click: '.wb-tool[data-tool-visual="file-change"] > summary', path: path.join(shotDir, "native-edit-expanded.png") });
     await delay(250);
-    const nativePayload = await post("/api/measure", { selector: ".wb-tool.is-file-change[open] .wb-filechange-input", limit: 1 });
+    const nativePayload = await post("/api/measure", { selector: '.wb-tool[data-tool-visual="file-change"][open] .wb-tool-cmd', limit: 1 });
     ok(nativePayload.elements[0].text.includes("old_string") && nativePayload.elements[0].text.includes("new_string"), "H) expanding Claude Edit shows its original payload rather than a synthesized diff");
+
+    const nativeFileChange = (await post("/api/measure", {
+      selector: ".wb-filechange",
+      styles: ["background-color", "border-left-color", "box-shadow"],
+      limit: 1,
+    })).elements[0];
+    ok(nativeFileChange.styles["background-color"] === ordinaryTool.styles["background-color"] && nativeFileChange.styles["border-left-color"] === ordinaryTool.styles["border-left-color"] && nativeFileChange.styles["box-shadow"] === ordinaryTool.styles["box-shadow"], "H) structured file-change card also uses the neutral tool surface");
+    const fileChangeOutcome = await post("/api/measure", { selector: ".wb-filechange-head .wb-tool-check.is-ok", styles: ["background-color"], limit: 1 });
+    ok(fileChangeOutcome.elements[0].styles["background-color"] === "rgba(0, 0, 0, 0)", "H) completed file change ends with a check glyph and no status background");
+    const fileKindSurface = await post("/api/measure", { selector: ".wb-filechange-kind", styles: ["background-color"], limit: 1 });
+    ok(fileKindSurface.elements[0].styles["background-color"] !== "rgba(0, 0, 0, 0)", "H) file kind keeps a single neutral readability chip");
+    const fileChangeBadge = await post("/api/measure", { selector: ".wb-filechange-state", limit: 1 }).catch((error) => ({ error: String(error.message || error) }));
+    ok(Boolean(fileChangeBadge.error), "H) structured file change has no status-word pill");
+
+    await post("/api/settings", { transcriptFontScale: 1.1 });
+    await delay(300);
 
     for (const theme of ["agentparty-light", "agentparty-dark"]) {
       const appliedTheme = await post("/api/appearance/theme", { theme });

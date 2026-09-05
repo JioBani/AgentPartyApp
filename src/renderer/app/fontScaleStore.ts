@@ -1,13 +1,7 @@
 /**
- * SEL-6958 follow-up: the transcript font scale must be on the page BEFORE the
- * first paint. The persisted setting lives in the main process and arrives
- * asynchronously; applying it after mount mutates the scale wrapper's transform
- * at runtime, and Chromium keeps the raster translation it chose for the
- * original transform (crbug.com/40431598) — already-painted panes then show
- * text rastered for the old scale, i.e. visibly blurred, until their paint is
- * rebuilt. The renderer therefore mirrors the value into localStorage and reads
- * the mirror synchronously at boot, so the very first frame already renders at
- * the real scale and no boot-time transform change happens at all.
+ * The persisted transcript scale arrives from the main process asynchronously.
+ * Mirror it locally so the first frame has the user's real layout scale instead
+ * of visibly jumping from 100% after mount.
  */
 const MIRROR_KEY = "agentparty.transcriptFontScale";
 const MIN_SCALE = 0.6;
@@ -24,7 +18,12 @@ export function readMirroredFontScale(): number {
 
 /** Applies the scale to the document and keeps the boot mirror current. */
 export function applyFontScale(scale: number): void {
-  document.documentElement.style.setProperty("--wb-font-scale", String(scale));
+  const root = document.documentElement;
+  root.style.setProperty("--wb-font-scale", String(scale));
+  // A non-default CSS zoom keeps glyphs sharp but makes descendant animations
+  // paint on the main thread in Chromium. The attribute lets CSS pause those
+  // purely decorative loops only while layout zoom is active.
+  root.toggleAttribute("data-transcript-font-scaled", scale !== 1);
   try {
     localStorage.setItem(MIRROR_KEY, String(scale));
   } catch {

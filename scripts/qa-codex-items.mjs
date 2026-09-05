@@ -8,8 +8,8 @@
  *      command output deltas APPEND (not replace); cwd/exit/duration merge;
  *      fileChange events become a diff block.
  *   3. Transcript (DOM): plan checklist, native fileChange diff styling, and
- *      native Claude/Cursor/Grok edit tool cards sharing the visual treatment
- *      without rewriting their payloads.
+ *      native Claude/Cursor/Grok edit payloads staying intact without a special
+ *      status/member-coloured card skin.
  */
 import { JSDOM } from "jsdom";
 import { build } from "esbuild";
@@ -112,13 +112,16 @@ assert(host.querySelectorAll(".wb-plan-step").length === 2, "plan lists each ste
 assert(Boolean(host.querySelector(".wb-plan-step.is-inProgress")), "in-progress step is marked");
 assert(Boolean(host.querySelector(".wb-filechange")), "fileChange card renders");
 assert(host.textContent.includes("src/a.ts") && host.textContent.includes("+3") && host.textContent.includes("-1"), "fileChange shows path and +/- stats");
+assert(Boolean(host.querySelector(".wb-filechange-head .wb-tool-check.is-ok svg")), "completed fileChange uses the compact success check");
+assert(!host.querySelector(".wb-filechange-state"), "fileChange does not print a coloured status badge");
 assert(host.querySelectorAll(".wb-filechange-diff-line.is-add").length === 1, "native diff addition receives line styling");
 assert(host.querySelectorAll(".wb-filechange-diff-line.is-delete").length === 1, "native diff deletion receives line styling");
-const styledEdits = [...host.querySelectorAll('.wb-tool[data-tool-visual="file-change"]')];
-assert(styledEdits.length === 3, "Claude Code, Cursor and Grok edit tools share the file-change style");
-assert(styledEdits.some((card) => card.textContent.includes("src/claude.ts")), "Claude file_path is visible without changing its payload");
-assert(styledEdits.some((card) => card.textContent.includes("src/cursor.ts")), "Cursor edit path is visible without changing its payload");
-assert(styledEdits.some((card) => card.textContent.includes("src/grok.ts")), "Grok edit path is visible without changing its payload");
+const markedEdits = [...host.querySelectorAll('.wb-tool[data-tool-visual="file-change"]')];
+assert(markedEdits.length === 3, "Claude Code, Cursor and Grok edit tools retain the exact file-change marker");
+assert(markedEdits.every((card) => !card.classList.contains("is-file-change") && !card.querySelector(".wb-tool-kind-icon")), "native edit tools use the same clean card and single outcome glyph as other tools");
+assert(markedEdits.some((card) => card.textContent.includes("src/claude.ts")), "Claude file_path is visible without changing its payload");
+assert(markedEdits.some((card) => card.textContent.includes("src/cursor.ts")), "Cursor edit path is visible without changing its payload");
+assert(markedEdits.some((card) => card.textContent.includes("src/grok.ts")), "Grok edit path is visible without changing its payload");
 assert(![...host.querySelectorAll(".wb-tool")].find((card) => card.textContent.includes("read_file"))?.hasAttribute("data-tool-visual"), "read-only tools remain ordinary tool cards");
 assert(TranscriptModule.isFileChangeToolName("apply_patch") && !TranscriptModule.isFileChangeToolName("credit_write_analysis"), "file-edit classification uses exact aliases, not substring guessing");
 const sources = [...host.querySelectorAll(".wb-tool-source")].map((s) => s.textContent);

@@ -61,9 +61,8 @@ interface TranscriptProps {
 const TAIL_BLOCKS = 450;
 const INITIAL_PAINT_BLOCKS = 20;
 
-// How long a captured scroll ratio stays authoritative around a font-scale
-// change (gesture ticks + the post-remount frames where the wrapper is still
-// reaching its real height). See pendingRatioRef in TranscriptView.
+// How long a captured scroll ratio stays authoritative while layout reflows
+// around a burst of font-scale changes. See pendingRatioRef in TranscriptView.
 const RESTORE_WINDOW_MS = 900;
 
 function TranscriptView({ view, density, actions, detail = "full" }: TranscriptProps) {
@@ -145,11 +144,9 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
   useLayoutEffect(stickToBottom, [view.transcript.length, lastText.length]);
 
   // An unpinned view's position, as a fraction of the scroll range, waiting to
-  // be re-applied around a font-scale change. The remounted wrapper reaches its
-  // real height asynchronously (content-visibility renders cards over several
-  // frames), so the restore runs from the ResizeObserver below — re-applied on
-  // every wrapper resize inside RESTORE_WINDOW_MS instead of once at a guessed
-  // moment.
+  // be re-applied while font scaling reflows the content. content-visibility can
+  // reveal card sizes over several frames, so ResizeObserver reapplies it during
+  // a short bounded window instead of restoring once at a guessed moment.
   const pendingRatioRef = useRef<{ ratio: number; until: number } | null>(null);
   // First call of a burst captures the current ratio; calls inside the window
   // only keep the already-captured (earlier, less distorted) ratio alive.
@@ -189,42 +186,24 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
     return () => node.removeEventListener("wheel", onWheelZoom);
   }, []);
 
-  // A font-scale change only moves the wrapper's transform; Chromium keeps the
-  // raster translation it computed for the previous scale (crbug.com/40431598),
-  // so text already painted stays rastered for the OLD scale — visibly blurred.
-  // Remounting the wrapper (key below) forces a fresh paint record at the new
-  // scale. Debounced so a multi-tick Ctrl+wheel gesture rebuilds once, not per
-  // tick; exact scroll positions do not survive a zoom anyway (text re-wraps),
-  // so an unpinned view is restored by ratio.
-  const [scaleEpoch, setScaleEpoch] = useState(0);
+  // Settings can also change through the automation API or another pane. App
+  // announces those changes before applying CSS zoom so this pane captures its
+  // undistorted scroll ratio just like the direct wheel handler above.
   useEffect(() => {
-    let timer: number | undefined;
-    const onScaleApplied = () => {
-      clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        const node = scrollRef.current;
-        // Fallback capture for changes that did not come through this pane's
-        // wheel handler (HTTP settings, another pane's gesture): the ratio is
-        // then read after the scale already moved — approximate, but it keeps
-        // the reader in the same region. A wheel-captured ratio wins.
-        if (node && !stickRef.current) {
-          holdOrCaptureRatio(node);
-        }
-        setScaleEpoch((epoch) => epoch + 1);
-      }, 300);
+    const onScaleWillChange = () => {
+      const node = scrollRef.current;
+      if (node && !stickRef.current) {
+        holdOrCaptureRatio(node);
+      }
     };
-    window.addEventListener("wb-font-scale-applied", onScaleApplied);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("wb-font-scale-applied", onScaleApplied);
-    };
+    window.addEventListener("wb-font-scale-will-change", onScaleWillChange);
+    return () => window.removeEventListener("wb-font-scale-will-change", onScaleWillChange);
   }, []);
 
   // When the scroll area resizes (e.g. the composer auto-grows and shrinks this
   // pane), re-pin to the bottom so the whole conversation appears to scroll up
   // together — instead of the top staying put while the latest messages hide
-  // behind the composer. Re-registered per scale epoch: the wrapper observed
-  // below is replaced by the remount.
+  // behind the composer.
   useEffect(() => {
     const node = scrollRef.current;
     if (!node || typeof ResizeObserver === "undefined") {
@@ -235,7 +214,7 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
       const pending = pendingRatioRef.current;
       if (el && pending) {
         if (performance.now() <= pending.until) {
-          // Post-remount restore of an unpinned view — see pendingRatioRef.
+          // Reflow restore of an unpinned view — see pendingRatioRef.
           el.scrollTop = pending.ratio * (el.scrollHeight - el.clientHeight);
           return;
         }
@@ -251,7 +230,7 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
       observer.observe(node.firstElementChild);
     }
     return () => observer.disconnect();
-  }, [scaleEpoch]);
+  }, []);
 
   const onScroll = () => {
     const node = scrollRef.current;
@@ -262,11 +241,10 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
 
   return (
     <div className={"wb-transcript density-" + density} ref={scrollRef} onScroll={onScroll}>
-      {/* Font scaling lives on this inner wrapper as a transform. The scroller
-          itself must stay unscaled: CSS `zoom` on it forced every animation in
-          the subtree onto the main thread (60fps style recalc + paint of the
-          whole transcript), while a transform keeps descendants compositable. */}
-      <div className="wb-transcript-scale" key={scaleEpoch}>
+      {/* Layout zoom on the inner wrapper keeps Chromium's glyph rasterization
+          sharp. The scroller itself remains unscaled so its viewport geometry
+          and compositor scrolling stay stable. */}
+      <div className="wb-transcript-scale">
       {view.transcriptLoading ? (
         <div className="wb-transcript-empty wb-transcript-loading" role="status" aria-live="polite">
           <LoaderCircle size={17} className="wb-spin" />
@@ -979,9 +957,8 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
   // as "done, fine", so a refusal and a clean run must not share a glyph.
   const outcome = toolOutcomeOf(block);
   const failed = isToolProblem(outcome);
-  // This is presentation metadata only. Each harness keeps its original tool
-  // name, input and result; the renderer merely gives known file-mutating tools
-  // the same visual treatment as Codex's native fileChange card.
+  // Presentation metadata only: each harness keeps its original tool name,
+  // input and result. The marker is a stable QA hook, not a different card skin.
   const fileChange = isFileChangeToolName(block.name);
   const openFull = (event: { preventDefault(): void; stopPropagation(): void }) => { event.preventDefault(); event.stopPropagation(); setFull(true); };
   // Pictures returned by a tool are evidence the agent consumed, not a message
@@ -998,7 +975,7 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
   return (
     <>
       <details
-      className={"wb-block wb-tool density-" + density + (fileChange ? " is-file-change" : "")}
+      className={"wb-block wb-tool density-" + density}
       data-tool-visual={fileChange ? "file-change" : undefined}
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
@@ -1012,11 +989,6 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
         >
           {outcome === "denied" ? <Ban size={11} /> : outcome === "failed" ? <X size={11} /> : outcome === "running" ? <Loader size={11} /> : <Check size={11} />}
         </span>
-        {fileChange && <span className="wb-tool-kind-icon" aria-hidden="true"><FileDiff size={12} /></span>}
-        {/* A failed call already has an unmistakable red X plus a textual
-            tooltip/aria-label. Keep a visible word only for denial, whose Ban
-            mark describes a different outcome rather than a fault. */}
-        {outcome === "denied" && <span className="wb-tool-outcome"><LocalizedText id={TOOL_OUTCOME_STR[outcome]} /></span>}
         <span className="wb-mono wb-tool-name">{block.name}</span>
         {block.source && <span className="wb-tool-source">{block.source}</span>}
         {arg && <span className="wb-mono wb-tool-arg">{arg}</span>}
@@ -1029,8 +1001,8 @@ function ToolBlock({ block, density, detail }: { block: ToolTranscriptBlock; den
       {(open || full) && (
         <>
           {meta && <div className="wb-tool-meta">{meta}</div>}
-          {fullInput && <pre className={"wb-pre wb-tool-cmd" + (fileChange ? " wb-filechange-input" : "")}>{previewOf(fullInput)}</pre>}
-          {result && <pre className={"wb-pre wb-tool-result" + (failed ? " is-failed" : "") + (fileChange ? " wb-filechange-result" : "")}>{previewOf(result)}</pre>}
+          {fullInput && <pre className="wb-pre wb-tool-cmd">{previewOf(fullInput)}</pre>}
+          {result && <pre className={"wb-pre wb-tool-result" + (failed ? " is-failed" : "")}>{previewOf(result)}</pre>}
           {images.map((image) => <ToolImage key={image.key} image={image} />)}
         </>
       )}
@@ -1124,20 +1096,20 @@ function FileChangeBlock({ block, density }: { block: Extract<TranscriptBlock, {
   const outcome = block.status ? toolOutcomeOf(block) : undefined;
   return (
     <div
-      className={"wb-block wb-filechange density-" + density + (outcome ? " is-" + outcome : "")}
+      className={"wb-block wb-filechange density-" + density}
       aria-label={outcome ? `${localized("STR-2196")}: ${localized(TOOL_OUTCOME_STR[outcome])}` : localized("STR-2196")}
     >
       <div className="wb-filechange-head">
-        <span className="wb-filechange-icon" aria-hidden="true"><FileDiff size={14} /></span>
+        {outcome ? (
+          <span className={"wb-tool-check is-" + outcome + (isToolProblem(outcome) ? " failed" : "")} aria-hidden="true">
+            {outcome === "denied" ? <Ban size={13} /> : outcome === "failed" ? <X size={13} /> : outcome === "running" ? <Loader size={13} /> : <Check size={13} />}
+          </span>
+        ) : (
+          <span className="wb-filechange-icon" aria-hidden="true"><FileDiff size={14} /></span>
+        )}
         <strong><LocalizedText id="STR-2196" /></strong>
         <span className="wb-chip">{block.changes.length}<LocalizedText id="STR-2197" /></span>
         <span className="wb-diff-stat"><span className="wb-diff-add">+{total.added}</span> <span className="wb-diff-del">-{total.removed}</span></span>
-        {outcome && (
-          <span className={"wb-filechange-state is-" + outcome}>
-            {outcome === "denied" ? <Ban size={11} /> : outcome === "failed" ? <X size={11} /> : outcome === "running" ? <Loader size={11} className="wb-spin" /> : <Check size={11} />}
-            <LocalizedText id={TOOL_OUTCOME_STR[outcome]} />
-          </span>
-        )}
       </div>
       {block.changes.map((change, i) => (
         <details key={i} className="wb-filechange-file" open={density === "wide" && block.changes.length === 1}>

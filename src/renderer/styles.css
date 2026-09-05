@@ -1790,22 +1790,29 @@ body.wb-resizing {
   overflow-y: auto;
 }
 
-/* Ctrl+wheel text zoom: App sets --wb-font-scale from the persisted setting.
-   The scale is a transform on this inner wrapper, NOT `zoom` on the scroller:
-   `zoom` demotes every animation in the subtree to main-thread style recalc +
-   paint at 60fps, while a transform leaves descendants compositable. Width is
-   compensated so the scaled content still fills the scroller exactly, and the
-   min-height compensation keeps empty states vertically centered. */
+/* Ctrl+wheel text zoom: use layout zoom on the inner wrapper so Chromium
+   rasterizes glyphs at their final size. A fractional transform scales an
+   already-rasterized texture and is visibly blurry, even after remounting. */
 .wb-transcript-scale {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
   padding: var(--space-6);
-  transform: scale(var(--wb-font-scale, 1));
-  transform-origin: top left;
-  width: calc(100% / var(--wb-font-scale, 1));
-  min-height: calc(100% / var(--wb-font-scale, 1));
+  min-height: 100%;
   box-sizing: border-box;
+}
+
+:root[data-transcript-font-scaled] .wb-transcript-scale {
+  zoom: var(--wb-font-scale, 1);
+}
+
+/* Chromium paints animations below CSS zoom on the main thread. At a custom
+   transcript scale keep the status shapes visible but pause decorative loops;
+   at 100% there is no zoom and animations remain compositor-driven. */
+:root[data-transcript-font-scaled] .wb-transcript-scale *,
+:root[data-transcript-font-scaled] .wb-transcript-scale *::before,
+:root[data-transcript-font-scaled] .wb-transcript-scale *::after {
+  animation-play-state: paused !important;
 }
 
 /* Keep each message/card at its natural height: when the pane shrinks (e.g. the
@@ -2375,14 +2382,12 @@ body.wb-resizing {
   place-items: center;
   width: 16px;
   height: 16px;
-  border-radius: var(--radius-badge);
-  background: var(--success-dim);
+  background: transparent;
   color: var(--success);
   flex: none;
 }
 
 .wb-tool-check.failed {
-  background: var(--danger-dim);
   color: var(--danger);
 }
 
@@ -2461,39 +2466,6 @@ body.wb-resizing {
   margin-left: auto;
   flex: 0 0 auto;
   box-shadow: none;
-}
-
-/* Claude Code, Cursor and Grok keep their native tool payloads, but their
-   explicitly named file-mutating tools share one visual language. */
-.wb-tool.is-file-change {
-  border-color: color-mix(in srgb, var(--member, var(--accent)) 34%, var(--border));
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--member, var(--accent)) 72%, transparent);
-  background: color-mix(in srgb, var(--bg-2) 94%, var(--member, var(--accent)));
-}
-
-.wb-tool.is-file-change > summary {
-  background: color-mix(in srgb, var(--bg-2) 92%, var(--member, var(--accent)));
-}
-
-.wb-tool.is-file-change > summary:hover {
-  background: color-mix(in srgb, var(--bg-3) 88%, var(--member, var(--accent)));
-}
-
-.wb-tool-kind-icon {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  flex: none;
-  border: var(--border-width) solid color-mix(in srgb, var(--member, var(--accent)) 35%, var(--border));
-  border-radius: var(--radius-badge);
-  color: var(--member, var(--accent));
-  background: var(--member-dim, var(--accent-dim));
-}
-
-.wb-tool.is-file-change .wb-filechange-input,
-.wb-tool.is-file-change .wb-filechange-result {
-  border-left: 3px solid color-mix(in srgb, var(--member, var(--accent)) 44%, transparent);
 }
 
 /* Message bodies (sent/received) preview by default; "전체 보기" opens the popup. */
@@ -6850,21 +6822,13 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 }
 
 .wb-filechange {
-  border: var(--border-width) solid color-mix(in srgb, var(--member, var(--accent)) 34%, var(--border));
+  border: var(--border-width) solid var(--border);
   border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--bg-2) 94%, var(--member, var(--accent)));
-  padding: var(--space-3);
+  background: var(--bg-2);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--member, var(--accent)) 72%, transparent);
-  overflow: hidden;
-}
-
-.wb-filechange.is-failed,
-.wb-filechange.is-denied {
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
-  box-shadow: inset 3px 0 0 var(--danger);
 }
 
 .wb-filechange-head {
@@ -6880,15 +6844,13 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 }
 
 .wb-filechange-icon {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   flex: none;
-  border: var(--border-width) solid color-mix(in srgb, var(--member, var(--accent)) 35%, var(--border));
-  border-radius: var(--radius-badge);
-  color: var(--member, var(--accent));
-  background: var(--member-dim, var(--accent-dim));
+  color: var(--text-2);
 }
 
 .wb-diff-stat {
@@ -6904,37 +6866,8 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   color: var(--danger);
 }
 
-.wb-filechange-state {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  padding: 2px 7px;
-  border-radius: var(--radius-pill);
-  font-size: 10px;
-  font-weight: var(--weight-semibold);
-  color: var(--success);
-  background: var(--success-dim);
-}
-
-.wb-filechange-state.is-failed,
-.wb-filechange-state.is-denied {
-  color: var(--danger);
-  background: var(--danger-dim);
-}
-
-.wb-filechange-state.is-running {
-  color: var(--warning);
-  background: var(--warning-dim);
-}
-
 .wb-filechange-file {
   min-width: 0;
-  border: var(--border-width) solid var(--border-subtle);
-  border-radius: var(--radius-button);
-  background: color-mix(in srgb, var(--bg-1) 84%, transparent);
-  overflow: hidden;
 }
 
 .wb-filechange-file summary {
@@ -6944,17 +6877,13 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   cursor: pointer;
   font-size: 11.5px;
   min-width: 0;
-  padding: 7px 9px;
+  padding: 2px 0;
   list-style: none;
-}
-
-.wb-filechange-file summary:hover {
-  background: var(--bg-3);
 }
 
 .wb-filechange-file summary:focus-visible {
   outline: 2px solid var(--focus-ring, var(--accent));
-  outline-offset: -2px;
+  outline-offset: 1px;
 }
 
 .wb-filechange-file summary > .wb-diff-stat {
@@ -6975,7 +6904,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   text-transform: uppercase;
   letter-spacing: 0.04em;
   flex: none;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: var(--radius-badge);
   background: var(--bg-3);
   color: var(--text-2);
@@ -6984,19 +6913,10 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 
 .wb-filechange-kind.is-add {
   color: var(--success);
-  background: var(--success-dim);
 }
 
 .wb-filechange-kind.is-delete {
   color: var(--danger);
-  background: var(--danger-dim);
-}
-
-.wb-filechange-kind.is-update,
-.wb-filechange-kind.is-rename,
-.wb-filechange-kind.is-write {
-  color: var(--member, var(--accent));
-  background: var(--member-dim, var(--accent-dim));
 }
 
 .wb-filechange-path {
@@ -7048,10 +6968,6 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-filechange.density-narrow .wb-filechange-head,
 .wb-filechange.density-mid .wb-filechange-head {
   flex-wrap: wrap;
-}
-
-.wb-filechange.density-narrow .wb-filechange-state {
-  margin-left: 0;
 }
 
 .wb-filechange.density-narrow .wb-filechange-head > .wb-diff-stat {
@@ -10084,35 +10000,15 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
    reinforces it, so the distinction survives a colour-blind reader and a
    screenshot in the wrong theme. */
 .wb-tool-check.is-denied {
-  background: var(--warning-dim, var(--danger-dim));
   color: var(--warning, var(--danger));
 }
 
 .wb-tool-check.is-running {
-  background: var(--bg-3);
   color: var(--text-2);
 }
 
 .wb-tool-check.is-running svg {
   animation: wb-spin 1s linear infinite;
-}
-
-/* Denial keeps a word because it is meaningfully different from a failure.
-   Failed calls use the red X alone; repeating "실패" beside it is noise. */
-.wb-tool-outcome {
-  flex: none;
-  padding: 1px 6px;
-  border-radius: var(--radius-badge);
-  background: var(--danger-dim);
-  color: var(--danger);
-  font-size: 9.5px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.wb-tool-check.is-denied + .wb-tool-outcome {
-  background: var(--warning-dim, var(--danger-dim));
-  color: var(--warning, var(--danger));
 }
 
 /* ── 전달·병합 카드: 좁은 폭 ───────────────────────────────────────────── */

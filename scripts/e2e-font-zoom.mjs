@@ -58,20 +58,35 @@ async function main() {
     await post("/api/navigation", { view: "workbench" });
     await post("/api/qa/open", { panels: [["reader"]] });
     await delay(800);
+    // Direct fixture injection is intentional: this E2E validates rendering,
+    // not a party-member action that has an AgentParty MCP tool.
+    await post("/api/qa/members/reader/emit", { events: [{
+      type: "tool_call", id: "running-tool", name: "Shell", status: "started", input: { command: "echo sharp text" },
+    }] });
+    await delay(250);
 
     // Default is 100%.
     const start = (await getJson("/api/state")).settings?.transcriptFontScale;
     assert(start === 1, `default transcriptFontScale is 1 (got ${start})`);
     const shot100 = path.join(outDir, "font-zoom-100.png");
     assert((await post("/api/capture", { path: shot100 })).ok, `captured transcript @100% → ${shot100}`);
+    const baseScale = await post("/api/measure", { selector: ".wb-transcript-scale", styles: ["transform", "zoom"], limit: 1 });
+    assert(baseScale.elements[0].styles.transform === "none", "100% transcript has no compositor transform");
 
-    // Set 180% over HTTP — the open window updates live via settings:update.
-    await post("/api/settings", { transcriptFontScale: 1.8 });
+    // Set the user's actual 110% over HTTP; the open window updates live.
+    await post("/api/settings", { transcriptFontScale: 1.1 });
     await delay(700);
-    const at180 = (await getJson("/api/state")).settings?.transcriptFontScale;
-    assert(at180 === 1.8, `transcriptFontScale round-tripped to 1.8 (got ${at180})`);
-    const shot180 = path.join(outDir, "font-zoom-180.png");
-    assert((await post("/api/capture", { path: shot180 })).ok, `captured transcript @180% → ${shot180}`);
+    const at110 = (await getJson("/api/state")).settings?.transcriptFontScale;
+    assert(at110 === 1.1, `transcriptFontScale round-tripped to 1.1 (got ${at110})`);
+    const liveScale = await post("/api/measure", { selector: ".wb-transcript-scale", styles: ["transform", "zoom"], limit: 1 });
+    assert(liveScale.elements[0].styles.transform === "none", "110% transcript still has no compositor transform");
+    assert(Number(liveScale.elements[0].styles.zoom) === 1.1, `110% transcript uses sharp layout zoom (got ${liveScale.elements[0].styles.zoom})`);
+    const rootScale = await post("/api/measure", { selector: "html", attributes: ["data-transcript-font-scaled"], limit: 1 });
+    assert(rootScale.elements[0].attributes["data-transcript-font-scaled"] === "", "custom-scale performance guard is active");
+    const runningGlyph = await post("/api/measure", { selector: ".wb-tool-check.is-running svg", styles: ["animation-play-state"], limit: 1 });
+    assert(runningGlyph.elements[0].styles["animation-play-state"] === "paused", "decorative transcript animation is paused under layout zoom");
+    const shot110 = path.join(outDir, "font-zoom-110.png");
+    assert((await post("/api/capture", { path: shot110 })).ok, `captured sharp transcript @110% → ${shot110}`);
 
     // Clamp: out-of-range values are pinned to [0.6, 2.0].
     await post("/api/settings", { transcriptFontScale: 99 });
@@ -91,7 +106,7 @@ async function main() {
 
   console.log("");
   if (failures.length) { console.log(`FONT ZOOM E2E FAILED: ${failures.length}`); process.exit(1); }
-  console.log("FONT ZOOM E2E PASSED (setting round-trip + clamp + live push; 100%/180% captured)");
+  console.log("FONT ZOOM E2E PASSED (sharp layout zoom + performance guard + round-trip/clamp; 100%/110% captured)");
   process.exit(0);
 }
 

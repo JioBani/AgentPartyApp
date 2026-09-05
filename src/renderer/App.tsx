@@ -516,25 +516,21 @@ export function App() {
   }, [updateStatus?.state, updateStatus?.latestVersion, updateStatus?.downgrade]);
 
   // --- Transcript text zoom (Ctrl+wheel over a session view) ---------------
-  // Until the persisted settings arrive, keep the boot-mirrored scale that
-  // main.tsx already applied pre-paint — falling back to 1 here would flip the
-  // transform to 1 and back, recreating the blur this exists to prevent.
+  // Until persisted settings arrive, keep the scale main.tsx applied before the
+  // first paint so the transcript does not visibly jump through 100%.
   const fontScale = state.settings.transcriptFontScale ?? bootFontScale;
   const fontScaleRef = useRef(fontScale);
   fontScaleRef.current = fontScale;
   const fontScalePersist = useRef<ReturnType<typeof setTimeout>>();
 
-  // Reflect the zoom as the CSS variable every transcript scale wrapper reads.
-  // Changing the variable moves the wrappers' transform without a repaint, and
-  // Chromium keeps rendering the raster made for the PREVIOUS scale
-  // (crbug.com/40431598) — so after the initial application, announce every
-  // change and let each Transcript rebuild its paint (see Transcript.tsx).
+  // Tell open transcripts before their layout changes so an unpinned reader can
+  // preserve its relative scroll position across the reflow.
   const appliedFontScale = useRef<number | null>(null);
   useEffect(() => {
-    applyFontScale(fontScale);
     if (appliedFontScale.current !== null && appliedFontScale.current !== fontScale) {
-      window.dispatchEvent(new Event("wb-font-scale-applied"));
+      window.dispatchEvent(new Event("wb-font-scale-will-change"));
     }
+    applyFontScale(fontScale);
     appliedFontScale.current = fontScale;
   }, [fontScale]);
 
