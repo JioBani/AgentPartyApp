@@ -229,6 +229,45 @@
       }
     },
     {
+      "id": "GPT-6 Astra",
+      "label": "GPT-6 Astra",
+      "provider": "openai",
+      "codexModel": "gpt-6-astra",
+      "runtimeModel": "claude-gpt-6-astra",
+      "subscription": true,
+      "description": "OpenAI's most capable model for complex reasoning, coding, computer use, research, and document creation. Both harnesses use the signed-in Codex/ChatGPT subscription.",
+      "context": "1.05M",
+      "perf": 5,
+      "costTier": 5,
+      "inPerM": 10,
+      "outPerM": 50,
+      "ioPerM": 20,
+      "cacheReadPerM": 1,
+      "cacheWritePerM": 12.5,
+      "serviceTierPricing": {
+        "priority": { "inPerM": 20, "cacheReadPerM": 2, "cacheWritePerM": 25, "outPerM": 100 },
+        "fast": { "inPerM": 20, "cacheReadPerM": 2, "cacheWritePerM": 25, "outPerM": 100 }
+      },
+      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "medium"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
+    },
+    {
       "id": "GPT-5.6 Sol",
       "label": "GPT-5.6 Sol",
       "provider": "openai",

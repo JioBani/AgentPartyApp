@@ -57,16 +57,16 @@ assert(normalizeCodexModel({ id: "only-id", hidden: false }).model === "only-id"
 assert(normalizeCodexModel(null) === undefined, "null entry normalizes to undefined (not a crash)");
 
 // ---- Layer 2: routes ----------------------------------------------------------
-const { buildModelRoutes, codexRouteFromModel } = await bundle("src/core/modelRegistry.ts", "codex-model-routes.mjs", []);
-const { claudeSubscriptionModels } = await bundle("src/shared/modelCatalog.ts", "codex-models-catalog.mjs", []);
+const { buildModelRoutes, codexRouteFromModel } = await bundle("src/core/modelRegistry.ts", "codex-model-routes.mjs", ["node:*"]);
+const { claudeSubscriptionModels, codexAccountModels } = await bundle("src/shared/modelCatalog.ts", "codex-models-catalog.mjs", []);
 console.log("\nmodelRegistry codex routes:");
 const withCatalog = buildModelRoutes("sonnet", [], [], models);
 // Account-catalog codex routes (from model/list) are the openai-provider ones;
 // OpenRouter codex routes are asserted separately below (Layer 2b).
 const codexRoutes = withCatalog.filter((route) => route.harnessId === "codex" && route.providerId === "openai");
-// 3 discovered + the static catalog account models NOT in the discovery (the
-// GPT-5.6 trio) — discovered slugs dedupe against their static catalog twins.
-assert(codexRoutes.length === 6, `discovered models + undiscovered static catalog models, deduped (got ${codexRoutes.length})`);
+// Discovered slugs supersede their static twins; newly published static models
+// remain selectable even before the local Codex model/list learns about them.
+assert(codexRoutes.length === codexAccountModels().length, `discovered models + undiscovered static catalog models, deduped (got ${codexRoutes.length})`);
 assert(codexRoutes.filter((route) => route.model === "gpt-5.5").length === 1, "a discovered slug supersedes its static catalog twin (no duplicate gpt-5.5)");
 assert(codexRoutes.some((route) => route.model === "gpt-5.6-sol" && route.label === "GPT-5.6 Sol"), "an undiscovered catalog model (gpt-5.6-sol) stays selectable");
 assert(codexRoutes[0].model === "gpt-5.5" && codexRoutes[0].label === "GPT-5.5", "route model/label come from the discovered slug/displayName");
@@ -101,7 +101,7 @@ assert(sonnet?.pricing?.billing === "subscription" && sonnet?.providerId === "an
 // Account catalog + OpenRouter both present without discovery too.
 const noDiscovery = buildModelRoutes("sonnet", [], []).filter((route) => route.harnessId === "codex");
 assert(noDiscovery.some((r) => r.model === "gpt-5.4") && noDiscovery.some((r) => r.modelProvider === "openrouter"), "without discovery: static account fallback + OpenRouter routes both present");
-assert(noDiscovery.filter((r) => r.providerId === "openai").length === 6, "without discovery: every catalog codexModel entry is a static codex route");
+assert(noDiscovery.filter((r) => r.providerId === "openai").length === codexAccountModels().length, "without discovery: every catalog codexModel entry is a static codex route");
 
 // ---- Layer 2c: codexProviders (Phase 2 pure model) ----------------------------
 const { codexProviderForModel, codexProviderConfigArgs, CODEX_OPENROUTER_PROVIDER, CODEX_CLAUDE_SUBSCRIPTION_PROVIDER } = await bundle("src/shared/codexProviders.ts", "codex-providers.mjs", []);
@@ -127,6 +127,7 @@ const click = (el) => el?.dispatchEvent(new window.MouseEvent("click", { bubbles
 const tick = () => new Promise((r) => setTimeout(r, 60));
 const defaultProfile = { harness: "codex", model: "gpt-5.5", effort: "medium", permissionMode: "default" };
 const harnessDefaults = { "claude-code": { model: "sonnet", effort: "medium", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } } };
+const locationProps = { cwdPrefs: { windowsRecent: [], wslRecent: [] }, appWorkspaceRoot: "C:\\qa", now: Date.now(), onBrowseCwd: async () => null };
 
 async function openModelStep(host) {
   const input = host.querySelector(".wb-wizard-input");
@@ -135,15 +136,19 @@ async function openModelStep(host) {
   input.dispatchEvent(new window.Event("input", { bubbles: true }));
   await tick();
   const next = () => click([...host.querySelectorAll(".wb-btn-accent")].at(-1));
-  next(); await tick(); // 이름 → 하네스
-  next(); await tick(); // 하네스 → 모델
+  next(); await tick(); // 이름 → 실행 구성
+  click(host.querySelector(".wb-wizard-runtime"));
+  await tick(); // 실행 구성 → 통합 모델 카탈로그
 }
 
 console.log("\nMemberWizard codex model step:");
-const readyHost = mount(React.createElement(MemberWizard, { routes: withCatalog, codexModels: { status: "ready", models }, defaultProfile, harnessDefaults, onCancel: () => {}, onCreate: () => {} }));
+const readyHost = mount(React.createElement(MemberWizard, { ...locationProps, routes: withCatalog, codexModels: { status: "ready", models }, defaultProfile, harnessDefaults, onCancel: () => {}, onCreate: () => {} }));
 await tick();
 await openModelStep(readyHost);
-const rows = [...readyHost.querySelectorAll(".wb-model-row")];
+const readyCatalog = document.querySelector(".wb-modal-catalog");
+for (const group of readyCatalog.querySelectorAll('.wb-model-provider-btn[aria-expanded="false"]')) click(group);
+await tick();
+const rows = [...readyCatalog.querySelectorAll(".wb-model-row")];
 // Every codex route the registry produced must be listed — account models,
 // OpenRouter, Claude-subscription cross-routes, and the explicitly
 // unavailable Cursor entries (which stay visible with a reason).
@@ -160,15 +165,15 @@ assert(!readyHost.querySelector(".wb-wizard-error"), "no error banner when disco
 const glmRow = rows.find((row) => row.textContent.includes("GLM-5.2"));
 click(glmRow);
 await tick();
-assert((readyHost.querySelector(".wb-codex-or-note")?.textContent || "").includes("OpenRouter"), "selecting an OpenRouter codex model shows the OpenRouter billing note");
+assert((readyCatalog.querySelector(".wb-detail-blurb")?.getAttribute("title") || "").includes("OpenRouter"), "selecting an OpenRouter codex model keeps the OpenRouter billing note in the detail tooltip");
 
-const pendingHost = mount(React.createElement(MemberWizard, { routes: buildModelRoutes("sonnet", [], []), codexModels: { status: "pending", models: [] }, defaultProfile: { ...defaultProfile, model: "gpt-5.4" }, harnessDefaults, onCancel: () => {}, onCreate: () => {} }));
+const pendingHost = mount(React.createElement(MemberWizard, { ...locationProps, routes: buildModelRoutes("sonnet", [], []), codexModels: { status: "pending", models: [] }, defaultProfile: { ...defaultProfile, model: "gpt-5.4" }, harnessDefaults, onCancel: () => {}, onCreate: () => {} }));
 await tick();
 await openModelStep(pendingHost);
 assert((pendingHost.textContent || "").includes("불러오는 중"), "pending discovery is stated on the model step");
 
 let retried = false;
-const errorHost = mount(React.createElement(MemberWizard, { routes: buildModelRoutes("sonnet", [], []), codexModels: { status: "error", models: [], error: "codex exited with code 1" }, onRefreshCodexModels: () => { retried = true; }, defaultProfile: { ...defaultProfile, model: "gpt-5.4" }, harnessDefaults, onCancel: () => {}, onCreate: () => {} }));
+const errorHost = mount(React.createElement(MemberWizard, { ...locationProps, routes: buildModelRoutes("sonnet", [], []), codexModels: { status: "error", models: [], error: "codex exited with code 1" }, onRefreshCodexModels: () => { retried = true; }, defaultProfile: { ...defaultProfile, model: "gpt-5.4" }, harnessDefaults, onCancel: () => {}, onCreate: () => {} }));
 await tick();
 await openModelStep(errorHost);
 const errorBanner = errorHost.querySelector(".wb-wizard-error");

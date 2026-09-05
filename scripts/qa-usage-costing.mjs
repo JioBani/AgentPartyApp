@@ -15,6 +15,9 @@ const close = (actual, expected, label) =>
   assert.ok(Math.abs(actual - expected) < 1e-10, `${label}: expected ${expected}, got ${actual}`);
 
 console.log("Current OpenAI list prices:");
+close(usage.estimatedTurnCostUsd(turn("gpt-6-astra", { input: 100_000, output: 100_000 })), 6, "Astra $10/$50");
+close(usage.estimatedTurnCostUsd(turn("gpt-6-astra", { cacheRead: 100_000, cacheWrite: 100_000 })), 1.35, "Astra cached read/write rates");
+close(usage.estimatedTurnCostUsd(turn("gpt-6-astra", { input: 100_000, output: 100_000 }, { serviceTier: "priority" })), 12, "Astra Fast/Priority");
 close(usage.estimatedTurnCostUsd(turn("gpt-5.6-sol", { input: 100_000, output: 100_000 })), 2.4, "Sol $4/$20");
 close(usage.estimatedTurnCostUsd(turn("gpt-5.6-terra", { input: 100_000, output: 100_000 })), 1.4, "Terra $2/$12");
 close(usage.estimatedTurnCostUsd(turn("gpt-5.6-luna", { input: 100_000, output: 100_000 })), 0.14, "Luna $0.20/$1.20");

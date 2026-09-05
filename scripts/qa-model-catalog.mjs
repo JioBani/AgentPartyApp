@@ -38,6 +38,11 @@ const byId = Object.fromEntries(routes.map((r) => [r.model, r]));
 const liveSolRoute = buildModelRoutes("sonnet", [], [], [{ model: "gpt-5.6-sol", displayName: "gpt-5.6-sol", isDefault: false, hidden: false, reasoningEfforts: [], serviceTiers: [] }])
   .find((r) => r.harnessId === "codex" && r.model === "gpt-5.6-sol");
 assert(liveSolRoute?.label === "GPT-5.6 Sol", "live Codex discovery keeps the shared catalog label (transport slug stays internal)");
+const liveAstraRoute = buildModelRoutes("sonnet", [], [], [{ model: "gpt-6-astra", displayName: "GPT-6-Astra", isDefault: true, hidden: false, defaultReasoningEffort: "medium", reasoningEfforts: [{ id: "low" }, { id: "medium" }, { id: "high" }, { id: "xhigh" }, { id: "max" }, { id: "ultra" }], serviceTiers: [{ id: "priority", name: "Fast", description: "2x speed, increased usage" }] }])
+  .find((r) => r.harnessId === "codex" && r.model === "gpt-6-astra");
+assert(liveAstraRoute?.label === "GPT-6 Astra", "live Astra discovery keeps the shared catalog label");
+assert(liveAstraRoute?.capabilities.effort.options.at(-1)?.id === "ultra", "live Astra discovery preserves Codex-only ultra effort");
+assert(liveAstraRoute?.capabilities.serviceTier?.options.some((option) => option.id === "priority"), "live Astra discovery preserves the Fast tier");
 assert(PROVIDER_LABELS.anthropic === "Claude" && PROVIDER_LABELS.openai === "Codex" && PROVIDER_LABELS.cursor === "Cursor" && PROVIDER_LABELS.openrouter === "OpenRouter", "model groups use the same provider names as Authentication");
 for (const harnessId of ["claude-code", "codex"]) {
   for (const providerId of ["anthropic", "openai", "cursor", "openrouter"]) {
@@ -149,6 +154,12 @@ assert(!eff("Kimi K2.7 Code").supported && !th("Kimi K2.7 Code").supported, "Kim
 assert(!eff("Grok Build 0.1").supported && !th("Grok Build 0.1").supported, "Grok Build 0.1 (undocumented) shows no reasoning control");
 assert(!eff("haiku").supported && Boolean(th("haiku").budget), "Haiku has no effort but a thinking budget");
 
+const astra = routes.find((route) => route.harnessId === "claude-code" && route.providerId === "openai" && route.model === "GPT-6 Astra");
+assert(astra?.runtimeModel === "claude-gpt-6-astra", "Astra has the Claude Code subscription-proxy alias");
+assert(astra?.meta?.context === "1.05M" && astra.meta.inPerM === 10 && astra.meta.outPerM === 50, "Astra carries the official context and token prices");
+assert(astra?.capabilities.effort.defaultValue === "medium" && astra.capabilities.effort.options.map((o) => o.id).join() === "low,medium,high,xhigh,max", "Astra static route exposes the cross-harness effort subset with measured medium default");
+assert(astra?.capabilities.vision.image === true, "Astra static route reports image input support");
+
 assert(routes.some((route) => route.harnessId === "codex" && route.model === "gpt-5.4" && route.enabled), "Codex default route is exposed");
 
 // One catalog entry per MODEL; harness×model cross-routing is derived from its
@@ -205,9 +216,10 @@ assert(grok46?.capabilities.effort.supported && grok46.capabilities.effort.defau
 assert(grok45?.capabilities.effort.supported && grok45.capabilities.effort.defaultValue === "high" && grok45.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high", "Grok 4.5 exposes its measured effort menu and high default");
 assert(grokRoutes.every((route) => route.capabilities.effort.mutableDuringSession === false && route.capabilities.thinking.supported === false), "Grok effort is start-time-only and reasoning has no separate toggle");
 assert(cursorRoutes.find((route) => route.model === "Grok 4.5")?.capabilities.serviceTier?.options.map((o) => o.id).join() === "standard,fast", "Cursor Grok exposes independent Standard/Fast service modes");
-assert(routes.find((route) => route.harnessId === "claude-code" && route.providerId === "cursor" && route.model === "Grok 4.5 Cursor")?.enabled === true, "Claude Code exposes the executable Cursor ACP bridge route");
+const cursorBridgeRoute = routes.find((route) => route.harnessId === "claude-code" && route.providerId === "cursor" && route.model === "Grok 4.5 Cursor");
+assert(cursorBridgeRoute?.enabled === false && cursorBridgeRoute.locked === true, "Claude Code keeps the executable Cursor ACP bridge visible but beta-locked");
 assert(!routes.some((route) => route.harnessId === "claude-code" && route.providerId === "cursor" && route.model === "Grok 4.5" && route.enabled === false), "Claude Code omits the obsolete disabled Cursor Grok duplicate");
-for (const [id, slug, perf, costTier] of [["GPT-5.6 Sol", "gpt-5.6-sol", 5, 5], ["GPT-5.6 Terra", "gpt-5.6-terra", 4, 4], ["GPT-5.6 Luna", "gpt-5.6-luna", 3, 3]]) {
+for (const [id, slug, perf, costTier] of [["GPT-6 Astra", "gpt-6-astra", 5, 5], ["GPT-5.6 Sol", "gpt-5.6-sol", 5, 5], ["GPT-5.6 Terra", "gpt-5.6-terra", 4, 4], ["GPT-5.6 Luna", "gpt-5.6-luna", 3, 3]]) {
   const codexRoute = routes.find((route) => route.harnessId === "codex" && route.model === slug);
   assert(Boolean(codexRoute), `'${slug}' is selectable on the codex harness without discovery`);
   assert(codexRoute?.meta?.perf === perf && codexRoute?.meta?.costTier === costTier, `'${slug}' carries leaderboard meta perf ${perf} / cost ${costTier}`);

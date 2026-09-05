@@ -64,6 +64,8 @@ for (const [spelling, why] of [
 }
 // Router-backed selections stay router.
 assert(backendFor("claude-gpt-5.6-sol", "claude-code")?.kind === "claude-router", "GPT-5.6 Sol stays on Claude Code through its router alias");
+assert(backendFor("GPT-6 Astra", "codex")?.kind === "codex-account", "Astra runs natively on the Codex account backend");
+assert(backendFor("GPT-6 Astra", "claude-code")?.kind === "claude-router", "Astra keeps its Claude Code subscription-proxy route");
 assert(executionHarnessFor("GPT-5.4 mini", "claude-code") === "claude-code", "Claude-surface GPT mini executes on the Claude Code harness");
 assert(executionModelFor("GPT-5.4 mini", "claude-code") === "claude-gpt-5.4-mini", "Claude-surface GPT mini uses the Claude router alias");
 assert(executionHarnessFor("sonnet", "claude-code") === "claude-code", "native Sonnet stays on Claude Code");

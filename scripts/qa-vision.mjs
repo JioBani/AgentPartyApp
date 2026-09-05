@@ -42,6 +42,7 @@ const visionOf = (model) => routes.find((route) => route.model === model || rout
 
 assert(routes.every((route) => route.capabilities?.vision), "every route carries capabilities.vision");
 assert(visionOf("sonnet")?.image === true, "Anthropic Sonnet supports images");
+assert(visionOf("gpt-6-astra")?.image === true, "GPT-6 Astra supports images");
 assert(visionOf("gpt-5.4")?.image === true, "GPT-5.4 supports images");
 assert(visionOf("gpt-5.6-sol")?.image === true, "GPT-5.6 Sol supports images");
 assert(visionOf("GLM-5.2")?.image === false, "GLM-5.2 is text-only");
