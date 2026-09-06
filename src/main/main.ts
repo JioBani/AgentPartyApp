@@ -408,7 +408,15 @@ ${body}
         // it behind a long autonomous turn would swallow the instruction for
         // minutes; the adapters' queued-turn drain delivers it once the interrupt
         // settles (a compaction is never torn down — see sendUserMessage).
-        const result: any = await appController.sendMemberMessage(binding.workspacePath, binding.member, wrapped, attachments, undefined, { interrupt: true });
+        const result: any = await appController.sendMemberMessage(
+          binding.workspacePath,
+          binding.member,
+          wrapped,
+          attachments,
+          undefined,
+          { interrupt: true },
+          binding.party,
+        );
         const delivered = result?.partyMessage?.delivered ?? result?.delivered ?? true;
         return { delivered: Boolean(delivered), error: result?.partyMessage?.error || result?.error };
       } catch (error) {
