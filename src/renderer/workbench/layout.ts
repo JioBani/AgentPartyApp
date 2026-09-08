@@ -1,6 +1,7 @@
 import type { PanelState } from "./types";
 import type { WorkbenchLayout } from "../../shared/workbenchLayout";
 import {
+  insertPanelAtRoot,
   insertPanelBeside,
   removePanelFromGrid,
   resizeGridSplit,
@@ -192,6 +193,31 @@ export function moveTabToNewPanel(
   const anchor = targetPanelId && stripped.some((item) => item.id === targetPanelId) ? targetPanelId : undefined;
   const base = { ...state, panels: stripped, grid: gridWithout(state.grid, state.panels, stripped) };
   return placeNewPanel(base, panel, anchor, side);
+}
+
+/**
+ * Drops a tab against an OUTER edge of the whole work area: the member takes a
+ * full-width row above/below the grid, or a full-height column beside it.
+ *
+ * The per-panel drop can only divide the panel it lands on, so "two side by
+ * side, one wide underneath both" had no gesture — the new slot always ended up
+ * inside one of the two.
+ */
+export function moveTabToOuterSlot(state: LayoutState, memberName: string, side: GridSide): LayoutState {
+  const from = panelOf(state, memberName);
+  if (!from) {
+    return state;
+  }
+  const stripped = state.panels
+    .map((panel) => (
+      panel.id === from.id
+        ? { ...panel, tabs: panel.tabs.filter((name) => name !== memberName), active: panel.tabs.filter((n) => n !== memberName)[0] || "" }
+        : panel
+    ))
+    .filter((panel) => panel.tabs.length > 0);
+  const panel: PanelState = { id: nextPanelId(), tabs: [memberName], active: memberName, weight: 1 };
+  const grid = insertPanelAtRoot(gridWithout(state.grid, state.panels, stripped), panel.id, side);
+  return composeLayout([...stripped, panel], panel.id, grid);
 }
 
 /**

@@ -196,6 +196,37 @@ export function insertPanelBeside(
   return changed ? normalizeNode({ ...node, children }) : node;
 }
 
+/**
+ * Places a panel against an OUTER edge of the whole grid: a full-width row
+ * underneath everything, or a full-height column beside it.
+ *
+ * The per-panel drop in {@link insertPanelBeside} can only ever divide the panel
+ * it lands on, so an arrangement like "two side by side, one wide underneath
+ * both" was unreachable by dragging — the new slot always ended up inside one of
+ * the two. This is that missing shape: the split happens at the root.
+ */
+export function insertPanelAtRoot(node: GridNode | undefined, panelId: string, side: GridSide): GridNode | undefined {
+  if (!node) {
+    return undefined;
+  }
+  const axis = AXIS_OF[side];
+  const before = side === "left" || side === "top";
+  const leaf: GridLeaf = { type: "leaf", panelId, weight: 1 };
+  if (node.type === "split" && node.dir === axis) {
+    // The root already runs along this axis, so the panel joins it rather than
+    // burying the whole existing grid one level deeper.
+    const children = before ? [leaf, ...node.children] : [...node.children, leaf];
+    return normalizeNode({ ...node, children });
+  }
+  return normalizeNode({
+    type: "split",
+    id: nextSplitId(),
+    dir: axis,
+    children: before ? [leaf, { ...node, weight: 1 }] : [{ ...node, weight: 1 }, leaf],
+    weight: node.weight,
+  });
+}
+
 /** Removes a panel's slot, collapsing any split left with a single child. */
 export function removePanelFromGrid(node: GridNode | undefined, panelId: string): GridNode | undefined {
   if (!node) {

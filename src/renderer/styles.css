@@ -4902,6 +4902,23 @@ body.wb-resizing-y {
   background: var(--accent-dim);
 }
 
+/* The slot an OUTER-edge drop would create: a band spanning the whole grid on
+   that side, so it reads as "under everything", not "inside this panel". */
+.wb-drop-outer {
+  position: absolute;
+  inset: var(--space-5);
+  pointer-events: none;
+  z-index: 9;
+  border: 2px solid var(--accent-bd);
+  border-radius: var(--radius-panel);
+  background: var(--accent-dim);
+}
+
+.wb-drop-outer.is-left { right: 66%; }
+.wb-drop-outer.is-right { left: 66%; }
+.wb-drop-outer.is-top { bottom: 70%; }
+.wb-drop-outer.is-bottom { top: 70%; }
+
 .wb-drop-side.is-left { right: 50%; }
 .wb-drop-side.is-right { left: 50%; }
 .wb-drop-side.is-top { bottom: 50%; }

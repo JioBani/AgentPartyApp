@@ -202,6 +202,27 @@ const repaired = S.sanitizeLayout({
 });
 assert(leafIds(repaired.grid).join(",") === "p1", "a slot for a panel that does not exist is dropped");
 
+// an OUTER-edge drop spans the whole grid: two side by side, one wide beneath
+let o = L.openMember(L.emptyLayout(), "left");
+o = L.openMember(o, "right");
+o = L.openMember(o, "wide");
+o = L.splitPanel(o, o.panels[0].id, "right");        // left | right(+wide)
+const wideHome = o.panels.find((panel) => panel.tabs.includes("wide"));
+o = L.moveTabToOuterSlot(o, "wide", "bottom");
+assert(o.grid.type === "split" && o.grid.dir === "column", "an outer bottom drop puts a row under the whole grid");
+assert(o.grid.children[0].type === "split" && o.grid.children[0].dir === "row", "…with the existing side-by-side grid kept above it");
+assert(o.grid.children[1].type === "leaf", "…and the dropped member alone in the full-width row");
+assert(L.panelOf(o, "wide").id !== wideHome.id, "the member left the panel it was sharing");
+
+// dropping against an edge the ROOT already runs along joins that row instead of
+// burying the grid a level deeper
+let o2 = L.openMember(L.emptyLayout(), "a");
+o2 = L.openMember(o2, "b");
+o2 = L.splitPanel(o2, o2.panels[0].id, "right");
+o2 = L.moveTabToOuterSlot(o2, "b", "right");
+assert(o2.grid.dir === "row" && o2.grid.children.length === 3 && o2.grid.children.every((c) => c.type === "leaf"),
+  "an outer drop along the root's own axis extends that row (no redundant nesting)");
+
 console.log("");
 if (failures.length) {
   console.log(`LAYOUT LOGIC FAILED: ${failures.length} assertion(s)`);

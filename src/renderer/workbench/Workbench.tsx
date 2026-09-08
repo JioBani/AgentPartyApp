@@ -19,6 +19,7 @@ import {
   openMember,
   promoteTab,
   pruneLayout,
+  moveTabToOuterSlot,
   resizeSplit,
   setActiveTab,
   splitPanel,
@@ -129,6 +130,12 @@ interface DragState {
    * aiming at a right edge produced an appended panel instead of a split.
    */
   overSide?: GridSide;
+  /**
+   * The cursor is against an outer edge of the whole work area: the drop gives
+   * the member a slot spanning the ENTIRE grid on that side — a full-width row
+   * under everything, rather than a division of one panel.
+   */
+  overOuter?: GridSide;
 }
 
 /** Resize in progress: which divider, and how big the pair it separates is. */
@@ -157,6 +164,13 @@ const EDGE_ZONE = 0.24;
  * actually cares about.
  */
 const MIN_PANEL_PX = 140;
+/**
+ * How close to the work area's own border a drop means "span the whole grid".
+ * In pixels, not a fraction: it is a border band the user pushes INTO, and it
+ * has to stay reachable in a small window without eating the outermost panel's
+ * own edge zones.
+ */
+const OUTER_EDGE_PX = 26;
 const SUBUI_KEY = "agentparty.subagentUi";
 /**
  * Delays between prewarm attempts for an open tab that still has no session.
@@ -190,6 +204,26 @@ function edgeSide(rect: DOMRect, x: number, y: number): GridSide | undefined {
   ];
   const nearest = distances.reduce((best, item) => (item.ratio < best.ratio ? item : best));
   return nearest.ratio <= EDGE_ZONE ? nearest.side : undefined;
+}
+
+/**
+ * Which outer edge of the work area a point is pressed against, if any.
+ *
+ * A band rather than a fraction, and inclusive of the area's padding, so the
+ * gesture is "push the tab to the window's edge" — reachable at any window size.
+ */
+function outerSide(area: DOMRect, x: number, y: number): GridSide | undefined {
+  if (x < area.left || x > area.right || y < area.top || y > area.bottom) {
+    return undefined;
+  }
+  const distances: Array<{ side: GridSide; px: number }> = [
+    { side: "left", px: x - area.left },
+    { side: "right", px: area.right - x },
+    { side: "top", px: y - area.top },
+    { side: "bottom", px: area.bottom - y },
+  ];
+  const nearest = distances.reduce((best, item) => (item.px < best.px ? item : best));
+  return nearest.px <= OUTER_EDGE_PX ? nearest.side : undefined;
 }
 
 function loadSubagentUi(): SubagentUiState {
@@ -500,6 +534,7 @@ export function Workbench(props: WorkbenchProps) {
       overTab: hit.tab,
       overAfter: hit.after,
       overSide: hit.side,
+      overOuter: hit.outer,
     });
   }
 
@@ -513,8 +548,10 @@ export function Workbench(props: WorkbenchProps) {
     }
     setDrag((current) => {
       if (current) {
-        const { member, overPanelId, overTab, overAfter, overSide } = current;
-        if (overPanelId && overSide) {
+        const { member, overPanelId, overTab, overAfter, overSide, overOuter } = current;
+        if (overOuter) {
+          setLayout((state) => moveTabToOuterSlot(state, member, overOuter));
+        } else if (overPanelId && overSide) {
           setLayout((state) => moveTabToNewPanel(state, member, overPanelId, overSide));
         } else if (overPanelId) {
           setLayout((state) => moveTab(state, member, overPanelId, overTab, overAfter));
@@ -524,7 +561,7 @@ export function Workbench(props: WorkbenchProps) {
     });
   }
 
-  function hitTest(x: number, y: number): { panelId?: string; tab?: string; after: boolean; side?: GridSide } {
+  function hitTest(x: number, y: number): { panelId?: string; tab?: string; after: boolean; side?: GridSide; outer?: GridSide } {
     const stack = document.elementsFromPoint(x, y);
     let panelId: string | undefined;
     let panelRect: DOMRect | undefined;
@@ -554,8 +591,13 @@ export function Workbench(props: WorkbenchProps) {
     // The tab strip is where ordering is expressed, so a drop there always means
     // "join this group at this position" — never a split, however close to an
     // edge the cursor happens to be.
-    const side = panelRect && !overStrip ? edgeSide(panelRect, x, y) : undefined;
-    return { panelId, tab, after, side };
+    // The outer band wins over a panel's own edge: the two overlap along the
+    // outermost panels, and the whole-grid split is the one that cannot be
+    // expressed any other way.
+    const area = workAreaRef.current?.getBoundingClientRect();
+    const outer = area && !overStrip ? outerSide(area, x, y) : undefined;
+    const side = !outer && panelRect && !overStrip ? edgeSide(panelRect, x, y) : undefined;
+    return { panelId, tab, after, side, outer };
   }
 
   // --- Panel resize -------------------------------------------------------
@@ -669,7 +711,7 @@ export function Workbench(props: WorkbenchProps) {
   }
 
   function renderPanel(panel: PanelState): ReactNode {
-    const over = Boolean(drag && drag.overPanelId === panel.id);
+    const over = Boolean(drag && !drag.overOuter && drag.overPanelId === panel.id);
     return (
       <Panel
         key={panel.id}
@@ -835,6 +877,7 @@ export function Workbench(props: WorkbenchProps) {
           </div>
         )}
         {renderGrid(grid)}
+        {drag?.overOuter && <div className={"wb-drop-outer is-" + drag.overOuter} />}
       </div>
 
       {drag && (
