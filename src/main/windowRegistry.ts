@@ -1,5 +1,6 @@
 import type { BrowserWindow, WebContents } from "electron";
 import type { WindowInfo } from "../shared/types";
+import { countEvent } from "../shared/perfCounters";
 import { workspaceKey } from "../shared/workspaceLocation";
 
 export type { WindowInfo } from "../shared/types";
@@ -27,6 +28,7 @@ export class WindowRegistry {
     const id = `win-${window.id}`;
     const entry: WindowEntry = { id, window, workspacePath: normalize(workspacePath) };
     this.entries.set(id, entry);
+    countSends(window);
     window.on("closed", () => this.entries.delete(id));
     return entry;
   }
@@ -78,4 +80,35 @@ export class WindowRegistry {
       focused: entry.window.isFocused(),
     }));
   }
+}
+
+
+/**
+ * Counts every message this window is sent, by channel.
+ *
+ * Wrapped HERE, on registration, because `webContents.send` is called from two
+ * dozen places and an app that is slow because it is TALKING too much cannot be
+ * diagnosed by instrumenting whichever of them someone happened to think of —
+ * the first attempt at this counted one path and reported zero while the app
+ * was streaming. One seam, every sender, no call site to keep in sync.
+ *
+ * The wrapper adds a map increment to a call that already serializes a payload
+ * and crosses a process boundary.
+ */
+function countSends(window: BrowserWindow): void {
+  const contents = window.webContents as unknown as { send: (channel: string, ...args: unknown[]) => void; __apCounted?: boolean };
+  if (contents.__apCounted) {
+    return;
+  }
+  const original = contents.send.bind(window.webContents);
+  contents.send = (channel: string, ...args: unknown[]) => {
+    countEvent("ipc.send");
+    countEvent(`ipc.send.${channel}`);
+    const events = (args[0] as { events?: unknown[] } | undefined)?.events;
+    if (Array.isArray(events)) {
+      countEvent("ipc.streamEvents", events.length);
+    }
+    original(channel, ...args);
+  };
+  contents.__apCounted = true;
 }

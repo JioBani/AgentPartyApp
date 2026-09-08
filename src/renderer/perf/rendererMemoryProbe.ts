@@ -17,6 +17,7 @@
  * keeps, so registering a source costs a function reference.
  */
 
+import { readCounters } from "../../shared/perfCounters";
 import { measureKeyed, type MemoryBucket } from "../../shared/perfMeasure";
 
 const MB = 1024 * 1024;
@@ -40,6 +41,44 @@ export interface RendererMemoryReport {
   jsHeapUsedMb?: number;
   jsHeapLimitMb?: number;
   domNodes?: number;
+  /** Monotonic totals from this window (events applied, long tasks, …). */
+  counters: Record<string, number>;
+  /**
+   * Tasks that blocked this window's main thread for over 50ms — the direct
+   * measure of "the app feels stuck". Nothing else in the report can show it:
+   * a busy renderer is not a big one, so every SIZE is unremarkable while the
+   * window is unusable.
+   */
+  longTasks: { count: number; totalMs: number; maxMs: number; lastAt?: number };
+}
+
+/**
+ * Long-task accounting. A `PerformanceObserver` for `longtask` only fires when
+ * something already took more than 50ms, so it costs nothing on a healthy
+ * window and cannot itself be the slowdown. It keeps four numbers, never a
+ * list — an entry log would grow without bound in exactly the situation it is
+ * meant to describe.
+ */
+const longTasks = { count: 0, totalMs: 0, maxMs: 0, lastAt: undefined as number | undefined };
+
+export function installLongTaskObserver(): void {
+  if (typeof PerformanceObserver === "undefined") {
+    return;
+  }
+  try {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        longTasks.count += 1;
+        longTasks.totalMs += entry.duration;
+        longTasks.maxMs = Math.max(longTasks.maxMs, entry.duration);
+        longTasks.lastAt = Date.now();
+      }
+    });
+    observer.observe({ entryTypes: ["longtask"] });
+  } catch {
+    // Not every Chromium build exposes the entry type; its absence is reported
+    // as zeroes rather than breaking the rest of the report.
+  }
 }
 
 export function collectRendererMemory(): RendererMemoryReport {
@@ -60,6 +99,13 @@ export function collectRendererMemory(): RendererMemoryReport {
   const memory = (performance as Performance & { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
   return {
     buckets,
+    counters: readCounters().totals,
+    longTasks: {
+      count: longTasks.count,
+      totalMs: Math.round(longTasks.totalMs),
+      maxMs: Math.round(longTasks.maxMs),
+      lastAt: longTasks.lastAt,
+    },
     jsHeapUsedMb: memory ? round(memory.usedJSHeapSize / MB) : undefined,
     jsHeapLimitMb: memory ? round(memory.jsHeapSizeLimit / MB) : undefined,
     // The DOM is the other half of a renderer's footprint: a transcript that is
@@ -75,6 +121,7 @@ export function collectRendererMemory(): RendererMemoryReport {
  */
 export function installRendererMemoryProbe(): void {
   (window as unknown as { __agentpartyPerf?: () => RendererMemoryReport }).__agentpartyPerf = collectRendererMemory;
+  installLongTaskObserver();
 }
 
 function round(value: number): number {

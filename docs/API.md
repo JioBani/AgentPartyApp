@@ -176,6 +176,39 @@ QA 전용이 아니라 일반 라우트다 — `/api/qa/*` 는 배포 앱에서 
 }
 ```
 
+또한 **무엇이 흐르고 있는지**를 함께 답한다. 느린 앱은 큰 앱이 아닌 경우가 많고,
+크기만 보면 그 차이가 보이지 않는다.
+
+```json
+{
+  "flow": {
+    "totals": { "ipc.send": 137, "ipc.send.session:events": 41, "ipc.send.session:list": 43,
+                "ipc.streamEvents": 41, "transcript.applyCalls": 41, "storage.writes": 12,
+                "storage.writeChars": 16370 },
+    "ratesPerSec": { "ipc.send": 11.9, "ipc.send.session:snapshot": 5.9 },
+    "sinceMs": 10012, "rejectedNames": 0
+  },
+  "windows": [{ "longTasks": { "count": 45, "totalMs": 5210, "maxMs": 234 },
+                "counters": { "transcript.applyCalls": 41 } }],
+  "processes": [{ "kind": "Tab", "label": "win-1", "cpuPercent": 33.0 }]
+}
+```
+
+- `flow.totals` 는 프로세스 시작 이후 누적, `ratesPerSec` 는 **직전 호출 이후**의 초당
+  값이다(그래서 두 번째 호출부터 의미가 있다). 기록을 쓰면 샘플 간 차이로 같은 값을 얻는다.
+- `ipc.send.<channel>` 이 배치 수보다 몇 배 많으면 **증폭**이다 — 한 번의 이벤트 배치가
+  `session:events` + `session:snapshot` + `session:list` 세 통으로 나가는 식. 크기 보고서로는
+  절대 보이지 않고, 과거 실제 느려짐의 원인이 정확히 이 모양이었다.
+- `windows[].longTasks` 는 50ms 넘게 그 창의 메인 스레드를 막은 작업의 **누적 횟수와
+  최댓값**이다. "느리다"의 직접 증거이며, 목록이 아니라 숫자 네 개만 유지한다.
+- `processes[].cpuPercent` 는 두 번의 누적 CPU 초 값 차이로 계산한다. Electron 의
+  `percentCPUUsage` 는 코어를 태우는 프로세스에도 0%를 돌려줬다(실측).
+
+`?deep=1` 을 붙이면 창마다 DevTools 프로토콜을 잠깐 붙여 **400ms 동안의** 스크립트/레이아웃/
+스타일 시간과 현재 노드·리스너 수를 함께 답한다(`ScriptDurationPct`, `LayoutCount`,
+`Nodes`, `JSEventListeners` …). 렌더러가 느린 이유가 **우리 JS 인지 DOM 인지**를 가르는 값이라,
+디버거를 붙이는 비용 때문에 기본이 아니라 옵션이다.
+
 읽는 법:
 - `windows[].buckets[].top` 이 **"어느 멤버/세션이 얼마나"** 에 해당한다.
 - `totals.residualMb` 는 앱이 **이름 붙이지 못한** 작업 집합이다. 이게 크면 원인이
@@ -219,8 +252,16 @@ QA 전용이 아니라 일반 라우트다 — `/api/qa/*` 는 배포 앱에서 
 
 기록을 끝내고 **원본 샘플과 증감 요약**을 함께 반환한다.
 
+응답은 크기 변화(`growth`)와 **그 구간에 일어난 일**(`signals`)을 따로 담는다.
+
 ```json
 { "ok": true, "id": "perf-…", "stoppedReason": "manual", "sampleCount": 240,
+  "signals": [
+    { "name": "flow.ipc.send", "unit": "count", "delta": 120 },
+    { "name": "win-1.longTasks", "unit": "count", "delta": 41 },
+    { "name": "cpu.win-1", "unit": "percent", "peak": 102.2 },
+    { "name": "win-1.longTaskMax", "unit": "ms", "peak": 234 }
+  ],
   "growth": [
     { "name": "win-1.logsBySession", "firstMb": 190.2, "lastMb": 612.8, "peakMb": 612.8, "deltaMb": 422.6, "monotonic": true },
     { "name": "process.residual", "firstMb": 210.1, "lastMb": 1359.4, "deltaMb": 1149.3, "monotonic": false }

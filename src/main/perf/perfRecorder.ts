@@ -151,9 +151,25 @@ export interface RecordingResult {
   applied: RecordingBudget;
   sampleCount: number;
   filePath?: string;
-  /** What changed over the window — the reason to record in the first place. */
+  /** What changed in SIZE over the window — the reason to record in the first place. */
   growth: GrowthRow[];
+  /**
+   * What HAPPENED over the window: long tasks, CPU, event-loop lag, and how
+   * much traffic crossed. A slow app is often not a big one, and none of that
+   * shows up in a size series.
+   */
+  signals: SignalRow[];
   samples: PerfSnapshot[];
+}
+
+export interface SignalRow {
+  name: string;
+  unit: "count" | "percent" | "ms";
+  first: number;
+  last: number;
+  peak: number;
+  /** For a cumulative counter this is "how many during the window". */
+  delta: number;
 }
 
 export interface GrowthRow {
@@ -191,6 +207,7 @@ export function stopRecording(reason: RecordingStopReason = "manual"): Recording
     sampleCount: finished.samples.length,
     filePath: finished.filePath,
     growth: summarizeGrowth(finished.samples),
+    signals: summarizeSignals(finished.samples),
     samples: finished.samples,
   };
 }
@@ -277,6 +294,60 @@ function summarizeGrowth(samples: PerfSnapshot[]): GrowthRow[] {
     });
   }
   return rows.sort((a, b) => b.deltaMb - a.deltaMb);
+}
+
+/**
+ * The non-size series. Cumulative counters (long tasks, IPC sends) report their
+ * delta as "how many happened in this window"; instantaneous ones (CPU,
+ * event-loop lag) report their peak, which is what a user actually felt.
+ */
+function summarizeSignals(samples: PerfSnapshot[]): SignalRow[] {
+  if (samples.length === 0) {
+    return [];
+  }
+  const series = new Map<string, { unit: SignalRow["unit"]; values: number[] }>();
+  const add = (name: string, unit: SignalRow["unit"], value: number) => {
+    const entry = series.get(name) || { unit, values: [] };
+    entry.values.push(value);
+    series.set(name, entry);
+  };
+  for (const sample of samples) {
+    add("eventLoop.p50", "ms", sample.eventLoop.p50Ms);
+    add("eventLoop.max", "ms", sample.eventLoop.maxMs);
+    for (const entry of sample.processes) {
+      add(`cpu.${entry.label || entry.kind}`, "percent", entry.cpuPercent);
+    }
+    for (const [name, total] of Object.entries(sample.flow.totals)) {
+      add(`flow.${name}`, "count", total);
+    }
+    for (const window of sample.windows) {
+      if (window.longTasks) {
+        add(`${window.windowId}.longTasks`, "count", window.longTasks.count);
+        add(`${window.windowId}.longTaskMax`, "ms", window.longTasks.maxMs);
+      }
+      if (window.domNodes !== undefined) {
+        add(`${window.windowId}.domNodes`, "count", window.domNodes);
+      }
+      for (const [name, total] of Object.entries(window.counters || {})) {
+        add(`${window.windowId}.${name}`, "count", total);
+      }
+    }
+  }
+  const rows: SignalRow[] = [];
+  for (const [name, entry] of series) {
+    const values = entry.values;
+    rows.push({
+      name,
+      unit: entry.unit,
+      first: round(values[0], 1),
+      last: round(values[values.length - 1], 1),
+      peak: round(Math.max(...values), 1),
+      delta: round(values[values.length - 1] - values[0], 1),
+    });
+  }
+  // Busiest first: for counters that is the most traffic, for CPU and lag the
+  // worst moment — either way, the row a reader should look at first.
+  return rows.sort((a, b) => (b.unit === "count" ? b.delta : b.peak) - (a.unit === "count" ? a.delta : a.peak));
 }
 
 function clampBudget(request: Partial<RecordingBudget>, clamped: string[]): RecordingBudget {

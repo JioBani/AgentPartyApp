@@ -9,6 +9,7 @@ import { workspaceKey } from "../shared/workspaceLocation";
 import { log } from "./logger";
 import { ensureStorageDir, STORAGE_DIR } from "./workspaceStorage";
 import { registerMemoryProbe } from "../shared/memoryProbes";
+import { countEvent } from "../shared/perfCounters";
 import { measureKeyed } from "../shared/perfMeasure";
 
 /**
@@ -554,7 +555,13 @@ export class PartyRepository {
     // supported multi-instance case) must never collide on one temp file, or
     // one's writeFile/rename would clobber the other's mid-flight. rename onto
     // the final path stays atomic. Mirrors settings.ts's writer.
-    writeReplacing(file, `${JSON.stringify(data, null, 2)}\n`);
+    const body = `${JSON.stringify(data, null, 2)}\n`;
+    // Storage writes are synchronous, so they are main-thread time: a party
+    // whose transcript is saved on every turn can make the whole app stutter
+    // without holding a byte more memory. Counted at the one writer.
+    countEvent("storage.writes");
+    countEvent("storage.writeChars", body.length);
+    writeReplacing(file, body);
   }
 
   private transcriptPath(workspacePath: string, partyId: string, memberName: string): string {

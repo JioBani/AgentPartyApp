@@ -20,6 +20,10 @@ export const perfRoutes: MethodRoute[] = [
     http: "GET /api/perf",
     handler: (p, ctx) => ctx.controller.getPerfSnapshot(ctx.workspace, {
       includeHarness: p.harness === undefined ? true : flag(p.harness),
+      // `?deep=1` also asks each window's renderer for cumulative script/layout
+      // timing through the DevTools protocol — a brief debugger attach, so it
+      // is opt-in rather than part of every report.
+      deep: flag(p.deep),
     }),
   },
   {

@@ -17,6 +17,7 @@
 import type { BrowserWindow } from "electron";
 import { performance } from "node:perf_hooks";
 import { collectMemoryBuckets, registeredProbeNames } from "../../shared/memoryProbes";
+import { counterRates, readCounters, type CounterReading } from "../../shared/perfCounters";
 import type { MemoryBucket } from "../../shared/perfMeasure";
 import { log } from "../logger";
 import type { WindowRegistry } from "../windowRegistry";
@@ -30,6 +31,14 @@ export interface PerfProcessSample {
   pid: number;
   /** Set for `Tab` rows we could match to a window, and for harness rows. */
   label?: string;
+  /**
+   * CPU over the measurement window, computed from cumulative CPU seconds.
+   *
+   * Electron's own `percentCPUUsage` is "since the last call" and the metrics
+   * objects are rebuilt on every call, so it reported ~0% for a process that
+   * was pinning a core — measured here while an emit storm was running. Two
+   * readings a known interval apart is the only number that means anything.
+   */
   cpuPercent: number;
   workingSetMb: number;
 }
@@ -49,6 +58,16 @@ export interface PerfWindowReport {
   jsHeapLimitMb?: number;
   domNodes?: number;
   buckets: MemoryBucket[];
+  /** Monotonic totals this window keeps (events applied, batches). */
+  counters?: Record<string, number>;
+  /** Tasks over 50ms — the direct evidence of "the window feels stuck". */
+  longTasks?: { count: number; totalMs: number; maxMs: number; lastAt?: number };
+  /**
+   * Cumulative renderer timing from the DevTools protocol (`?deep=1`): script,
+   * layout and style seconds, node and listener counts. Answers WHERE a busy
+   * renderer's time goes, which no size or count can.
+   */
+  timing?: Record<string, number>;
   error?: string;
 }
 
@@ -72,6 +91,11 @@ export interface PerfSnapshot {
    * only paint what main lets through.
    */
   eventLoop: { samples: number; p50Ms: number; maxMs: number };
+  /**
+   * What is FLOWING: monotonic totals plus the per-second rate since the last
+   * snapshot this process produced. Sizes cannot show a busy app; rates can.
+   */
+  flow: { totals: Record<string, number>; ratesPerSec: Record<string, number>; sinceMs?: number; rejectedNames: number };
   totals: {
     /** Everything Chromium accounts for, plus any harness processes sampled. */
     processWorkingSetMb: number;
@@ -105,32 +129,62 @@ export interface PerfInspectorDeps {
  */
 const RENDERER_PROBE_CALL = "window.__agentpartyPerf ? JSON.stringify(window.__agentpartyPerf()) : null";
 
+/** The window over which `?deep=1` measures renderer time. */
+const TIMING_WINDOW_MS = 400;
+
 /** How long a window gets to answer before it is reported as unresponsive. */
 const WINDOW_TIMEOUT_MS = 1_500;
 
+/** Counters as of the previous snapshot, so this one can report rates. */
+let previousCounters: CounterReading | undefined;
+
 export async function collectPerfSnapshot(
   deps: PerfInspectorDeps,
-  options: { includeHarness?: boolean; windowTimeoutMs?: number } = {},
+  options: { includeHarness?: boolean; windowTimeoutMs?: number; deep?: boolean } = {},
 ): Promise<PerfSnapshot> {
   const notes: string[] = [];
   const memory = process.memoryUsage();
   const mainBuckets = collectMemoryBuckets();
 
-  const windows = await Promise.all(
-    deps.windowRegistry.all().map((entry) => askWindow(entry.id, entry.workspacePath, entry.window, options.windowTimeoutMs)),
-  );
-
   // Imported here, not at the top: this controller also loads inside a WSL
   // distro's headless engine, which runs under plain node where `electron` does
   // not exist. An eager import would break that bundle (the build checks).
   const { app } = await import("electron");
-  const processes: PerfProcessSample[] = app.getAppMetrics().map((metric) => ({
-    kind: metric.type,
-    pid: metric.pid,
-    label: labelForPid(metric.pid, deps.windowRegistry),
-    cpuPercent: round(metric.cpu?.percentCPUUsage ?? 0, 1),
-    workingSetMb: round((metric.memory?.workingSetSize ?? 0) / 1024, 1),
-  }));
+  // CPU needs two readings. The first is taken BEFORE the work below so the
+  // event-loop probe's own wait doubles as the measurement interval — the
+  // report costs no extra time for it.
+  const firstCpu = cpuSecondsByPid(app.getAppMetrics());
+  const firstAt = performance.now();
+
+  const windows = await Promise.all(
+    deps.windowRegistry.all().map((entry) => askWindow(entry.id, entry.workspacePath, entry.window, options.windowTimeoutMs)),
+  );
+  const eventLoop = await measureEventLoopLag();
+  if (options.deep) {
+    await Promise.all(deps.windowRegistry.all().map(async (entry) => {
+      const report = windows.find((window) => window.windowId === entry.id);
+      if (report?.responsive) {
+        report.timing = await readRendererTiming(entry.window, notes);
+      }
+    }));
+  }
+
+  const secondMetrics = app.getAppMetrics();
+  const elapsedSec = Math.max(0.001, (performance.now() - firstAt) / 1000);
+  const processes: PerfProcessSample[] = secondMetrics.map((metric) => {
+    const before = firstCpu.get(metric.pid);
+    const after = metric.cpu?.cumulativeCPUUsage;
+    const cpuPercent = before !== undefined && after !== undefined
+      ? round(((after - before) / elapsedSec) * 100, 1)
+      : round(metric.cpu?.percentCPUUsage ?? 0, 1);
+    return {
+      kind: metric.type,
+      pid: metric.pid,
+      label: labelForPid(metric.pid, deps.windowRegistry),
+      cpuPercent,
+      workingSetMb: round((metric.memory?.workingSetSize ?? 0) / 1024, 1),
+    };
+  });
 
   if (options.includeHarness !== false && deps.listHarnessProcesses) {
     try {
@@ -144,8 +198,6 @@ export async function collectPerfSnapshot(
       notes.push(`하네스 프로세스 조회 실패: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-
-  const eventLoop = await measureEventLoopLag();
 
   const attributedMb = round(
     [...mainBuckets, ...windows.flatMap((window) => window.buckets)]
@@ -175,6 +227,7 @@ export async function collectPerfSnapshot(
     processes,
     windows,
     eventLoop,
+    flow: flowSince(),
     totals: {
       processWorkingSetMb,
       attributedMb,
@@ -182,6 +235,94 @@ export async function collectPerfSnapshot(
     },
     notes,
   };
+}
+
+/** CPU seconds per pid, for the delta the next reading turns into a percentage. */
+function cpuSecondsByPid(metrics: Array<{ pid: number; cpu?: { cumulativeCPUUsage?: number } }>): Map<number, number> {
+  const seconds = new Map<number, number>();
+  for (const metric of metrics) {
+    if (metric.cpu?.cumulativeCPUUsage !== undefined) {
+      seconds.set(metric.pid, metric.cpu.cumulativeCPUUsage);
+    }
+  }
+  return seconds;
+}
+
+/**
+ * Totals and the rate since the previous snapshot.
+ *
+ * Only the last reading is kept — one small object — because a rate needs two
+ * points, not a history. A recording gets its series by differencing its own
+ * samples instead of this side storing one.
+ */
+function flowSince(): PerfSnapshot["flow"] {
+  const current = readCounters();
+  const rates = counterRates(previousCounters, current);
+  const sinceMs = previousCounters ? current.at - previousCounters.at : undefined;
+  previousCounters = current;
+  return { totals: current.totals, ratesPerSec: rates, sinceMs, rejectedNames: current.rejectedNames };
+}
+
+/**
+ * Cumulative renderer timing, through the in-process DevTools protocol.
+ *
+ * Opt-in (`?deep=1`) because it attaches a debugger session for the length of
+ * the call. `ScriptDuration`/`LayoutDuration`/`RecalcStyleDuration` are what
+ * separate "our JavaScript is slow" from "the DOM this transcript builds is
+ * slow" — a distinction no size or count in this report can make.
+ */
+async function readRendererTiming(window: BrowserWindow, notes: string[]): Promise<Record<string, number> | undefined> {
+  const contents = window.webContents;
+  const alreadyAttached = contents.debugger.isAttached();
+  try {
+    if (!alreadyAttached) {
+      contents.debugger.attach("1.3");
+    }
+    await contents.debugger.sendCommand("Performance.enable");
+    // The duration metrics are cumulative counters, and they start from the
+    // moment the domain is enabled: reading them straight away reported zero
+    // for everything, which looked like an idle renderer rather than an
+    // unmeasured one. Two reads around a short window give the only numbers
+    // that mean anything — how much of THAT window went to script and layout.
+    const first = await readMetrics(contents);
+    await new Promise((resolve) => setTimeout(resolve, TIMING_WINDOW_MS));
+    const second = await readMetrics(contents);
+    await contents.debugger.sendCommand("Performance.disable");
+    const timing: Record<string, number> = { windowMs: TIMING_WINDOW_MS };
+    for (const name of ["TaskDuration", "ScriptDuration", "LayoutDuration", "RecalcStyleDuration"]) {
+      // Seconds of CPU inside the window, reported as a percentage of it: 40%
+      // script time is a renderer that is busy, whatever it is holding.
+      const seconds = (second[name] ?? 0) - (first[name] ?? 0);
+      timing[`${name}Ms`] = round(seconds * 1000, 1);
+      timing[`${name}Pct`] = round((seconds * 1000 / TIMING_WINDOW_MS) * 100, 1);
+    }
+    for (const name of ["LayoutCount", "RecalcStyleCount"]) {
+      timing[name] = round((second[name] ?? 0) - (first[name] ?? 0), 0);
+    }
+    // Gauges, not counters: the current size of the page, which is the other
+    // half of a slow renderer (a transcript can be small in bytes and enormous
+    // in nodes).
+    for (const name of ["Nodes", "JSEventListeners", "Documents", "Frames"]) {
+      timing[name] = round(second[name] ?? 0, 0);
+    }
+    return timing;
+  } catch (error) {
+    notes.push(`렌더러 타이밍(deep) 실패: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  } finally {
+    if (!alreadyAttached && contents.debugger.isAttached()) {
+      contents.debugger.detach();
+    }
+  }
+}
+
+/** One `Performance.getMetrics` read, flattened to name → value. */
+async function readMetrics(contents: BrowserWindow["webContents"]): Promise<Record<string, number>> {
+  const result = await withTimeout(
+    contents.debugger.sendCommand("Performance.getMetrics") as Promise<{ metrics: Array<{ name: string; value: number }> }>,
+    2_000,
+  );
+  return Object.fromEntries(result.metrics.map((metric) => [metric.name, metric.value]));
 }
 
 /**
@@ -217,6 +358,8 @@ async function askWindow(
       jsHeapUsedMb?: number;
       jsHeapLimitMb?: number;
       domNodes?: number;
+      counters?: Record<string, number>;
+      longTasks?: { count: number; totalMs: number; maxMs: number; lastAt?: number };
     };
     return {
       windowId,
@@ -227,6 +370,8 @@ async function askWindow(
       jsHeapLimitMb: parsed.jsHeapLimitMb,
       domNodes: parsed.domNodes,
       buckets: parsed.buckets || [],
+      counters: parsed.counters,
+      longTasks: parsed.longTasks,
     };
   } catch (error) {
     return {
