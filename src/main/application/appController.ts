@@ -605,9 +605,8 @@ export class AppController {
     const kind = String(request.kind || "heap");
     const target = String(request.target || "focused");
     if (kind === "cpu") {
-      if (target === "main") {
-        throw new Error("CPU 프로파일은 창(렌더러)만 지원합니다. 메인 프로세스는 heap 스냅샷을 쓰세요.");
-      }
+      // `main` included: when the main process is what is stuck, every window
+      // is stuck with it, and its stacks are the only thing that explains it.
       return captureCpuProfile(this.deps.windowRegistry, target, Number(request.ms) || 5_000);
     }
     if (kind !== "heap") {
@@ -627,12 +626,15 @@ export class AppController {
       // see; without them their memory would be attributed to nobody.
       listHarnessProcesses: async () => {
         const sessions = await this.partyEngine(workspacePath).listWorkspaceSessions();
-        return sessions
+        return {
+          withoutPid: sessions.filter((session) => !Number.isFinite(session.snapshot?.pid)).map((session) => session.title || session.id),
+          processes: sessions
           .filter((session) => Number.isFinite(session.snapshot?.pid))
           // `title` is how a session names itself to a human (the member's name
           // for a party session), which is what makes the row readable next to
           // the app's own processes.
-          .map((session) => ({ pid: Number(session.snapshot.pid), label: session.title || session.id }));
+          .map((session) => ({ pid: Number(session.snapshot.pid), label: session.title || session.id })),
+        };
       },
     };
   }

@@ -83,6 +83,9 @@ export async function captureCpuProfile(
   target: string,
   ms: number,
 ): Promise<CaptureResult> {
+  if (target === "main") {
+    return captureMainCpuProfile(ms);
+  }
   const entry = requireWindow(registry, target);
   const duration = Math.min(MAX_PROFILE_MS, Math.max(500, Math.round(ms)));
   const contents = entry.window.webContents;
@@ -117,6 +120,44 @@ export async function captureCpuProfile(
     if (!alreadyAttached && contents.debugger.isAttached()) {
       contents.debugger.detach();
     }
+  }
+}
+
+/**
+ * A CPU profile of the MAIN process, through Node's own inspector.
+ *
+ * The gap this closes: a window can be profiled through its debugger, but when
+ * the main process is the one that is stuck, EVERY window is stuck with it —
+ * that is what "the whole app froze" is — and there was no way to see its
+ * stacks without relaunching with an inspector flag, which ends the freeze
+ * being investigated. `inspector.Session` connects to this process in place, so
+ * the profile comes from the jam itself.
+ *
+ * The profiler samples; it does not stop the process. A main thread that is
+ * blocked inside one long synchronous call still shows exactly that — the same
+ * frame in every sample.
+ */
+async function captureMainCpuProfile(ms: number): Promise<CaptureResult> {
+  const duration = Math.min(MAX_PROFILE_MS, Math.max(500, Math.round(ms)));
+  const started = Date.now();
+  const inspector = await import("node:inspector");
+  const session = new inspector.Session();
+  session.connect();
+  const post = (method: string, params?: Record<string, unknown>): Promise<any> => new Promise((resolve, reject) => {
+    session.post(method as never, params as never, (error: Error | null, result: unknown) => (error ? reject(error) : resolve(result)));
+  });
+  try {
+    await post("Profiler.enable");
+    await post("Profiler.start");
+    await new Promise((resolve) => setTimeout(resolve, duration));
+    const { profile } = await post("Profiler.stop");
+    const filePath = artifactPath("cpu", "main", "cpuprofile");
+    fs.writeFileSync(filePath, JSON.stringify(profile), "utf8");
+    const bytes = fs.statSync(filePath).size;
+    log("info", "perf", "main cpu profile written", { filePath, bytes, durationMs: duration });
+    return { ok: true, kind: "cpu", target: "main", filePath, bytes, ms: Date.now() - started, pruned: prune("cpu"), warning: PRIVACY_WARNING };
+  } finally {
+    session.disconnect();
   }
 }
 

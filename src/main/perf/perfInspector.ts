@@ -118,7 +118,7 @@ export interface PerfInspectorDeps {
    * Chromium's own metrics know nothing about, and they can hold more memory
    * than the app does — leaving them out would attribute their cost to nobody.
    */
-  listHarnessProcesses?: () => Promise<Array<{ pid: number; label: string }>>;
+  listHarnessProcesses?: () => Promise<{ processes: Array<{ pid: number; label: string }>; withoutPid: string[] }>;
 }
 
 /**
@@ -189,10 +189,20 @@ export async function collectPerfSnapshot(
   if (options.includeHarness !== false && deps.listHarnessProcesses) {
     try {
       const harness = await deps.listHarnessProcesses();
-      const sampled = await sampleExternalProcesses(harness);
+      const sampled = await sampleExternalProcesses(harness.processes);
       processes.push(...sampled);
-      if (harness.length > 0 && sampled.length === 0) {
+      if (harness.processes.length > 0 && sampled.length === 0) {
         notes.push("하네스 프로세스 메모리를 읽지 못했습니다(권한 또는 조회 실패).");
+      }
+      // Said out loud rather than left as an empty list: a Claude member runs
+      // through an in-process SDK, so it HAS no separate process and its cost
+      // sits inside the app's own numbers. Silence here would read as "no
+      // harness is using anything", which is a different and wrong claim.
+      if (harness.withoutPid.length > 0) {
+        notes.push(
+          `세션 ${harness.withoutPid.length}개(${harness.withoutPid.slice(0, 5).join(", ")})는 별도 프로세스 id가 없어 `
+          + "프로세스 단위로 귀속되지 않습니다 — 인프로세스 SDK 하네스이며, 그 비용은 위 앱 프로세스 수치에 포함되어 있습니다.",
+        );
       }
     } catch (error) {
       notes.push(`하네스 프로세스 조회 실패: ${error instanceof Error ? error.message : String(error)}`);
@@ -236,6 +246,15 @@ export async function collectPerfSnapshot(
     notes,
   };
 }
+
+interface HarnessRow { Id: number; WorkingSet64: number; CPU?: number }
+
+/**
+ * Last CPU reading per harness pid, so the next one can report a rate. Only
+ * pids we sampled are kept, and a dead pid simply stops being asked about —
+ * the map cannot outgrow the number of live members.
+ */
+const harnessCpuSeconds = new Map<number, { seconds: number; at: number }>();
 
 /** CPU seconds per pid, for the delta the next reading turns into a percentage. */
 function cpuSecondsByPid(metrics: Array<{ pid: number; cpu?: { cumulativeCPUUsage?: number } }>): Map<number, number> {
@@ -416,7 +435,12 @@ async function sampleExternalProcesses(targets: Array<{ pid: number; label: stri
   }
   const { execFile } = await import("node:child_process");
   const ids = targets.map((target) => target.pid).join(",");
-  const script = `Get-Process -Id ${ids} -ErrorAction SilentlyContinue | Select-Object Id,WorkingSet64 | ConvertTo-Json -Compress`;
+  // `CPU` is total processor SECONDS since the process started. On its own that
+  // says nothing (an old process has a big number); against the previous
+  // reading it becomes the percentage that matters — a member's CLI pinning a
+  // core used to be reported at 0%, which is the one number that would have
+  // sent an investigation in the wrong direction.
+  const script = `Get-Process -Id ${ids} -ErrorAction SilentlyContinue | Select-Object Id,WorkingSet64,CPU | ConvertTo-Json -Compress`;
   const output = await new Promise<string>((resolve) => {
     execFile(
       "powershell.exe",
@@ -429,15 +453,27 @@ async function sampleExternalProcesses(targets: Array<{ pid: number; label: stri
     return [];
   }
   try {
-    const parsed = JSON.parse(output) as { Id: number; WorkingSet64: number } | Array<{ Id: number; WorkingSet64: number }>;
+    const parsed = JSON.parse(output) as HarnessRow | HarnessRow[];
     const rows = Array.isArray(parsed) ? parsed : [parsed];
-    return rows.map((row) => ({
-      kind: "harness",
-      pid: row.Id,
-      label: targets.find((target) => target.pid === row.Id)?.label,
-      cpuPercent: 0,
-      workingSetMb: round(row.WorkingSet64 / MB, 1),
-    }));
+    const now = Date.now();
+    return rows.map((row) => {
+      const previous = harnessCpuSeconds.get(row.Id);
+      const cpuSeconds = typeof row.CPU === "number" ? row.CPU : undefined;
+      let cpuPercent = 0;
+      if (cpuSeconds !== undefined && previous && now > previous.at) {
+        cpuPercent = round(((cpuSeconds - previous.seconds) / ((now - previous.at) / 1000)) * 100, 1);
+      }
+      if (cpuSeconds !== undefined) {
+        harnessCpuSeconds.set(row.Id, { seconds: cpuSeconds, at: now });
+      }
+      return {
+        kind: "harness",
+        pid: row.Id,
+        label: targets.find((target) => target.pid === row.Id)?.label,
+        cpuPercent,
+        workingSetMb: round(row.WorkingSet64 / MB, 1),
+      };
+    });
   } catch (error) {
     log("warn", "perf", "harness process sample unreadable", { error: error instanceof Error ? error.message : String(error) });
     return [];
