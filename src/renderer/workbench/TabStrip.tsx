@@ -146,7 +146,7 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
           aria-pressed={chrome.toolbar}
           onClick={() => onToggleChrome("toolbar")}
         >
-          {chrome.toolbar ? <PanelTopOpen size={13} /> : <PanelTopClose size={13} />}
+          {chrome.toolbar ? <PanelTopOpen size={15} /> : <PanelTopClose size={15} />}
         </button>
       </div>
 

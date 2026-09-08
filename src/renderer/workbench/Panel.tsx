@@ -1,5 +1,5 @@
 import { PointerEvent, useEffect, useMemo, useState } from "react";
-import { ChevronDown, MoreHorizontal, PanelBottomClose, PanelBottomOpen, Plug, RefreshCw, SplitSquareHorizontal, SplitSquareVertical, SquareTerminal } from "lucide-react";
+import { ChevronDown, ChevronUp, MoreHorizontal, Plug, RefreshCw, SplitSquareHorizontal, SplitSquareVertical, SquareTerminal } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
@@ -349,24 +349,28 @@ export function Panel(props: PanelProps) {
             <div className="wb-composer-stub">
               <button
                 type="button"
-                className="wb-chrome-toggle is-folded"
+                className="wb-composer-handle is-folded"
                 title={localized("STR-3826")}
                 aria-pressed
                 onClick={() => onToggleChrome("composer")}
               >
-                <PanelBottomOpen size={13} />
+                <ChevronUp size={14} />
+                <span className="wb-composer-handle-label"><LocalizedText id="STR-3827" /></span>
               </button>
             </div>
           ) : (
             <div className="wb-composer-slot">
+              {/* A pull on the composer's own top edge, right-aligned: it reads
+                  as the handle of the thing it folds, and it takes no height
+                  from the panel — the point of folding in the first place. */}
               <button
                 type="button"
-                className="wb-chrome-toggle wb-composer-fold"
+                className="wb-composer-handle"
                 title={localized("STR-3825")}
                 aria-pressed={false}
                 onClick={() => onToggleChrome("composer")}
               >
-                <PanelBottomClose size={13} />
+                <ChevronDown size={14} />
               </button>
               <Composer
                 key={`composer:${view.member.partyId || "default"}:${view.name}:${view.member.createdAt || ""}`}

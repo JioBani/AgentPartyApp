@@ -1559,7 +1559,8 @@ export const auditKoMessages = {
   "STR-3823": "툴바 접기",
   "STR-3824": "툴바 펴기",
   "STR-3825": "입력창 접기",
-  "STR-3826": "입력창 펴기"
+  "STR-3826": "입력창 펴기",
+  "STR-3827": "입력창"
 } as const;
 
 export type AuditMessageKey = keyof typeof auditKoMessages;

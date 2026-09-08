@@ -1195,51 +1195,46 @@ body.wb-resizing-y {
   user-select: none;
 }
 
-/* Fold toggles for the panel's own bars, parked at the end of the tab strip —
-   the one row that never folds away. Quiet until the panel is hovered or the
-   bar is already folded, so four panels in a grid do not read as eight buttons. */
+/* Fold control for the panel's TOOLBAR, at the end of the tab strip — the one
+   row that never folds. Built to the same measurements as the panel's other
+   bar buttons (the ⋯ menu), so it reads as one of them rather than as an
+   afterthought, and it stays visible: a control nobody can find is not a
+   control. */
 .wb-tabstrip-chrome {
   display: flex;
   align-items: center;
-  gap: 2px;
   flex: none;
-  padding-right: var(--space-1);
+  padding-right: var(--space-2);
 }
 
 .wb-chrome-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: var(--border-width) solid transparent;
-  border-radius: var(--radius-badge);
-  background: none;
-  color: var(--text-3);
-  opacity: 0;
-  transition: opacity .12s ease, color .12s ease, background .12s ease;
-}
-
-.wb-panel:hover .wb-chrome-toggle,
-.wb-panel.is-focused .wb-chrome-toggle,
-.wb-chrome-toggle:focus-visible,
-.wb-chrome-toggle.is-folded {
-  opacity: 1;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-2);
+  transition: background .15s ease, color .15s ease;
 }
 
 .wb-chrome-toggle:hover {
   background: var(--bg-3);
-  color: var(--text-1);
+  color: var(--text-0);
 }
 
+/* Folded is a state the panel is IN, so the control carries the member's own
+   accent — the same way the panel's focus ring and tab accent do. */
 .wb-chrome-toggle.is-folded {
-  border-color: var(--accent-bd);
-  color: var(--accent);
+  background: var(--member-dim, var(--accent-dim));
+  color: var(--member, var(--accent));
 }
 
-/* The composer and its fold control. The button rides the composer's own top
-   edge, right-aligned, so it belongs to the bar it hides; the slot is what the
-   panel's flex column sizes, and it shrinks the same way the composer did. */
+/* The composer and its pull. The handle rides the composer's own top edge,
+   right-aligned, so it belongs to the bar it folds and costs the panel no
+   height. The slot is what the panel's flex column sizes; it shrinks the same
+   way the composer did on its own. */
 .wb-composer-slot {
   position: relative;
   display: flex;
@@ -1248,23 +1243,55 @@ body.wb-resizing-y {
   min-height: 0;
 }
 
-.wb-composer-fold {
-  position: absolute;
-  top: -11px;
-  right: 10px;
-  z-index: 3;
+.wb-composer-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 46px;
+  height: 20px;
+  padding: 0 10px;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-pill);
   background: var(--bg-1);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
 
-/* What is left when the composer is folded: a thin rail carrying the way back. */
+.wb-composer-slot .wb-composer-handle {
+  position: absolute;
+  top: -10px;
+  right: 12px;
+  z-index: 3;
+}
+
+.wb-composer-handle:hover {
+  border-color: var(--member-bd, var(--accent-bd));
+  background: var(--bg-2);
+  color: var(--member, var(--accent));
+}
+
+.wb-composer-handle.is-folded {
+  border-color: var(--member-bd, var(--accent-bd));
+  background: var(--member-dim, var(--accent-dim));
+  color: var(--member, var(--accent));
+}
+
+/* What is left when the composer is folded: a rail the height of the handle
+   itself, carrying the same pull in the same place — so folding and unfolding
+   happen under the same finger. */
 .wb-composer-stub {
   display: flex;
   justify-content: flex-end;
   align-items: center;
   flex: none;
-  height: 22px;
-  padding-right: 10px;
-  border-top: var(--border-width) solid var(--border-subtle);
+  padding: 5px 12px 7px;
+}
+
+.wb-composer-handle-label {
+  letter-spacing: .01em;
 }
 
 /* ---------- Tab strip ---------- */
