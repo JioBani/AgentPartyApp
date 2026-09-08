@@ -1,5 +1,5 @@
 import { PointerEvent, useEffect, useMemo, useState } from "react";
-import { ChevronDown, MoreHorizontal, Plug, RefreshCw, SquareTerminal } from "lucide-react";
+import { ChevronDown, ChevronUp, MoreHorizontal, Plug, RefreshCw, SplitSquareHorizontal, SplitSquareVertical, SquareTerminal } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
@@ -19,6 +19,7 @@ import { buildSubDetail, buildSubDock } from "./subagentModel";
 import { workbenchPopupOpen } from "./workbenchPopups";
 import { CliContinuationModal } from "./CliContinuationModal";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import type { GridSide } from "../../shared/workbenchGrid";
 
 interface PanelProps {
   panel: PanelState;
@@ -26,12 +27,30 @@ interface PanelProps {
   focused: boolean;
   draggingMember: string | null;
   dropTarget: boolean;
+  /**
+   * The edge a drop would split this panel along, drawn as the slot the new
+   * panel would take. Null when the drop would join this panel instead.
+   */
+  dropSide: GridSide | null;
   /** Where a drop would insert the dragged tab, for the strip's marker. */
   dropAt: { tab: string; after: boolean } | null;
   actions: WorkbenchActions;
   onFocus: () => void;
   onSelectTab: (member: string) => void;
   onCloseTab: (member: string) => void;
+  /**
+   * Splits this panel, seeding the new slot with the member on show. The only
+   * way to split a panel holding a SINGLE tab: dragging that tab to an edge
+   * would just move the panel it is already alone in.
+   */
+  onSplit: (side: GridSide) => void;
+  /**
+   * The panel's folded bars. Collapsing the toolbar gives the transcript the
+   * header row back; collapsing the composer turns the panel into a reading
+   * view — useful once a grid puts four of them on one screen.
+   */
+  chrome: { toolbar: boolean; composer: boolean };
+  onToggleChrome: (which: "toolbar" | "composer") => void;
   /** Move a tab to the front of this panel and activate it (overflow list). */
   onPromoteTab: (member: string) => void;
   onOpenRuntime: (member: string) => void;
@@ -51,7 +70,7 @@ interface PanelProps {
 }
 
 export function Panel(props: PanelProps) {
-  const { panel, views, focused, draggingMember, dropTarget, dropAt, actions, onFocus, onSelectTab, onCloseTab, onPromoteTab, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenCompact, onOpenUsage, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
+  const { panel, views, focused, draggingMember, dropTarget, dropSide, dropAt, actions, onFocus, onSelectTab, onCloseTab, onSplit, chrome, onToggleChrome, onPromoteTab, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenCompact, onOpenUsage, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density, width } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
   const cliOwned = view?.status === "external-cli";
@@ -149,9 +168,11 @@ export function Panel(props: PanelProps) {
         onClose={onCloseTab}
         onPromote={onPromoteTab}
         onTabPointerDown={onTabPointerDown}
+        chrome={chrome}
+        onToggleChrome={onToggleChrome}
       />
 
-      {view && (
+      {view && !chrome.toolbar && (
         // The panel header is present at EVERY width (it no longer disappears
         // when narrow, as the design had it). Density only trims what's inside:
         // the status pill, the diagnostic badge, the K/K range and the effort
@@ -273,6 +294,24 @@ export function Panel(props: PanelProps) {
                     >
                       <SquareTerminal size={14} />  <LocalizedText id="STR-1972" />
                     </button>
+                    {/* Splitting is a layout action, not a member one, but it
+                        lives here because this menu is the only per-panel one
+                        the header has — and a split always starts from "this
+                        panel, on that side". */}
+                    <button
+                      type="button"
+                      className="wb-menu-item"
+                      onClick={() => { setMenuOpen(false); onSplit("right"); }}
+                    >
+                      <SplitSquareHorizontal size={14} />  <LocalizedText id="STR-3821" />
+                    </button>
+                    <button
+                      type="button"
+                      className="wb-menu-item"
+                      onClick={() => { setMenuOpen(false); onSplit("bottom"); }}
+                    >
+                      <SplitSquareVertical size={14} />  <LocalizedText id="STR-3822" />
+                    </button>
                   </div>
                 </>
               )}
@@ -298,13 +337,50 @@ export function Panel(props: PanelProps) {
             density={density}
             actions={actions}
           />
-          <Composer
-            key={`composer:${view.member.partyId || "default"}:${view.name}:${view.member.createdAt || ""}`}
-            view={view}
-            density={density}
-            actions={actions}
-            commandUi={commandUi}
-          />
+          {/* The composer folds from its OWN top-right corner, and unfolds from
+              the stub that takes its place — the control stays with the thing it
+              hides instead of being parked in the tab strip.
+
+              Folding unmounts it rather than hiding it: the composer writes its
+              draft to storage on every change and restores it on mount, so
+              nothing typed is lost, and a folded panel stops paying for an
+              editor it is not showing. */}
+          {chrome.composer ? (
+            <div className="wb-composer-stub">
+              <button
+                type="button"
+                className="wb-composer-handle is-folded"
+                title={localized("STR-3826")}
+                aria-pressed
+                onClick={() => onToggleChrome("composer")}
+              >
+                <ChevronUp size={14} />
+                <span className="wb-composer-handle-label"><LocalizedText id="STR-3827" /></span>
+              </button>
+            </div>
+          ) : (
+            <div className="wb-composer-slot">
+              {/* A pull on the composer's own top edge, right-aligned: it reads
+                  as the handle of the thing it folds, and it takes no height
+                  from the panel — the point of folding in the first place. */}
+              <button
+                type="button"
+                className="wb-composer-handle"
+                title={localized("STR-3825")}
+                aria-pressed={false}
+                onClick={() => onToggleChrome("composer")}
+              >
+                <ChevronDown size={14} />
+              </button>
+              <Composer
+                key={`composer:${view.member.partyId || "default"}:${view.name}:${view.member.createdAt || ""}`}
+                view={view}
+                density={density}
+                actions={actions}
+                commandUi={commandUi}
+              />
+            </div>
+          )}
         </>
       ) : (
         <div className="wb-panel-empty"><LocalizedText id="STR-1976" /></div>
@@ -323,6 +399,8 @@ export function Panel(props: PanelProps) {
           <span><LocalizedText id="STR-1977" /></span>
         </div>
       )}
+
+      {dropSide && <div className={"wb-drop-side is-" + dropSide} />}
     </div>
   );
 }

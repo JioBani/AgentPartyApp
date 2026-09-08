@@ -1,7 +1,7 @@
-import { Fragment, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, PointerEvent as ReactPointerEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { PanelLeftOpen } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults, PartyDefinition } from "../../shared/types";
-import type { MemberView } from "./types";
+import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { RouteLike } from "./routes";
 import { memberColor, memberColorVars } from "../theme/memberColors";
@@ -19,10 +19,13 @@ import {
   openMember,
   promoteTab,
   pruneLayout,
-  resizeAt,
+  moveTabToOuterSlot,
+  resizeSplit,
   setActiveTab,
+  splitPanel,
 } from "./layout";
 import { sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
+import { rowGrid, type GridNode, type GridSide } from "../../shared/workbenchGrid";
 import { Panel } from "./Panel";
 import { CreateMemberInput, CreatePartyInput, PartySidebar } from "./PartySidebar";
 import type { WslBrowsing } from "./CwdPicker";
@@ -116,11 +119,60 @@ interface DragState {
   overTab?: string;
   /** Drop lands after `overTab` rather than before it (cursor past its middle). */
   overAfter?: boolean;
-  overNew: boolean;
+  /**
+   * The edge of `overPanelId` the cursor is in, if any: the drop splits that
+   * panel and puts the member in a new slot on that side. Undefined means the
+   * middle — join the panel as a tab.
+   *
+   * This replaced a separate "drop here for a new panel" strip at the end of the
+   * work area. That strip could only ever append one more column, and it sat
+   * exactly where the drop that splits the rightmost panel now has to land — so
+   * aiming at a right edge produced an appended panel instead of a split.
+   */
+  overSide?: GridSide;
+  /**
+   * The cursor is against an outer edge of the whole work area: the drop gives
+   * the member a slot spanning the ENTIRE grid on that side — a full-width row
+   * under everything, rather than a division of one panel.
+   */
+  overOuter?: GridSide;
+}
+
+/** Resize in progress: which divider, and how big the pair it separates is. */
+interface ResizeState {
+  snapshot: LayoutState;
+  splitId: string;
+  index: number;
+  dir: "row" | "column";
+  start: number;
+  pairPx: number;
+  /** Size of the first of the two nodes when the drag began. */
+  firstPx: number;
 }
 
 const DRAG_THRESHOLD = 5;
+/**
+ * How much of a panel counts as its edge for a split-drop, as a fraction of the
+ * panel. Generous enough to aim at without the middle — "just put it in this
+ * group" — becoming hard to hit in a narrow panel.
+ */
+const EDGE_ZONE = 0.24;
+/**
+ * Smallest a slot may be dragged to, in pixels. The layout engine already keeps
+ * a minimum SHARE, but a share means nothing in a nested grid: an eighth of a
+ * half is a panel too short to hold its own toolbar. This is the floor a person
+ * actually cares about.
+ */
+const MIN_PANEL_PX = 140;
+/**
+ * How close to the work area's own border a drop means "span the whole grid".
+ * In pixels, not a fraction: it is a border band the user pushes INTO, and it
+ * has to stay reachable in a small window without eating the outermost panel's
+ * own edge zones.
+ */
+const OUTER_EDGE_PX = 26;
 const SUBUI_KEY = "agentparty.subagentUi";
+const CHROME_KEY = "agentparty.panelChrome";
 /**
  * Delays between prewarm attempts for an open tab that still has no session.
  * Widens to stay cheap, then holds at the last value so a workspace engine that
@@ -128,10 +180,70 @@ const SUBUI_KEY = "agentparty.subagentUi";
  */
 const PREWARM_RETRY_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
 
+/**
+ * Which of a member's panel bars are folded away, by member name.
+ *
+ * Per MEMBER, like the subagent dock beside it, and kept in this window's
+ * storage rather than in the party layout: it is how one person is reading
+ * right now, not part of the arrangement every window on the party shares.
+ */
+type PanelChromeState = Record<string, { toolbar?: boolean; composer?: boolean }>;
+
+
+function loadPanelChrome(): PanelChromeState {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CHROME_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 /** Per-member subagent UI state (which detail is open + dock collapsed). */
 interface SubagentUiState {
   open: Record<string, string>;
   collapsed: Record<string, boolean>;
+}
+
+/**
+ * Which edge zone of a panel a point is in, or undefined for its middle.
+ *
+ * The nearest edge wins, so the corners resolve to whichever side the cursor is
+ * actually closer to instead of to a fixed axis — dragging into the bottom-left
+ * corner of a panel splits it the way it looks like it will.
+ */
+function edgeSide(rect: DOMRect, x: number, y: number): GridSide | undefined {
+  if (rect.width <= 0 || rect.height <= 0) {
+    return undefined;
+  }
+  const distances: Array<{ side: GridSide; ratio: number }> = [
+    { side: "left", ratio: (x - rect.left) / rect.width },
+    { side: "right", ratio: (rect.right - x) / rect.width },
+    { side: "top", ratio: (y - rect.top) / rect.height },
+    { side: "bottom", ratio: (rect.bottom - y) / rect.height },
+  ];
+  const nearest = distances.reduce((best, item) => (item.ratio < best.ratio ? item : best));
+  return nearest.ratio <= EDGE_ZONE ? nearest.side : undefined;
+}
+
+/**
+ * Which outer edge of the work area a point is pressed against, if any.
+ *
+ * A band rather than a fraction, and inclusive of the area's padding, so the
+ * gesture is "push the tab to the window's edge" — reachable at any window size.
+ */
+function outerSide(area: DOMRect, x: number, y: number): GridSide | undefined {
+  if (x < area.left || x > area.right || y < area.top || y > area.bottom) {
+    return undefined;
+  }
+  const distances: Array<{ side: GridSide; px: number }> = [
+    { side: "left", px: x - area.left },
+    { side: "right", px: area.right - x },
+    { side: "top", px: y - area.top },
+    { side: "bottom", px: area.bottom - y },
+  ];
+  const nearest = distances.reduce((best, item) => (item.px < best.px ? item : best));
+  return nearest.px <= OUTER_EDGE_PX ? nearest.side : undefined;
 }
 
 function loadSubagentUi(): SubagentUiState {
@@ -200,10 +312,11 @@ export function Workbench(props: WorkbenchProps) {
   const [compactTarget, setCompactTarget] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [subUi, setSubUi] = useState<SubagentUiState>(loadSubagentUi);
+  const [panelChrome, setPanelChrome] = useState<PanelChromeState>(loadPanelChrome);
 
   const workAreaRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ member: string; x: number; y: number; active: boolean } | null>(null);
-  const resizeRef = useRef<{ snapshot: LayoutState; leftId: string; rightId: string; startX: number; pairPx: number } | null>(null);
+  const resizeRef = useRef<ResizeState | null>(null);
   useEffect(() => {
     try {
       window.localStorage.setItem(SUBUI_KEY, JSON.stringify(subUi));
@@ -211,6 +324,20 @@ export function Workbench(props: WorkbenchProps) {
       // Best-effort.
     }
   }, [subUi]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CHROME_KEY, JSON.stringify(panelChrome));
+    } catch {
+      // Best-effort.
+    }
+  }, [panelChrome]);
+
+  function toggleChrome(member: string, which: "toolbar" | "composer") {
+    setPanelChrome((current) => ({
+      ...current,
+      [member]: { ...current[member], [which]: !current[member]?.[which] },
+    }));
+  }
 
   // Subagent dock/detail UI handlers, addressed by member name.
   function toggleSubDock(member: string) {
@@ -434,7 +561,16 @@ export function Workbench(props: WorkbenchProps) {
       start.active = true;
     }
     const hit = hitTest(event.clientX, event.clientY);
-    setDrag({ member: start.member, x: event.clientX, y: event.clientY, overPanelId: hit.panelId, overTab: hit.tab, overAfter: hit.after, overNew: hit.newPanel });
+    setDrag({
+      member: start.member,
+      x: event.clientX,
+      y: event.clientY,
+      overPanelId: hit.panelId,
+      overTab: hit.tab,
+      overAfter: hit.after,
+      overSide: hit.side,
+      overOuter: hit.outer,
+    });
   }
 
   function onPointerUp() {
@@ -447,9 +583,11 @@ export function Workbench(props: WorkbenchProps) {
     }
     setDrag((current) => {
       if (current) {
-        const { member, overPanelId, overTab, overAfter, overNew } = current;
-        if (overNew) {
-          setLayout((state) => moveTabToNewPanel(state, member, overPanelId));
+        const { member, overPanelId, overTab, overAfter, overSide, overOuter } = current;
+        if (overOuter) {
+          setLayout((state) => moveTabToOuterSlot(state, member, overOuter));
+        } else if (overPanelId && overSide) {
+          setLayout((state) => moveTabToNewPanel(state, member, overPanelId, overSide));
         } else if (overPanelId) {
           setLayout((state) => moveTab(state, member, overPanelId, overTab, overAfter));
         }
@@ -458,21 +596,22 @@ export function Workbench(props: WorkbenchProps) {
     });
   }
 
-  function hitTest(x: number, y: number): { panelId?: string; tab?: string; after: boolean; newPanel: boolean } {
+  function hitTest(x: number, y: number): { panelId?: string; tab?: string; after: boolean; side?: GridSide; outer?: GridSide } {
     const stack = document.elementsFromPoint(x, y);
     let panelId: string | undefined;
+    let panelRect: DOMRect | undefined;
     let tab: string | undefined;
     // Which side of the hovered tab the drop lands on. Taken from the cursor
     // against the tab's own midpoint, so pushing a tab rightwards past its
     // neighbour actually moves it past that neighbour.
     let after = false;
-    let newPanel = false;
+    let overStrip = false;
     for (const element of stack) {
       if (!(element instanceof HTMLElement)) {
         continue;
       }
-      if (!newPanel && element.dataset.dropNewpanel) {
-        newPanel = true;
+      if (!overStrip && element.classList.contains("wb-tabstrip")) {
+        overStrip = true;
       }
       if (!tab && element.dataset.dropTab) {
         tab = element.dataset.dropTab;
@@ -481,29 +620,49 @@ export function Workbench(props: WorkbenchProps) {
       }
       if (!panelId && element.dataset.panelId) {
         panelId = element.dataset.panelId;
+        panelRect = element.getBoundingClientRect();
       }
     }
-    return { panelId, tab, after, newPanel };
+    // The tab strip is where ordering is expressed, so a drop there always means
+    // "join this group at this position" — never a split, however close to an
+    // edge the cursor happens to be.
+    // The outer band wins over a panel's own edge: the two overlap along the
+    // outermost panels, and the whole-grid split is the one that cannot be
+    // expressed any other way.
+    const area = workAreaRef.current?.getBoundingClientRect();
+    const outer = area && !overStrip ? outerSide(area, x, y) : undefined;
+    const side = !outer && panelRect && !overStrip ? edgeSide(panelRect, x, y) : undefined;
+    return { panelId, tab, after, side, outer };
   }
 
   // --- Panel resize -------------------------------------------------------
-  function onResizeDown(leftId: string, rightId: string, event: ReactPointerEvent) {
-    const area = workAreaRef.current;
-    const leftEl = area?.querySelector<HTMLElement>(`[data-panel-id="${leftId}"]`);
-    const rightEl = area?.querySelector<HTMLElement>(`[data-panel-id="${rightId}"]`);
-    if (!leftEl || !rightEl) {
+  //
+  // A divider belongs to ONE split and separates the pair around `index` in it,
+  // so a drag never reaches past its own two neighbours — that is what keeps
+  // resizing a nested column from disturbing the rest of the grid. The pair is
+  // measured from the handle's own DOM siblings, which are exactly those two
+  // nodes whatever they are (a panel or a whole nested split).
+  function onResizeDown(splitId: string, index: number, dir: "row" | "column", event: ReactPointerEvent) {
+    const handle = event.currentTarget as HTMLElement;
+    const first = handle.previousElementSibling;
+    const second = handle.nextElementSibling;
+    if (!(first instanceof HTMLElement) || !(second instanceof HTMLElement)) {
       return;
     }
+    const firstRect = first.getBoundingClientRect();
+    const secondRect = second.getBoundingClientRect();
     resizeRef.current = {
       snapshot: layout,
-      leftId,
-      rightId,
-      startX: event.clientX,
-      pairPx: leftEl.getBoundingClientRect().width + rightEl.getBoundingClientRect().width,
+      splitId,
+      index,
+      dir,
+      start: dir === "row" ? event.clientX : event.clientY,
+      pairPx: dir === "row" ? firstRect.width + secondRect.width : firstRect.height + secondRect.height,
+      firstPx: dir === "row" ? firstRect.width : firstRect.height,
     };
     window.addEventListener("pointermove", onResizeMove);
     window.addEventListener("pointerup", onResizeUp, { once: true });
-    document.body.classList.add("wb-resizing");
+    document.body.classList.add(dir === "row" ? "wb-resizing" : "wb-resizing-y");
   }
 
   function onResizeMove(event: PointerEvent) {
@@ -511,14 +670,22 @@ export function Workbench(props: WorkbenchProps) {
     if (!ref) {
       return;
     }
-    const deltaRatio = (event.clientX - ref.startX) / Math.max(1, ref.pairPx);
-    setLayout(resizeAt(ref.snapshot, ref.leftId, ref.rightId, deltaRatio));
+    const position = ref.dir === "row" ? event.clientX : event.clientY;
+    // Clamped in pixels, on both sides, before it becomes a ratio — so neither
+    // the slot being dragged nor its neighbour can be squeezed into a sliver.
+    // A pair with no room for two minimums is left alone rather than fought over.
+    const floor = Math.min(MIN_PANEL_PX, ref.pairPx / 2);
+    const smallest = floor - ref.firstPx;
+    const largest = ref.pairPx - floor - ref.firstPx;
+    const deltaPx = Math.min(largest, Math.max(smallest, position - ref.start));
+    setLayout(resizeSplit(ref.snapshot, ref.splitId, ref.index, deltaPx / Math.max(1, ref.pairPx)));
   }
 
   function onResizeUp() {
     window.removeEventListener("pointermove", onResizeMove);
     resizeRef.current = null;
     document.body.classList.remove("wb-resizing");
+    document.body.classList.remove("wb-resizing-y");
   }
 
   useEffect(() => {
@@ -531,6 +698,108 @@ export function Workbench(props: WorkbenchProps) {
   }, []);
 
   const openMembers = useMemo(() => new Set(layout.panels.flatMap((panel) => panel.tabs)), [layout]);
+
+  /**
+   * The geometry to draw. A layout that carries no grid is one written before
+   * grids existed, or by an older window on this party — it means a single row,
+   * so that is what it gets rather than an empty work area.
+   */
+  const grid = useMemo(() => layout.grid || rowGrid(layout.panels), [layout]);
+  const panelById = useMemo(() => new Map(layout.panels.map((panel) => [panel.id, panel])), [layout]);
+
+  /**
+   * Draws the split tree: a split becomes a flex box along its axis with a
+   * divider between each pair of children, a leaf becomes its panel. Recursive
+   * because the tree is — a column of two inside one half of a row is what makes
+   * the layout a grid rather than a row.
+   */
+  function renderGrid(node: GridNode | undefined): ReactNode {
+    if (!node) {
+      return null;
+    }
+    if (node.type === "leaf") {
+      const panel = panelById.get(node.panelId);
+      return panel ? renderPanel(panel) : null;
+    }
+    return (
+      <div
+        key={node.id}
+        className={"wb-split is-" + node.dir}
+        data-split-id={node.id}
+        style={{ flexGrow: node.weight, flexBasis: 0 }}
+      >
+        {node.children.map((child, index) => (
+          <Fragment key={child.type === "leaf" ? child.panelId : child.id}>
+            {index > 0 && (
+              <div
+                className={"wb-resize-handle is-" + node.dir}
+                data-resize-split={node.id}
+                data-resize-index={index - 1}
+                onPointerDown={(event) => onResizeDown(node.id, index - 1, node.dir, event)}
+              />
+            )}
+            {renderGrid(child)}
+          </Fragment>
+        ))}
+      </div>
+    );
+  }
+
+  function renderPanel(panel: PanelState): ReactNode {
+    const over = Boolean(drag && !drag.overOuter && drag.overPanelId === panel.id);
+    return (
+      <Panel
+        key={panel.id}
+        panel={panel}
+        views={viewMap}
+        focused={panel.id === layout.focusedPanelId}
+        draggingMember={drag?.member ?? null}
+        // The middle of the panel means "join this group"; an edge means "split
+        // here", and the two must not light up at once.
+        dropTarget={over && !drag?.overSide}
+        dropSide={over ? drag?.overSide ?? null : null}
+        dropAt={over && drag?.overTab ? { tab: drag.overTab, after: Boolean(drag.overAfter) } : null}
+        actions={actions}
+        onFocus={() => setLayout((current) => focusPanel(current, panel.id))}
+        onSelectTab={(member) => setLayout((current) => setActiveTab(current, panel.id, member))}
+        onCloseTab={(member) => {
+          // Closing the tab also closes the member's session (frees its
+          // context + provider usage); it stays reopenable via the sidebar.
+          //
+          // Unless the member is STILL open in another slot: splitting a panel
+          // puts the same member on show twice, and ending its session from one
+          // of those would leave the other panel holding a dead tab.
+          // Computed from the rendered layout rather than inside a state
+          // updater: an updater must stay pure, and closing a session is not.
+          const next = closeTab(layout, panel.id, member);
+          if (!next.panels.some((item) => item.tabs.includes(member))) {
+            actions.closeSession(member);
+          }
+          setLayout(next);
+        }}
+        onSplit={(side) => setLayout((current) => splitPanel(current, panel.id, side))}
+        onPromoteTab={(member) => setLayout((current) => promoteTab(current, panel.id, member))}
+        onOpenRuntime={setRuntimeTarget}
+        onOpenPermissions={setPermissionTarget}
+        onOpenMcp={setMcpTarget}
+        onOpenStatus={setStatusTarget}
+        onOpenCompact={setCompactTarget}
+        onOpenUsage={onOpenUsage}
+        onOpenGate={setGateTarget}
+        onTabPointerDown={onTabPointerDown}
+        chrome={{
+          toolbar: Boolean(panelChrome[panel.active]?.toolbar),
+          composer: Boolean(panelChrome[panel.active]?.composer),
+        }}
+        onToggleChrome={(which) => toggleChrome(panel.active, which)}
+        openSubId={subUi.open[panel.active]}
+        subDockCollapsed={subUi.collapsed[panel.active]}
+        onToggleSubDock={() => toggleSubDock(panel.active)}
+        onOpenSub={(id) => openSub(panel.active, id)}
+        onCloseSub={() => closeSub(panel.active)}
+      />
+    );
+  }
   const runtimeView = runtimeTarget ? viewMap.get(runtimeTarget) : undefined;
   const permissionView = permissionTarget ? viewMap.get(permissionTarget) : undefined;
   const mcpView = mcpTarget ? viewMap.get(mcpTarget) : undefined;
@@ -647,54 +916,8 @@ export function Workbench(props: WorkbenchProps) {
             <p><LocalizedText id="STR-2291" /></p>
           </div>
         )}
-        {layout.panels.map((panel, index) => (
-          <Fragment key={panel.id}>
-            {index > 0 && (
-              <div
-                className="wb-resize-handle"
-                onPointerDown={(event) => onResizeDown(layout.panels[index - 1].id, panel.id, event)}
-              />
-            )}
-            <Panel
-              panel={panel}
-              views={viewMap}
-              focused={panel.id === layout.focusedPanelId}
-              draggingMember={drag?.member ?? null}
-              dropTarget={Boolean(drag && !drag.overNew && drag.overPanelId === panel.id)}
-              dropAt={drag && !drag.overNew && drag.overPanelId === panel.id && drag.overTab
-                ? { tab: drag.overTab, after: Boolean(drag.overAfter) }
-                : null}
-              actions={actions}
-              onFocus={() => setLayout((current) => focusPanel(current, panel.id))}
-              onSelectTab={(member) => setLayout((current) => setActiveTab(current, panel.id, member))}
-              onCloseTab={(member) => {
-                // Closing the tab also closes the member's session (frees its
-                // context + provider usage); it stays reopenable via the sidebar.
-                actions.closeSession(member);
-                setLayout((current) => closeTab(current, panel.id, member));
-              }}
-              onPromoteTab={(member) => setLayout((current) => promoteTab(current, panel.id, member))}
-              onOpenRuntime={setRuntimeTarget}
-              onOpenPermissions={setPermissionTarget}
-              onOpenMcp={setMcpTarget}
-              onOpenStatus={setStatusTarget}
-              onOpenCompact={setCompactTarget}
-              onOpenUsage={onOpenUsage}
-              onOpenGate={setGateTarget}
-              onTabPointerDown={onTabPointerDown}
-              openSubId={subUi.open[panel.active]}
-              subDockCollapsed={subUi.collapsed[panel.active]}
-              onToggleSubDock={() => toggleSubDock(panel.active)}
-              onOpenSub={(id) => openSub(panel.active, id)}
-              onCloseSub={() => closeSub(panel.active)}
-            />
-          </Fragment>
-        ))}
-        {drag && (
-          <div className={"wb-newpanel-zone" + (drag.overNew ? " is-over" : "")} data-drop-newpanel="1">
-            <span><LocalizedText id="STR-2292" /></span>
-          </div>
-        )}
+        {renderGrid(grid)}
+        {drag?.overOuter && <div className={"wb-drop-outer is-" + drag.overOuter} />}
       </div>
 
       {drag && (

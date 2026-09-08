@@ -25,6 +25,19 @@ const bundlePath = path.join(outDir, "layout.mjs");
 writeFileSync(bundlePath, result.outputFiles[0].text);
 const L = await import(pathToFileURL(bundlePath).href);
 
+// The shared module is bundled separately so the sanitize/adoption path (what a
+// stored or broadcast layout goes through) is exercised as its own entry point.
+const sharedResult = await build({
+  entryPoints: [path.join(projectRoot, "src/shared/workbenchLayout.ts")],
+  bundle: true,
+  format: "esm",
+  platform: "neutral",
+  write: false,
+});
+const sharedPath = path.join(outDir, "workbenchLayout.mjs");
+writeFileSync(sharedPath, sharedResult.outputFiles[0].text);
+const S = await import(pathToFileURL(sharedPath).href);
+
 const failures = [];
 function assert(condition, message) {
   if (!condition) {
@@ -117,6 +130,114 @@ const betaGroup = grouped?.panels.find((panel) => panel.tabs.includes("beta"));
 assert(betaGroup?.tabs.join(",") === "alpha,beta,partner", "openMemberInTabGroup appends to the exact panel id");
 assert(betaGroup?.active === "partner" && grouped.focusedPanelId === betaGroup.id, "targeted tab-group member becomes active and focused");
 assert(L.openMemberInTabGroup(n, "lost", "closed") === undefined, "unknown/closed tab-group id is rejected without fallback");
+
+// --- Grid geometry --------------------------------------------------------
+// The panel list says WHAT is open; the grid says WHERE. These check the two
+// never disagree, which is the only corruption the split tree can have.
+const leafIds = (node) => (!node ? [] : node.type === "leaf" ? [node.panelId] : node.children.flatMap(leafIds));
+const depthDirs = (node) => (!node || node.type === "leaf" ? [] : [node.dir, ...node.children.flatMap(depthDirs)]);
+
+let g = L.openMember(L.emptyLayout(), "top");
+g = L.openMember(g, "under");
+const topPanel = g.panels[0].id;
+g = L.splitPanel(g, topPanel, "bottom");
+assert(g.grid?.type === "split" && g.grid.dir === "column", "split bottom stacks the panels in a column");
+assert(leafIds(g.grid).length === 2, "the column holds both panels");
+
+// a row split inside the column -> a 2x2 grid
+const bottomPanel = g.panels.find((panel) => panel.id !== topPanel).id;
+g = L.splitPanel(g, bottomPanel, "right");
+g = L.splitPanel(g, topPanel, "right");
+assert(g.panels.length === 4, "four panels after splitting both rows");
+assert(depthDirs(g.grid).join(",") === "column,row,row", "2x2 grid is a column of two rows");
+assert(new Set(leafIds(g.grid)).size === 4 && leafIds(g.grid).every((id) => g.panels.some((panel) => panel.id === id)),
+  "every grid leaf points at a live panel, with no duplicates");
+assert(g.panels.every((panel) => leafIds(g.grid).includes(panel.id)), "every panel has a slot in the grid");
+
+// a same-axis drop becomes a SIBLING rather than nesting another split
+let sib = L.openMember(L.emptyLayout(), "a");
+sib = L.openMember(sib, "b");
+sib = L.splitPanel(sib, sib.panels[0].id, "right");
+sib = L.splitPanel(sib, sib.panels[0].id, "right");
+assert(depthDirs(sib.grid).join(",") === "row", "three panels in a row stay one split, not a nested tower");
+assert(sib.grid.children.length === 3, "the row holds all three side by side");
+
+// closing a panel collapses the split it was alone in
+let c = L.openMember(L.emptyLayout(), "keep");
+c = L.openMember(c, "drop");
+const keepPanel = c.panels[0].id;
+c = L.moveTabToNewPanel(c, "drop", keepPanel, "bottom");
+assert(c.grid.type === "split" && c.grid.dir === "column", "edge drop splits the panel along that edge");
+const dropped = c.panels.find((panel) => panel.tabs.includes("drop"));
+c = L.closeTab(c, dropped.id, "drop");
+assert(c.grid.type === "leaf" && c.grid.panelId === keepPanel, "closing the last tab of a slot collapses the split back to one panel");
+
+// resizing a column divider moves only that pair, on the vertical axis
+let rz = L.openMember(L.emptyLayout(), "u");
+rz = L.openMember(rz, "d");
+rz = L.splitPanel(rz, rz.panels[0].id, "bottom");
+const beforeTop = rz.grid.children[0].weight;
+const rzed = L.resizeSplit(rz, rz.grid.id, 0, 0.2);
+assert(rzed.grid.children[0].weight > beforeTop, "resizing a column divider grows the upper slot");
+assert(Math.abs(rzed.grid.children[0].weight + rzed.grid.children[1].weight - 2) < 1e-6, "the column pair conserves its total weight");
+const clamped = L.resizeSplit(rz, rz.grid.id, 0, -5);
+assert(clamped.grid.children[0].weight > 0, "column resize clamps to a positive minimum");
+
+// a layout stored before grids existed is still a valid one row
+const legacy = S.sanitizeLayout({ panels: [
+  { id: "p1", tabs: ["one"], active: "one", weight: 1 },
+  { id: "p2", tabs: ["two"], active: "two", weight: 1 },
+], focusedPanelId: "p1" });
+assert(depthDirs(legacy.grid).join(",") === "row" && leafIds(legacy.grid).join(",") === "p1,p2",
+  "a gridless (older) layout is adopted as a single left-to-right row");
+
+// a grid that disagrees with the panels is repaired, not honoured
+const repaired = S.sanitizeLayout({
+  panels: [{ id: "p1", tabs: ["one"], active: "one", weight: 1 }],
+  focusedPanelId: "p1",
+  grid: { type: "split", id: "s1", dir: "row", weight: 1, children: [
+    { type: "leaf", panelId: "p1", weight: 1 },
+    { type: "leaf", panelId: "ghost", weight: 1 },
+  ] },
+});
+assert(leafIds(repaired.grid).join(",") === "p1", "a slot for a panel that does not exist is dropped");
+
+// an OUTER-edge drop spans the whole grid: two side by side, one wide beneath
+let o = L.openMember(L.emptyLayout(), "left");
+o = L.openMember(o, "right");
+o = L.openMember(o, "wide");
+o = L.splitPanel(o, o.panels[0].id, "right");        // left | right(+wide)
+const wideHome = o.panels.find((panel) => panel.tabs.includes("wide"));
+o = L.moveTabToOuterSlot(o, "wide", "bottom");
+assert(o.grid.type === "split" && o.grid.dir === "column", "an outer bottom drop puts a row under the whole grid");
+assert(o.grid.children[0].type === "split" && o.grid.children[0].dir === "row", "…with the existing side-by-side grid kept above it");
+assert(o.grid.children[1].type === "leaf", "…and the dropped member alone in the full-width row");
+assert(L.panelOf(o, "wide").id !== wideHome.id, "the member left the panel it was sharing");
+
+// dropping against an edge the ROOT already runs along joins that row instead of
+// burying the grid a level deeper
+let o2 = L.openMember(L.emptyLayout(), "a");
+o2 = L.openMember(o2, "b");
+o2 = L.splitPanel(o2, o2.panels[0].id, "right");
+o2 = L.moveTabToOuterSlot(o2, "b", "right");
+assert(o2.grid.dir === "row" && o2.grid.children.length === 3 && o2.grid.children.every((c) => c.type === "leaf"),
+  "an outer drop along the root's own axis extends that row (no redundant nesting)");
+
+// sanitising the same layout twice must give the SAME thing: every echo guard
+// (the window's, the main process's) compares layouts by value
+const legacyInput = { panels: [
+  { id: "p1", tabs: ["one"], active: "one", weight: 1 },
+  { id: "p2", tabs: ["two"], active: "two", weight: 1 },
+], focusedPanelId: "p1" };
+assert(JSON.stringify(S.sanitizeLayout(legacyInput)) === JSON.stringify(S.sanitizeLayout(legacyInput)),
+  "sanitising a gridless layout is deterministic (the invented row keeps one id)");
+const patchedInput = {
+  panels: [...legacyInput.panels, { id: "p3", tabs: ["three"], active: "three", weight: 1 }],
+  focusedPanelId: "p1",
+  grid: { type: "leaf", panelId: "p1", weight: 1 },
+};
+assert(JSON.stringify(S.sanitizeLayout(patchedInput)) === JSON.stringify(S.sanitizeLayout(patchedInput)),
+  "…and so is taking in panels the stored grid never heard of");
 
 console.log("");
 if (failures.length) {

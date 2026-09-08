@@ -83,7 +83,7 @@ const actions = {
 };
 
 const props = {
-  panel, views: new Map([["worker", view]]), focused: true, draggingMember: null, dropTarget: false, canAdd: false,
+  panel, views: new Map([["worker", view]]), focused: true, draggingMember: null, dropTarget: false, dropSide: null, canAdd: false, onSplit: () => {}, chrome: { toolbar: false, composer: false }, onToggleChrome: () => {},
   actions, onFocus: () => {}, onSelectTab: () => {}, onCloseTab: () => {}, onAdd: () => {}, onSplit: () => {},
   onOpenRuntime: () => {}, onOpenMcp: () => {}, onOpenCompact: () => {}, onOpenGate: () => {}, onTabPointerDown: () => {},
   onToggleSubDock: () => {}, onOpenSub: () => {}, onCloseSub: () => {},

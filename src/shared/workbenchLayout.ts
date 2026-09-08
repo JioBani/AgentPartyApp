@@ -14,22 +14,51 @@
  * renderer would then have to defend against — hence {@link sanitizeLayout}.
  */
 
+import { reconcileGrid, sanitizeGrid, syncPanelWeights, type GridNode } from "./workbenchGrid";
+
 export interface WorkbenchPanel {
   id: string;
   /** Member names, left → right. */
   tabs: string[];
   /** The member name whose tab is frontmost in this panel. */
   active: string;
-  /** Flex weight relative to sibling panels. */
+  /** Flex weight relative to its siblings in the grid (one row, when there is no grid). */
   weight: number;
 }
 
 export interface WorkbenchLayout {
   panels: WorkbenchPanel[];
   focusedPanelId: string;
+  /**
+   * Where those panels sit — the split tree in `shared/workbenchGrid.ts`.
+   * Optional: a layout without one is a single left-to-right row, which is
+   * every layout stored before grids existed and everything an older window on
+   * this party writes.
+   */
+  grid?: GridNode;
 }
 
 export const EMPTY_LAYOUT: WorkbenchLayout = { panels: [], focusedPanelId: "" };
+
+/**
+ * The one way a layout is assembled. Repairs the grid against the panel set and
+ * mirrors the resulting shares back onto the panels, so no caller has to
+ * remember either — panels and a grid that disagree is the single corruption
+ * this two-part model can have.
+ */
+export function composeLayout(
+  panels: WorkbenchPanel[],
+  focusedPanelId: string,
+  grid: GridNode | undefined,
+): WorkbenchLayout {
+  const reconciled = reconcileGrid(grid, panels);
+  const synced = syncPanelWeights(panels, reconciled);
+  return {
+    panels: synced,
+    focusedPanelId: synced.some((panel) => panel.id === focusedPanelId) ? focusedPanelId : synced[0]?.id || "",
+    ...(reconciled ? { grid: reconciled } : {}),
+  };
+}
 
 /**
  * Coerces stored or IPC-delivered JSON into a usable layout, or undefined when
@@ -56,12 +85,10 @@ export function sanitizeLayout(value: unknown): WorkbenchLayout | undefined {
     }
   }
   const focused = typeof raw.focusedPanelId === "string" ? raw.focusedPanelId : "";
-  return {
-    panels,
-    // A focus pointing at a panel that did not survive sanitising would leave
-    // the workbench with no focused panel and every "open here" landing nowhere.
-    focusedPanelId: panels.some((panel) => panel.id === focused) ? focused : panels[0]?.id || "",
-  };
+  // composeLayout also repairs the grid against the panels that survived, and
+  // resolves a focus pointing at a panel that did not — which would otherwise
+  // leave the workbench with every "open here" landing nowhere.
+  return composeLayout(panels, focused, sanitizeGrid(raw.grid));
 }
 
 function sanitizePanel(value: unknown): WorkbenchPanel | undefined {
@@ -117,49 +144,46 @@ export function nextPanelId(): string {
 export function openMemberTab(layout: WorkbenchLayout, memberName: string): WorkbenchLayout {
   const existing = panelOf(layout, memberName);
   if (existing) {
-    return {
-      panels: layout.panels.map((panel) => (panel.id === existing.id ? { ...panel, active: memberName } : panel)),
-      focusedPanelId: existing.id,
-    };
+    return activateIn(layout, existing.id, memberName);
   }
   const target = layout.panels.find((panel) => panel.id === layout.focusedPanelId) || layout.panels[0];
   if (!target) {
     const panel: WorkbenchPanel = { id: nextPanelId(), tabs: [memberName], active: memberName, weight: 1 };
-    return { panels: [panel], focusedPanelId: panel.id };
+    return composeLayout([panel], panel.id, layout.grid);
   }
-  return {
-    panels: layout.panels.map((panel) => (
+  return composeLayout(
+    layout.panels.map((panel) => (
       panel.id === target.id ? { ...panel, tabs: [...panel.tabs, memberName], active: memberName } : panel
     )),
-    focusedPanelId: target.id,
-  };
+    target.id,
+    layout.grid,
+  );
 }
 
-function normalizePanelWeights(panels: WorkbenchPanel[]): WorkbenchPanel[] {
-  if (panels.length === 0) {
-    return panels;
-  }
-  const total = panels.reduce((sum, panel) => sum + (panel.weight > 0 ? panel.weight : 1), 0);
-  return panels.map((panel) => ({
-    ...panel,
-    weight: ((panel.weight > 0 ? panel.weight : 1) / total) * panels.length,
-  }));
+/** Brings a member's existing tab to the front of its panel and focuses it. */
+function activateIn(layout: WorkbenchLayout, panelId: string, memberName: string): WorkbenchLayout {
+  return composeLayout(
+    layout.panels.map((panel) => (panel.id === panelId ? { ...panel, active: memberName } : panel)),
+    panelId,
+    layout.grid,
+  );
 }
 
-/** Opens a member in its own new panel, preserving the existing panel ratios. */
+/**
+ * Opens a member in its own new panel, preserving the existing panel ratios.
+ *
+ * The new panel lands at the end of the grid's outermost row — the same place
+ * an extra panel used to appear when the workbench was one row and nothing else.
+ */
 export function openMemberInNewPanel(layout: WorkbenchLayout, memberName: string): WorkbenchLayout {
   const existing = panelOf(layout, memberName);
   if (existing) {
-    return {
-      panels: layout.panels.map((panel) => (panel.id === existing.id ? { ...panel, active: memberName } : panel)),
-      focusedPanelId: existing.id,
-    };
+    return activateIn(layout, existing.id, memberName);
   }
   const panel: WorkbenchPanel = { id: nextPanelId(), tabs: [memberName], active: memberName, weight: 1 };
-  return {
-    panels: normalizePanelWeights([...layout.panels, panel]),
-    focusedPanelId: panel.id,
-  };
+  // reconcileGrid appends the leaf the grid has never seen, so the placement
+  // rule lives in exactly one place rather than being restated here.
+  return composeLayout([...layout.panels, panel], panel.id, layout.grid);
 }
 
 /**
@@ -175,21 +199,19 @@ export function openMemberInTabGroup(
 ): WorkbenchLayout | undefined {
   const existing = panelOf(layout, memberName);
   if (existing) {
-    return {
-      panels: layout.panels.map((panel) => (panel.id === existing.id ? { ...panel, active: memberName } : panel)),
-      focusedPanelId: existing.id,
-    };
+    return activateIn(layout, existing.id, memberName);
   }
   const target = layout.panels.find((panel) => panel.id === panelId);
   if (!target) {
     return undefined;
   }
-  return {
-    panels: layout.panels.map((panel) => (
+  return composeLayout(
+    layout.panels.map((panel) => (
       panel.id === target.id
         ? { ...panel, tabs: [...panel.tabs, memberName], active: memberName }
         : panel
     )),
-    focusedPanelId: target.id,
-  };
+    target.id,
+    layout.grid,
+  );
 }
