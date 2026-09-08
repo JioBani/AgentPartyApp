@@ -1267,16 +1267,20 @@ body.wb-resizing-y {
   z-index: 3;
 }
 
+/* Neutral in every state, on purpose. This pull sits directly above the
+   composer, where the member's colour is already carried by the panel bar, the
+   tab and the focus ring — one more accent there competes with the text being
+   written instead of pointing at anything. It reads by SHAPE and position. */
 .wb-composer-handle:hover {
-  border-color: var(--member-bd, var(--accent-bd));
+  border-color: var(--border-strong);
   background: var(--bg-2);
-  color: var(--member, var(--accent));
+  color: var(--text-1);
 }
 
 .wb-composer-handle.is-folded {
-  border-color: var(--member-bd, var(--accent-bd));
-  background: var(--member-dim, var(--accent-dim));
-  color: var(--member, var(--accent));
+  border-color: var(--border);
+  background: var(--bg-2);
+  color: var(--text-2);
 }
 
 /* What is left when the composer is folded: a rail the height of the handle
