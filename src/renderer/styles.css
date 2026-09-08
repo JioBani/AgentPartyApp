@@ -1126,10 +1126,26 @@
   font-size: 12px;
 }
 
+/* One level of the split tree. Nesting a column inside a row is what makes the
+   workbench a grid rather than a single strip of panels; each node is sized by
+   its own weight (flex-grow) against its siblings, never by its content. */
+.wb-split {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+}
+
+.wb-split.is-row {
+  flex-direction: row;
+}
+
+.wb-split.is-column {
+  flex-direction: column;
+}
+
 .wb-resize-handle {
-  width: 8px;
   flex: none;
-  cursor: col-resize;
   position: relative;
   z-index: 8;
   display: flex;
@@ -1139,12 +1155,30 @@
   transition: background .15s ease;
 }
 
+.wb-resize-handle.is-row {
+  width: 8px;
+  cursor: col-resize;
+}
+
+.wb-resize-handle.is-column {
+  height: 8px;
+  cursor: row-resize;
+}
+
 .wb-resize-handle::after {
   content: "";
-  width: 2px;
-  height: 30px;
   border-radius: 2px;
   background: var(--border-strong);
+}
+
+.wb-resize-handle.is-row::after {
+  width: 2px;
+  height: 30px;
+}
+
+.wb-resize-handle.is-column::after {
+  width: 30px;
+  height: 2px;
 }
 
 .wb-resize-handle:hover {
@@ -1153,6 +1187,11 @@
 
 body.wb-resizing {
   cursor: col-resize;
+  user-select: none;
+}
+
+body.wb-resizing-y {
+  cursor: row-resize;
   user-select: none;
 }
 
@@ -3809,7 +3848,14 @@ body.wb-resizing {
 /* ---------- Composer ---------- */
 .wb-composer {
   position: relative;
-  flex: none;
+  /* Shrinks rather than being pushed out of the panel. A panel can now be made
+     SHORT — it is one row of a grid, not the full window height — and the panel
+     clips what does not fit. The composer is the part you act with, so it keeps
+     its place at the bottom and gives up height instead of disappearing; the
+     transcript above it (flex: 1, min-height: 0) absorbs the squeeze first. */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
   padding: 9px 11px;
   border-top: var(--border-width) solid var(--border-subtle);
 }
@@ -4844,25 +4890,22 @@ body.wb-resizing {
   z-index: 5;
 }
 
-.wb-newpanel-zone {
-  flex: none;
-  width: 120px;
-  margin-left: var(--space-3);
-  border: 2px dashed var(--border-strong);
-  border-radius: var(--radius-panel);
-  display: grid;
-  place-items: center;
-  text-align: center;
-  color: var(--text-3);
-  font-size: 11px;
-  padding: var(--space-4);
+/* The slot a drop on this edge would create — half the panel, on that side, so
+   the split is previewed where it will actually land. */
+.wb-drop-side {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+  border: 2px solid var(--accent-bd);
+  border-radius: var(--radius-card);
+  background: var(--accent-dim);
 }
 
-.wb-newpanel-zone.is-over {
-  border-color: var(--accent-bd);
-  background: var(--accent-dim);
-  color: var(--accent);
-}
+.wb-drop-side.is-left { right: 50%; }
+.wb-drop-side.is-right { left: 50%; }
+.wb-drop-side.is-top { bottom: 50%; }
+.wb-drop-side.is-bottom { top: 50%; }
 
 /* ---------- Runtime modal ---------- */
 .wb-modal-scrim {
@@ -10084,16 +10127,6 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
    what read as "dragging a tab breaks the composer". It is an overlay now: it
    occupies no layout space, so panel widths are identical before, during and
    after a drag, and nothing has to be restored when the drag ends. */
-.wb-newpanel-zone {
-  position: absolute;
-  top: var(--space-5);
-  right: var(--space-5);
-  bottom: var(--space-5);
-  width: 120px;
-  margin-left: 0;
-  z-index: 30;
-  background: color-mix(in srgb, var(--bg-1) 86%, transparent);
-}
 
 /* ── Composer 안내 문구: 한 줄 유지 ─────────────────────────────────────── */
 

@@ -3777,7 +3777,7 @@ export class AppController {
   async qaPointer(
     windowId: string | undefined,
     body: {
-      steps?: Array<{ selector?: string; action?: string }>;
+      steps?: Array<{ selector?: string; action?: string; at?: string; dx?: number; dy?: number }>;
       delayMs?: number;
     },
   ): Promise<{
@@ -3818,21 +3818,38 @@ export class AppController {
         if (action !== "move" && action !== "down" && action !== "up" && action !== "click" && action !== "rightclick") {
           throw new Error(`Pointer step ${index + 1} has unsupported action '${action}'.`);
         }
+        const at = String(step?.at || "center").trim().toLowerCase();
+        if (!["center", "left", "right", "top", "bottom"].includes(at)) {
+          throw new Error(`Pointer step ${index + 1} has unsupported at '${at}'.`);
+        }
+        const dx = Number.isFinite(step?.dx) ? Number(step?.dx) : 0;
+        const dy = Number.isFinite(step?.dy) ? Number(step?.dy) : 0;
+        // `at` aims at an EDGE of the element rather than its middle, and
+        // dx/dy nudge from there. Both exist because some interactions are
+        // defined by where inside a target the pointer is — dropping a tab on a
+        // panel's bottom edge splits it, dropping it in the middle joins it —
+        // and a driver that can only reach centres cannot express the
+        // difference, which would leave a real user-facing behaviour untestable.
         const point = await win.webContents.executeJavaScript(
           `(() => {
             const selector = ${JSON.stringify(selector)};
+            const at = ${JSON.stringify(at)};
             const matches = document.querySelectorAll(selector);
             if (matches.length !== 1) return { count: matches.length };
             const el = matches[0];
             el.scrollIntoView({ block: "center", inline: "center" });
             const rect = el.getBoundingClientRect();
             if (rect.width <= 0 || rect.height <= 0) return { count: 1, hidden: true };
-            return {
-              count: 1,
-              hidden: false,
-              x: Math.round(rect.left + rect.width / 2),
-              y: Math.round(rect.top + rect.height / 2),
-            };
+            // A tenth of the way in: inside the element for certain, and well
+            // within any edge zone a UI would define.
+            const inset = 0.1;
+            let x = rect.left + rect.width / 2;
+            let y = rect.top + rect.height / 2;
+            if (at === "left") x = rect.left + rect.width * inset;
+            if (at === "right") x = rect.right - rect.width * inset;
+            if (at === "top") y = rect.top + rect.height * inset;
+            if (at === "bottom") y = rect.bottom - rect.height * inset;
+            return { count: 1, hidden: false, x: Math.round(x), y: Math.round(y) };
           })()`,
         );
         if (point?.count !== 1) {
@@ -3841,7 +3858,7 @@ export class AppController {
         if (point.hidden || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
           throw new Error(`Pointer selector '${selector}' is not visible.`);
         }
-        const coordinates = { x: point.x as number, y: point.y as number };
+        const coordinates = { x: Math.round((point.x as number) + dx), y: Math.round((point.y as number) + dy) };
         win.webContents.sendInputEvent({ type: "mouseMove", ...coordinates });
         if (action === "down") {
           if (isDown) throw new Error(`Pointer step ${index + 1} tried to press while already pressed.`);

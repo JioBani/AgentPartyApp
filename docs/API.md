@@ -2982,9 +2982,23 @@ in which panels, in what order, and which tab is frontmost in each.
   "layout": {
     "panels": [
       { "id": "pa", "tabs": ["impl", "review"], "active": "impl", "weight": 1 },
-      { "id": "pb", "tabs": ["test"], "active": "test", "weight": 1 }
+      { "id": "pb", "tabs": ["test"], "active": "test", "weight": 1 },
+      { "id": "pc", "tabs": ["docs"], "active": "docs", "weight": 1 }
     ],
-    "focusedPanelId": "pa"
+    "focusedPanelId": "pa",
+    "grid": {
+      "type": "split", "id": "s1", "dir": "row", "weight": 1,
+      "children": [
+        { "type": "leaf", "panelId": "pa", "weight": 1 },
+        {
+          "type": "split", "id": "s2", "dir": "column", "weight": 1,
+          "children": [
+            { "type": "leaf", "panelId": "pb", "weight": 1 },
+            { "type": "leaf", "panelId": "pc", "weight": 1 }
+          ]
+        }
+      ]
+    }
   }
 }
 ```
@@ -2992,6 +3006,16 @@ in which panels, in what order, and which tab is frontmost in each.
 `layout` is absent when the party has none stored yet — the workbench then seeds
 one from the member list. A stored layout with **no panels is a different fact**:
 it means every tab was closed, and is honoured rather than reseeded.
+
+`panels` says WHICH panels exist and what tabs each holds; `grid` says WHERE they
+sit — a tree of `split` nodes (`dir: "row"` side by side, `dir: "column"`
+stacked) whose `leaf` nodes name panels. The example above is one panel on the
+left and two stacked on the right. `weight` is a node's share of its parent
+split, normalized so the children of a split average 1.
+
+`grid` is **optional**: a layout without one is a single left-to-right row, which
+is what every layout stored before grids existed is. Each panel's own `weight`
+mirrors its leaf's, so a client that ignores `grid` still reads usable ratios.
 
 ### `POST /api/party/layout`
 
@@ -3012,6 +3036,12 @@ that window's next change wrote the closed tab back.
 was told anything — re-sending is harmless. Panels with no `id` or no `tabs` are
 dropped, and a `focusedPanelId` naming no surviving panel falls back to the
 first, so a malformed body cannot leave the workbench unable to open anything.
+
+The `grid` is repaired against the panels rather than trusted: a leaf naming a
+panel that is not in `panels` is dropped, a panel with no leaf is appended to the
+outermost row, a split left with one child collapses into it, and weights are
+renormalized. So posting only `panels` (no `grid`) is a valid way to say "one
+row", and posting a grid is how an agent arranges a real 2×2 without dragging.
 
 ### `POST /api/parties/:partyId/members/:name/mcp-tools/:tool`
 
@@ -4087,7 +4117,22 @@ Each selector must match exactly one visible element. Actions are `move`,
 `down`, `up`, `click` (the default), and `rightclick`. Use `rightclick` to open
 the same context menu a user gets from the secondary mouse button. A sequence
 may contain 1–64 steps and
-must finish with the pointer released. `delayMs` defaults to 40 and is capped at
+must finish with the pointer released.
+
+A step lands on the element's centre unless it names an edge with
+`at` (`"left" | "right" | "top" | "bottom" | "center"`, a tenth of the way in
+from that edge), optionally nudged by `dx` / `dy` pixels. Some interactions are
+defined by WHERE inside a target the pointer is — dropping a tab on a panel's
+bottom edge splits the panel, dropping it in the middle joins its tab group —
+and a centre-only driver cannot tell those two apart:
+
+```json
+{ "steps": [
+  { "selector": "[data-drop-tab='review']", "action": "down" },
+  { "selector": "[data-panel-id='pa']", "action": "move", "at": "bottom" },
+  { "selector": "[data-panel-id='pa']", "action": "up", "at": "bottom" }
+] }
+``` `delayMs` defaults to 40 and is capped at
 500 so React can process state between gesture steps. Returns the selector,
 action, and renderer-local coordinates used for every completed step.
 

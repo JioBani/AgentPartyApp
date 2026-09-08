@@ -1,5 +1,5 @@
 import { PointerEvent, useEffect, useMemo, useState } from "react";
-import { ChevronDown, MoreHorizontal, Plug, RefreshCw, SquareTerminal } from "lucide-react";
+import { ChevronDown, MoreHorizontal, Plug, RefreshCw, SplitSquareHorizontal, SplitSquareVertical, SquareTerminal } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
@@ -19,6 +19,7 @@ import { buildSubDetail, buildSubDock } from "./subagentModel";
 import { workbenchPopupOpen } from "./workbenchPopups";
 import { CliContinuationModal } from "./CliContinuationModal";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import type { GridSide } from "../../shared/workbenchGrid";
 
 interface PanelProps {
   panel: PanelState;
@@ -26,12 +27,23 @@ interface PanelProps {
   focused: boolean;
   draggingMember: string | null;
   dropTarget: boolean;
+  /**
+   * The edge a drop would split this panel along, drawn as the slot the new
+   * panel would take. Null when the drop would join this panel instead.
+   */
+  dropSide: GridSide | null;
   /** Where a drop would insert the dragged tab, for the strip's marker. */
   dropAt: { tab: string; after: boolean } | null;
   actions: WorkbenchActions;
   onFocus: () => void;
   onSelectTab: (member: string) => void;
   onCloseTab: (member: string) => void;
+  /**
+   * Splits this panel, seeding the new slot with the member on show. The only
+   * way to split a panel holding a SINGLE tab: dragging that tab to an edge
+   * would just move the panel it is already alone in.
+   */
+  onSplit: (side: GridSide) => void;
   /** Move a tab to the front of this panel and activate it (overflow list). */
   onPromoteTab: (member: string) => void;
   onOpenRuntime: (member: string) => void;
@@ -51,7 +63,7 @@ interface PanelProps {
 }
 
 export function Panel(props: PanelProps) {
-  const { panel, views, focused, draggingMember, dropTarget, dropAt, actions, onFocus, onSelectTab, onCloseTab, onPromoteTab, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenCompact, onOpenUsage, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
+  const { panel, views, focused, draggingMember, dropTarget, dropSide, dropAt, actions, onFocus, onSelectTab, onCloseTab, onSplit, onPromoteTab, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenCompact, onOpenUsage, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density, width } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
   const cliOwned = view?.status === "external-cli";
@@ -273,6 +285,24 @@ export function Panel(props: PanelProps) {
                     >
                       <SquareTerminal size={14} />  <LocalizedText id="STR-1972" />
                     </button>
+                    {/* Splitting is a layout action, not a member one, but it
+                        lives here because this menu is the only per-panel one
+                        the header has — and a split always starts from "this
+                        panel, on that side". */}
+                    <button
+                      type="button"
+                      className="wb-menu-item"
+                      onClick={() => { setMenuOpen(false); onSplit("right"); }}
+                    >
+                      <SplitSquareHorizontal size={14} />  <LocalizedText id="STR-3821" />
+                    </button>
+                    <button
+                      type="button"
+                      className="wb-menu-item"
+                      onClick={() => { setMenuOpen(false); onSplit("bottom"); }}
+                    >
+                      <SplitSquareVertical size={14} />  <LocalizedText id="STR-3822" />
+                    </button>
                   </div>
                 </>
               )}
@@ -323,6 +353,8 @@ export function Panel(props: PanelProps) {
           <span><LocalizedText id="STR-1977" /></span>
         </div>
       )}
+
+      {dropSide && <div className={"wb-drop-side is-" + dropSide} />}
     </div>
   );
 }

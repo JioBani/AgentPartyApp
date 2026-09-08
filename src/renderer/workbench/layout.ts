@@ -1,11 +1,24 @@
 import type { PanelState } from "./types";
 import type { WorkbenchLayout } from "../../shared/workbenchLayout";
+import {
+  insertPanelBeside,
+  removePanelFromGrid,
+  resizeGridSplit,
+  rowGrid,
+  type GridNode,
+  type GridSide,
+} from "../../shared/workbenchGrid";
 
 /**
  * Pure layout engine for the multi-panel workbench. Every operation returns a
  * new `LayoutState` so React state updates stay predictable, and the same
  * helpers back both pointer interactions (drag/resize) and programmatic ones
  * (open member from the sidebar).
+ *
+ * Panels are the WHAT (which tabs, in which group); the grid in
+ * `shared/workbenchGrid.ts` is the WHERE. Operations here only ever state the
+ * panel change and, when a drop asks for a specific placement, that placement —
+ * `composeLayout` repairs the tree around it.
  */
 
 /**
@@ -14,8 +27,6 @@ import type { WorkbenchLayout } from "../../shared/workbenchLayout";
  * conversion nobody remembers to update.
  */
 export type LayoutState = WorkbenchLayout;
-
-const MIN_WEIGHT = 0.18;
 
 export function emptyLayout(): LayoutState {
   return { panels: [], focusedPanelId: "" };
@@ -26,7 +37,7 @@ export function layoutFromPanels(spec: string[][]): LayoutState {
   const panels: PanelState[] = spec
     .filter((tabs) => tabs.length > 0)
     .map((tabs) => ({ id: nextPanelId(), tabs: [...tabs], active: tabs[0], weight: 1 }));
-  return { panels, focusedPanelId: panels[0]?.id || "" };
+  return composeLayout(panels, panels[0]?.id || "", rowGrid(panels));
 }
 
 /**
@@ -36,14 +47,7 @@ export function layoutFromPanels(spec: string[][]): LayoutState {
  */
 export { openMemberTab as openMember, openMemberInNewPanel, openMemberInTabGroup } from "../../shared/workbenchLayout";
 export { panelOf } from "../../shared/workbenchLayout";
-import { nextPanelId, panelOf } from "../../shared/workbenchLayout";
-
-function focusFallback(panels: PanelState[], preferred: string): string {
-  if (panels.some((panel) => panel.id === preferred)) {
-    return preferred;
-  }
-  return panels[0]?.id || "";
-}
+import { composeLayout, nextPanelId, panelOf } from "../../shared/workbenchLayout";
 
 export function focusPanel(state: LayoutState, panelId: string): LayoutState {
   return { ...state, focusedPanelId: panelId };
@@ -51,6 +55,7 @@ export function focusPanel(state: LayoutState, panelId: string): LayoutState {
 
 export function setActiveTab(state: LayoutState, panelId: string, memberName: string): LayoutState {
   return {
+    ...state,
     panels: state.panels.map((panel) => (panel.id === panelId ? { ...panel, active: memberName } : panel)),
     focusedPanelId: panelId,
   };
@@ -67,6 +72,7 @@ export function setActiveTab(state: LayoutState, panelId: string, memberName: st
  */
 export function promoteTab(state: LayoutState, panelId: string, memberName: string): LayoutState {
   return {
+    ...state,
     panels: state.panels.map((panel) => (
       panel.id === panelId && panel.tabs.includes(memberName)
         ? { ...panel, tabs: [memberName, ...panel.tabs.filter((name) => name !== memberName)], active: memberName }
@@ -90,19 +96,27 @@ export function closeTab(state: LayoutState, panelId: string, memberName: string
     const active = panel.active === memberName ? tabs[Math.max(0, tabs.indexOf(memberName) - 0)] || tabs[tabs.length - 1] : panel.active;
     panels.push({ ...panel, tabs, active });
   }
-  return { panels: normalizeWeights(panels), focusedPanelId: focusFallback(panels, panelId) };
+  // The emptied panel's slot is removed explicitly rather than left to the
+  // reconcile: dropping a leaf collapses its split and hands the freed space
+  // back to the panels that shared it, which is what closing a split view in an
+  // editor does. A bare reconcile would do the same, but only because it must
+  // — saying it here keeps the intent in the operation.
+  return composeLayout(panels, panelId, removePanelFromGrid(state.grid, panelId));
 }
 
-/** Splits a panel: a new watch-slot to the right seeded with the active member. */
-export function splitPanel(state: LayoutState, panelId: string): LayoutState {
-  const index = state.panels.findIndex((panel) => panel.id === panelId);
-  if (index < 0) {
+/**
+ * Splits a panel: a new slot on the given side, seeded with the active member.
+ *
+ * `side` is what makes the layout a grid rather than a row — "bottom" stacks
+ * the new slot under the source instead of beside it.
+ */
+export function splitPanel(state: LayoutState, panelId: string, side: GridSide = "right"): LayoutState {
+  const source = state.panels.find((panel) => panel.id === panelId);
+  if (!source) {
     return state;
   }
-  const source = state.panels[index];
   const panel: PanelState = { id: nextPanelId(), tabs: [source.active], active: source.active, weight: source.weight };
-  const panels = [...state.panels.slice(0, index + 1), panel, ...state.panels.slice(index + 1)];
-  return { panels: normalizeWeights(panels), focusedPanelId: panel.id };
+  return placeNewPanel(state, panel, panelId, side);
 }
 
 /**
@@ -142,44 +156,63 @@ export function moveTab(state: LayoutState, memberName: string, toPanelId: strin
     return { ...panel, tabs, active: memberName };
   });
   panels = panels.filter((panel) => panel.tabs.length > 0);
-  return { panels: normalizeWeights(panels), focusedPanelId: focusFallback(panels, toPanelId) };
+  return composeLayout(panels, toPanelId, gridWithout(state.grid, state.panels, panels));
 }
 
-/** Drops a tab into empty space to create a new panel (drop-to-split). */
-export function moveTabToNewPanel(state: LayoutState, memberName: string, afterPanelId?: string): LayoutState {
+/**
+ * Drops a tab onto an edge of a panel: it leaves its group and takes a new slot
+ * on that side — the interaction that builds the grid.
+ *
+ * `targetPanelId` is the panel that was dropped on; with none (a drop in the
+ * empty area past the last panel) the slot is appended to the outermost row.
+ */
+export function moveTabToNewPanel(
+  state: LayoutState,
+  memberName: string,
+  targetPanelId?: string,
+  side: GridSide = "right",
+): LayoutState {
   const from = panelOf(state, memberName);
   if (!from) {
     return state;
   }
-  if (from.tabs.length === 1) {
-    // Already alone — moving to a new panel would be a no-op churn.
+  if (from.tabs.length === 1 && (from.id === targetPanelId || !targetPanelId)) {
+    // Already alone in the slot the drop would create — moving it would be
+    // churn that also loses the panel's size.
     return setActiveTab(state, from.id, memberName);
   }
-  const stripped = state.panels.map((panel) => (
-    panel.id === from.id
-      ? { ...panel, tabs: panel.tabs.filter((name) => name !== memberName), active: panel.tabs.filter((n) => n !== memberName)[0] || "" }
-      : panel
-  ));
+  const stripped = state.panels
+    .map((panel) => (
+      panel.id === from.id
+        ? { ...panel, tabs: panel.tabs.filter((name) => name !== memberName), active: panel.tabs.filter((n) => n !== memberName)[0] || "" }
+        : panel
+    ))
+    .filter((panel) => panel.tabs.length > 0);
   const panel: PanelState = { id: nextPanelId(), tabs: [memberName], active: memberName, weight: 1 };
-  const anchor = afterPanelId ? stripped.findIndex((item) => item.id === afterPanelId) : stripped.length - 1;
-  const panels = [...stripped.slice(0, anchor + 1), panel, ...stripped.slice(anchor + 1)].filter((item) => item.tabs.length > 0);
-  return { panels: normalizeWeights(panels), focusedPanelId: panel.id };
+  const anchor = targetPanelId && stripped.some((item) => item.id === targetPanelId) ? targetPanelId : undefined;
+  const base = { ...state, panels: stripped, grid: gridWithout(state.grid, state.panels, stripped) };
+  return placeNewPanel(base, panel, anchor, side);
 }
 
-/** Adjusts the weights of two adjacent panels by a normalized delta. */
+/**
+ * Adjusts the weights of two adjacent panels by a normalized delta.
+ *
+ * Kept panel-addressed for callers that only know the two panels either side of
+ * a divider; it resolves them to their shared split, so it works on any axis and
+ * refuses (rather than guessing) when the two are not actually siblings.
+ */
 export function resizeAt(state: LayoutState, leftPanelId: string, rightPanelId: string, deltaRatio: number): LayoutState {
-  const panels = state.panels.map((panel) => ({ ...panel }));
-  const left = panels.find((panel) => panel.id === leftPanelId);
-  const right = panels.find((panel) => panel.id === rightPanelId);
-  if (!left || !right) {
+  const divider = findDivider(state.grid, leftPanelId, rightPanelId);
+  if (!divider) {
     return state;
   }
-  const pair = left.weight + right.weight;
-  let leftWeight = left.weight + deltaRatio * pair;
-  leftWeight = Math.min(pair - MIN_WEIGHT, Math.max(MIN_WEIGHT, leftWeight));
-  left.weight = leftWeight;
-  right.weight = pair - leftWeight;
-  return { ...state, panels };
+  return resizeSplit(state, divider.splitId, divider.index, deltaRatio);
+}
+
+/** Adjusts one split's divider: the pair around `index` moves, nothing else. */
+export function resizeSplit(state: LayoutState, splitId: string, index: number, deltaRatio: number): LayoutState {
+  const grid = resizeGridSplit(state.grid, splitId, index, deltaRatio);
+  return composeLayout(state.panels, state.focusedPanelId, grid);
 }
 
 /** Drops tabs for members that no longer exist and prunes empty panels. */
@@ -191,16 +224,49 @@ export function pruneLayout(state: LayoutState, validMembers: Set<string>): Layo
       return { ...panel, tabs, active };
     })
     .filter((panel) => panel.tabs.length > 0);
-  return { panels: normalizeWeights(panels), focusedPanelId: focusFallback(panels, state.focusedPanelId) };
+  return composeLayout(panels, state.focusedPanelId, gridWithout(state.grid, state.panels, panels));
 }
 
-function normalizeWeights(panels: PanelState[]): PanelState[] {
-  if (panels.length === 0) {
-    return panels;
+/** Adds a panel to the layout, in a slot beside `anchor` or at the end. */
+function placeNewPanel(state: LayoutState, panel: PanelState, anchor: string | undefined, side: GridSide): LayoutState {
+  const panels = [...state.panels, panel];
+  // With no anchor the reconcile appends the leaf to the outermost row, which
+  // is exactly where a drop into empty space belongs.
+  const grid = anchor ? insertPanelBeside(state.grid, panel.id, anchor, side) : state.grid;
+  return composeLayout(panels, panel.id, grid);
+}
+
+/** Drops the slots of panels that did not survive an operation. */
+function gridWithout(grid: GridNode | undefined, before: PanelState[], after: PanelState[]): GridNode | undefined {
+  const survivors = new Set(after.map((panel) => panel.id));
+  let next = grid;
+  for (const panel of before) {
+    if (!survivors.has(panel.id)) {
+      next = removePanelFromGrid(next, panel.id);
+    }
   }
-  const total = panels.reduce((sum, panel) => sum + (panel.weight > 0 ? panel.weight : 1), 0);
-  const target = panels.length; // keep the average weight near 1
-  return panels.map((panel) => ({ ...panel, weight: ((panel.weight > 0 ? panel.weight : 1) / total) * target }));
+  return next;
+}
+
+/** The split, and index within it, whose divider sits between two panels. */
+function findDivider(grid: GridNode | undefined, leftPanelId: string, rightPanelId: string): { splitId: string; index: number } | undefined {
+  if (!grid || grid.type === "leaf") {
+    return undefined;
+  }
+  for (let index = 0; index < grid.children.length - 1; index += 1) {
+    const first = grid.children[index];
+    const second = grid.children[index + 1];
+    if (first.type === "leaf" && second.type === "leaf" && first.panelId === leftPanelId && second.panelId === rightPanelId) {
+      return { splitId: grid.id, index };
+    }
+  }
+  for (const child of grid.children) {
+    const found = findDivider(child, leftPanelId, rightPanelId);
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
 }
 
 // --- Persistence ----------------------------------------------------------

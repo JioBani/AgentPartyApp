@@ -520,19 +520,29 @@ async function main() {
       window.dispatchEvent(new PointerEvent("pointermove", { ...opts, clientX: box.left + 120, clientY: box.top + 40 }));
       await new Promise((r) => setTimeout(r, 120));
       const during = widthsOf();
-      const zone = document.querySelector(".wb-newpanel-zone");
-      const overlay = zone ? getComputedStyle(zone).position === "absolute" : null;
-      window.dispatchEvent(new PointerEvent("pointerup", { ...opts, clientX: box.left + 120, clientY: box.top + 40 }));
+      // Over the panel's BOTTOM edge: the drop that splits it downwards, and the
+      // only drop preview there is now that the separate new-panel strip is gone
+      // (it was an overlay pinned to the right, sitting on top of the very
+      // gesture that splits the rightmost panel).
+      const panelBox = document.querySelector(".wb-panel").getBoundingClientRect();
+      const edge = { clientX: Math.round(panelBox.left + panelBox.width / 2), clientY: Math.round(panelBox.bottom - 20) };
+      window.dispatchEvent(new PointerEvent("pointermove", { ...opts, ...edge }));
+      await new Promise((r) => setTimeout(r, 120));
+      const preview = document.querySelector(".wb-drop-side");
+      const previewSide = preview ? [...preview.classList].find((name) => name.startsWith("is-")) : null;
+      const overlay = preview ? getComputedStyle(preview).position === "absolute" : null;
+      window.dispatchEvent(new PointerEvent("pointerup", { ...opts, ...edge }));
       await new Promise((r) => setTimeout(r, 200));
-      return { before, during, after: widthsOf(), zonePresent: Boolean(zone), overlay };
+      return { before, during, after: widthsOf(), previewSide, overlay };
     })()`);
-    assert(dragEffect.zonePresent, "dragging a tab offers the new-panel target");
+    assert(dragEffect.previewSide === "is-bottom", `a tab held over a panel's bottom edge previews the split there (${dragEffect.previewSide})`);
     assert(dragEffect.overlay, "\u2026as an overlay, which takes no layout space");
     assert(JSON.stringify(dragEffect.before) === JSON.stringify(dragEffect.during),
       `panel widths do not change while a tab is in hand (${dragEffect.before} \u2192 ${dragEffect.during})`);
-    assert(JSON.stringify(dragEffect.before) === JSON.stringify(dragEffect.after),
-      `\u2026and nothing temporary is left behind after the drop (${dragEffect.after})`);
-    const leftovers = await cdp.eval(`document.querySelectorAll(".wb-newpanel-zone, .wb-drag-ghost").length`);
+    // `after` is deliberately NOT compared with `before`: this drop splits the
+    // panel now, so a changed set of widths is the feature working rather than
+    // residue. What must still hold is that nothing temporary survives it.
+    const leftovers = await cdp.eval(`document.querySelectorAll(".wb-drop-side, .wb-drag-ghost").length`);
     assert(leftovers === 0, "the drag ghost and the drop target are gone once the drag ends");
 
     await capture("03-after-drag.png");
