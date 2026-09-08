@@ -2437,9 +2437,9 @@ export class AppController {
     };
   }
 
-  /** The shared "user sends a message to a member" path (UI Send button + HTTP). */
-  sendMemberMessage(workspacePath: string, name: string, text: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>> {
-    return this.mutateParty(workspacePath, (engine) => engine.sendUserMessage(name, text, attachments, this.partyForWindow(windowId), options));
+  /** The shared "user sends a message to a member" path (UI, HTTP, and Discord). */
+  sendMemberMessage(workspacePath: string, name: string, text: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }, partyId?: string): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>> {
+    return this.mutateParty(workspacePath, (engine) => engine.sendUserMessage(name, text, attachments, partyId || this.partyForWindow(windowId), options));
   }
 
   /** Messages a busy member has been sent but not yet handed (shared/messageQueue.ts). */

@@ -207,6 +207,7 @@ export const partyRoutes: MethodRoute[] = [
       sanitizeAttachments(p.attachments),
       ctx.windowId,
       { interrupt: p.interrupt === true },
+      ctx.partyId,
     ),
   },
   {
