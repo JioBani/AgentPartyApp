@@ -36,6 +36,8 @@ import { executionModelFor } from "../shared/modelIdentity";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import type { ApprovalDelivery } from "../shared/approvals";
 import type { SessionEventCursor } from "../shared/sessionEventStream";
+import { registerMemoryProbe } from "../shared/memoryProbes";
+import { measureKeyed } from "../shared/perfMeasure";
 
 /**
  * Status strings that begin or end a turn. Used only by idle sleep's
@@ -230,6 +232,38 @@ export class SessionManager extends EventEmitter {
   ) {
     super();
     this.usageLimits = this.loadUsageLimits();
+    this.registerMemoryProbes();
+  }
+
+  /**
+   * Reports what the live sessions are holding, when a perf report asks.
+   *
+   * Two buckets, because they fail differently. `queuedEvents` is a buffer that
+   * should be drained on every flush — anything large there means the consumer
+   * has stopped keeping up. The ADAPTERS are the other half: a Claude member
+   * runs through an in-process SDK, so its conversation lives inside this
+   * process rather than in a child, and nothing in the report could see it.
+   *
+   * The adapter walk is deliberately budgeted. It crosses into harness
+   * internals (streams, buffers) whose shape we do not control, and a
+   * measurement that could itself take seconds on a struggling app would be
+   * self-defeating; a truncated number reports itself as truncated.
+   */
+  private registerMemoryProbes(): void {
+    registerMemoryProbe("sessionManager.queuedEvents", () => measureKeyed(
+      "sessionManager.queuedEvents",
+      Object.fromEntries([...this.sessions].map(([id, session]) => [id, session.queuedEvents])),
+      { note: "아직 창으로 나가지 않은 이벤트 버퍼. 커져 있으면 소비 측이 밀린 것.", topCount: 5 },
+    ));
+    registerMemoryProbe("sessionManager.adapters", () => measureKeyed(
+      "sessionManager.adapters",
+      Object.fromEntries([...this.sessions].map(([id, session]) => [id, session.adapter])),
+      {
+        note: "하네스 세션 객체. Claude 멤버는 인프로세스 SDK라 대화가 여기 남는다(탐색 예산 제한, truncated 여부 확인).",
+        topCount: 5,
+        nodeBudget: 200_000,
+      },
+    ));
   }
 
   createSession(input?: string | CreateSessionInput, resumeSessionId?: string, binding?: SessionPartyBinding): SessionView {

@@ -8,6 +8,9 @@ import { sanitizeLayout, type WorkbenchLayout } from "../shared/workbenchLayout"
 import { workspaceKey } from "../shared/workspaceLocation";
 import { log } from "./logger";
 import { ensureStorageDir, STORAGE_DIR } from "./workspaceStorage";
+import { registerMemoryProbe } from "../shared/memoryProbes";
+import { countEvent } from "../shared/perfCounters";
+import { measureKeyed } from "../shared/perfMeasure";
 
 /**
  * The composed, in-memory party state — the shared party index PLUS every
@@ -77,6 +80,26 @@ export class PartyRepository {
    * workspace; a cold entry falls back to a real read.
    */
   private readonly lastWritten = new Map<string, unknown[]>();
+
+  constructor() {
+    this.registerMemoryProbe();
+  }
+
+  /**
+   * Reports what this cache is holding, when someone asks for a perf report.
+   *
+   * The probe lives with the map it measures rather than in the inspector:
+   * nothing else knows what `lastWritten` is keyed by, and a cache that grows
+   * without bound is exactly the kind of thing a report has to be able to name.
+   * Registering costs a function reference — it samples nothing on its own.
+   */
+  private registerMemoryProbe(): void {
+    registerMemoryProbe("partyRepository.lastWritten", () => measureKeyed(
+      "partyRepository.lastWritten",
+      this.lastWritten,
+      { note: "저장된 transcript 의 마지막 사본(앵커 해석용 캐시). 파일 경로별.", topCount: 5 },
+    ));
+  }
 
   /** Whether a cwd contains party data worth offering to the global importer. */
   hasStore(workspacePath: string): boolean {
@@ -532,7 +555,13 @@ export class PartyRepository {
     // supported multi-instance case) must never collide on one temp file, or
     // one's writeFile/rename would clobber the other's mid-flight. rename onto
     // the final path stays atomic. Mirrors settings.ts's writer.
-    writeReplacing(file, `${JSON.stringify(data, null, 2)}\n`);
+    const body = `${JSON.stringify(data, null, 2)}\n`;
+    // Storage writes are synchronous, so they are main-thread time: a party
+    // whose transcript is saved on every turn can make the whole app stutter
+    // without holding a byte more memory. Counted at the one writer.
+    countEvent("storage.writes");
+    countEvent("storage.writeChars", body.length);
+    writeReplacing(file, body);
   }
 
   private transcriptPath(workspacePath: string, partyId: string, memberName: string): string {

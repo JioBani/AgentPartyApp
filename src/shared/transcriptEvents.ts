@@ -1,5 +1,6 @@
 import type { SessionView, TranscriptSave } from "./types";
 import type { TranscriptBlock } from "./transcript";
+import { countEvent } from "./perfCounters";
 import { capTranscript } from "./transcriptCap";
 import { isLegacySpawnLine, legacySpawnFacts, SPAWN_STATUSES, type SessionSpawnFacts } from "./sessionSpawn";
 
@@ -12,6 +13,11 @@ const PARTY_REMOVE_TOOL = "mcp__agentparty-app__member-remove";
 const PARTY_ATTACH_IMAGE_TOOL = "mcp__agentparty-app__attach-image";
 
 export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionId: string, events: any[]): Record<string, TranscriptBlock[]> {
+  // Counted here rather than at a subscription: this is the function every
+  // delivery path ends in, so the number cannot go stale when another path is
+  // added. Two increments per BATCH — nothing per event.
+  countEvent("transcript.applyCalls");
+  countEvent("transcript.eventsApplied", events.length);
   let next = current;
   for (const event of events) {
     if (event.type === "assistant_text_delta") {
