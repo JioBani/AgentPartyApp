@@ -49,6 +49,17 @@ import type { SessionManager } from "../sessionManager";
 import type { EngineConnection, QaInteractionInput, QaMemberSpec } from "../engine/engineConnection";
 import type { EngineRegistry } from "../engine/engineRegistry";
 import type { WindowEntry, WindowInfo, WindowRegistry } from "../windowRegistry";
+import { collectPerfSnapshot, type PerfInspectorDeps, type PerfSnapshot } from "../perf/perfInspector";
+import {
+  perfDir,
+  recordingStatus,
+  startRecording,
+  stopRecording,
+  type RecordingBudget,
+  type RecordingResult,
+  type RecordingStatus,
+} from "../perf/perfRecorder";
+import { captureCpuProfile, captureHeapSnapshot, listCaptures, type CaptureResult } from "../perf/perfCapture";
 import { runSessionAction } from "./sessionActions";
 import { MODEL_PROVIDERS } from "../../shared/modelProviders";
 import { refreshRemoteModelCatalog, remoteModelCatalogStatus, type RemoteCatalogStatus } from "../remoteModelCatalog";
@@ -545,6 +556,82 @@ export class AppController {
 
   getLogs(): { logFilePath: string } {
     return { logFilePath: getLogFilePath() };
+  }
+
+  // --- Performance inspection ------------------------------------------------
+  //
+  // Why this lives in the shipped app rather than in a debug build: the states
+  // worth investigating — a window grown to gigabytes, a freeze, a slow drift —
+  // are destroyed by the restart that a debug build requires. So the running
+  // app answers, and nothing here costs anything until someone asks.
+
+  /**
+   * What the app is holding right now, per holder rather than per process.
+   *
+   * `includeHarness` samples the CLI processes the app spawned, which costs one
+   * PowerShell call; off by default for the recorder's repeated ticks, on for a
+   * one-off report where the wait does not matter.
+   */
+  async getPerfSnapshot(workspacePath: string, options: { includeHarness?: boolean } = {}): Promise<PerfSnapshot> {
+    return collectPerfSnapshot(this.perfDeps(workspacePath), { includeHarness: options.includeHarness !== false });
+  }
+
+  /**
+   * Opens a bounded recording window. Budgets are clamped, and the reply states
+   * what was ACTUALLY applied — a caller must never have to assume the numbers
+   * it asked for are the numbers in force.
+   */
+  async startPerfRecording(workspacePath: string, request: Partial<RecordingBudget>): Promise<{ ok: true; id: string; applied: RecordingBudget; filePath?: string; clamped: string[] }> {
+    return startRecording(this.perfDeps(workspacePath), request);
+  }
+
+  stopPerfRecording(): RecordingResult {
+    return stopRecording("manual");
+  }
+
+  getPerfRecordingStatus(): RecordingStatus {
+    return recordingStatus();
+  }
+
+  /**
+   * A heap snapshot or CPU profile of a LIVE window (or the main process), with
+   * no relaunch and no debug flag. Expensive and full of conversation text, so
+   * it happens only on this explicit call.
+   */
+  async capturePerfArtifact(request: { kind?: string; target?: string; ms?: number }): Promise<CaptureResult> {
+    const kind = String(request.kind || "heap");
+    const target = String(request.target || "focused");
+    if (kind === "cpu") {
+      if (target === "main") {
+        throw new Error("CPU 프로파일은 창(렌더러)만 지원합니다. 메인 프로세스는 heap 스냅샷을 쓰세요.");
+      }
+      return captureCpuProfile(this.deps.windowRegistry, target, Number(request.ms) || 5_000);
+    }
+    if (kind !== "heap") {
+      throw new Error(`알 수 없는 캡처 종류 '${kind}' — 'heap' 또는 'cpu'.`);
+    }
+    return captureHeapSnapshot(this.deps.windowRegistry, target);
+  }
+
+  listPerfCaptures(): { captures: Array<{ file: string; bytes: number; at: string }>; folder: string } {
+    return { captures: listCaptures(), folder: perfDir() };
+  }
+
+  private perfDeps(workspacePath: string): PerfInspectorDeps {
+    return {
+      windowRegistry: this.deps.windowRegistry,
+      // Harness CLIs are separate OS processes that Chromium's metrics do not
+      // see; without them their memory would be attributed to nobody.
+      listHarnessProcesses: async () => {
+        const sessions = await this.partyEngine(workspacePath).listWorkspaceSessions();
+        return sessions
+          .filter((session) => Number.isFinite(session.snapshot?.pid))
+          // `title` is how a session names itself to a human (the member's name
+          // for a party session), which is what makes the row readable next to
+          // the app's own processes.
+          .map((session) => ({ pid: Number(session.snapshot.pid), label: session.title || session.id }));
+      },
+    };
   }
 
   // --- Diagnostics ----------------------------------------------------------

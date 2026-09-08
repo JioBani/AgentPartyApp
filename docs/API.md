@@ -138,6 +138,120 @@ Opens the log folder in the OS file manager. No body. Returns
 folder could not be opened — it never reports success for a window that did not
 appear.
 
+## Performance inspection
+
+성능 문제(메모리 과다, 느려짐, 멈춤)는 **재현이 곧 증거**인데, 디버그 빌드로 다시
+켜는 순간 그 상태가 사라진다. 그래서 배포된 앱이 직접 답한다. 이 엔드포인트들은
+QA 전용이 아니라 일반 라우트다 — `/api/qa/*` 는 배포 앱에서 꺼져 있다.
+
+**아무것도 상시로 돌지 않는다.** 샘플러도, 롤링 로그도, 누적 카운터도 없다.
+물어볼 때만 수 ms 계산한다(문자열 크기는 훑는 게 아니라 `length` 필드 하나를 읽는
+것이라, 700MB짜리 대화도 **블록 수**에 비례하는 비용으로 잰다).
+
+### `GET /api/perf`
+
+지금 이 순간 무엇이 얼마나 들고 있는지. 프로세스 단위가 아니라 **보유자 단위**다.
+
+```json
+{
+  "at": "2026-09-09T…", "uptimeSec": 32100,
+  "main": { "rssMb": 412.5, "heapUsedMb": 233.1, "buckets": [
+    { "name": "partyRepository.lastWritten", "estimate": { "approxBytes": 81264640, "items": 12840 },
+      "entries": 9, "top": [{ "key": "…\impl.json", "estimate": { "approxBytes": 41381888 } }] }
+  ] },
+  "processes": [
+    { "kind": "Browser", "pid": 1234, "cpuPercent": 2.1, "workingSetMb": 430.2 },
+    { "kind": "Tab", "pid": 5678, "label": "win-1", "cpuPercent": 11.4, "workingSetMb": 1180.6 },
+    { "kind": "harness", "pid": 9012, "label": "impl", "workingSetMb": 812.0 }
+  ],
+  "windows": [
+    { "windowId": "win-1", "responsive": true, "replyMs": 6, "jsHeapUsedMb": 903.2, "domNodes": 48210,
+      "buckets": [ { "name": "logsBySession", "entries": 12,
+        "estimate": { "approxBytes": 742391808 },
+        "top": [ { "key": "session-…", "estimate": { "approxBytes": 199229440 } } ] } ] }
+  ],
+  "eventLoop": { "samples": 8, "p50Ms": 0.4, "maxMs": 2.1 },
+  "totals": { "processWorkingSetMb": 2422.8, "attributedMb": 1063.4, "residualMb": 1359.4 },
+  "notes": []
+}
+```
+
+읽는 법:
+- `windows[].buckets[].top` 이 **"어느 멤버/세션이 얼마나"** 에 해당한다.
+- `totals.residualMb` 는 앱이 **이름 붙이지 못한** 작업 집합이다. 이게 크면 원인이
+  우리 자료구조가 아니라는 뜻이고, 다음 단계는 카운터가 아니라 힙 스냅샷이다.
+- `windows[].responsive: false` 는 실패가 아니라 **발견**이다. 그 창이 멈춰 있다는
+  뜻이고, 바로 그 창의 CPU 프로파일을 뜰 시점이다(창이 멈춰도 이 응답은 나온다).
+- `eventLoop.p50Ms` 가 수백 ms면 앱 전체가 멈춘 것처럼 보이는 원인이 메인 스레드다.
+
+`?harness=0` 으로 하네스 CLI 프로세스 샘플링(PowerShell 호출 1회)을 끌 수 있다.
+크기는 문자열이 UTF-16으로 저장될 때의 **상한**이며, 두 맵이 같은 블록을 참조하면
+양쪽에 계상된다 — 이중 보관 자체가 찾으려는 결함이기 때문이다.
+
+### `POST /api/perf/record/start`
+
+"지금 무엇을 들고 있나" 가 아니라 **"무엇이 자라났나"** 를 보려면 구간이 필요하다.
+상시 샘플링 대신, 끝이 정해진 기록 창을 연다.
+
+```json
+{ "intervalMs": 5000, "maxSamples": 720, "maxMinutes": 60, "includeHarness": false, "toDisk": false }
+```
+
+넷 다 선택이고 전부 상한에 걸린다(`intervalMs` ≥ 1000, `maxSamples` ≤ 5000,
+`maxMinutes` ≤ 360). 응답은 **실제 적용된 값**과 깎인 항목을 함께 돌려준다.
+
+```json
+{ "ok": true, "id": "perf-2026-09-09T…", "applied": { "intervalMs": 5000, … },
+  "clamped": ["intervalMs: 200 → 1000"] }
+```
+
+기본은 **메모리에만** 쌓는다(샘플 1개 ≈ 1KB, 기본 720개면 1MB 미만).
+`toDisk: true` 를 준 경우에만 `<userData>/perf/<id>.ndjson` 에 쓰고 경로를 반환한다.
+이미 기록 중이면 **거부**한다 — 돌고 있는 기록은 누군가의 증거이고, 조용히 갈아
+치우면 그 구간을 잃는다.
+
+### `GET /api/perf/record`
+
+진행 상황: `recording`, 수집한 샘플 수, 남은 샘플/분 예산, 이 기록이 쓰고 있는
+대략적인 메모리. 끝난 뒤에는 마지막 기록의 종료 시각과 사유를 돌려준다.
+
+### `POST /api/perf/record/stop`
+
+기록을 끝내고 **원본 샘플과 증감 요약**을 함께 반환한다.
+
+```json
+{ "ok": true, "id": "perf-…", "stoppedReason": "manual", "sampleCount": 240,
+  "growth": [
+    { "name": "win-1.logsBySession", "firstMb": 190.2, "lastMb": 612.8, "peakMb": 612.8, "deltaMb": 422.6, "monotonic": true },
+    { "name": "process.residual", "firstMb": 210.1, "lastMb": 1359.4, "deltaMb": 1149.3, "monotonic": false }
+  ],
+  "samples": [ … ] }
+```
+
+`monotonic: true` 는 구간 내내 한 번도 줄지 않았다는 뜻이다 — 바쁜 시간대와 누수를
+가르는 신호. `stoppedReason` 은 `manual` / `budget`(예산 소진) / `shutdown` 중
+하나이며, 예산 때문에 잘린 기록을 완주한 기록으로 착각하지 않게 한다.
+
+### `POST /api/perf/capture`
+
+실행 중인 창(또는 메인 프로세스)의 **힙 스냅샷 / CPU 프로파일**. 재시작도,
+`--remote-debugging-port` 도 필요 없다 — Electron 이 살아 있는 `webContents` 에
+대해 둘 다 제공한다.
+
+```json
+{ "kind": "heap", "target": "win-1" }
+{ "kind": "cpu",  "target": "win-1", "ms": 5000 }
+```
+
+`target` 은 창 id, `focused`, 또는 `main`(heap 전용). 파일 경로와 크기를 반환하고,
+**내용은 절대 반환하지 않는다**. 스냅샷에는 대화 내용이 그대로 들어 있으므로 응답에
+경고 문구가 함께 오고, 종류별 최근 2개만 남기고 자동으로 지운다. 이 라우트는
+`remote: false` — 휴대폰에 노출되지 않는다.
+
+### `GET /api/perf/captures`
+
+지금 디스크에 있는 캡처 파일 목록과 폴더 경로.
+
 ### `GET /api/environment`
 
 Whether this machine can actually run a member, and what to do when it cannot —

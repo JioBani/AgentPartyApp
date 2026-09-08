@@ -9,6 +9,7 @@ import { guideRoutes } from "./routes/guideRoutes";
 import { mobileRoutes } from "./routes/mobileRoutes";
 import { modelRoutes } from "./routes/modelRoutes";
 import { partyRoutes } from "./routes/partyRoutes";
+import { perfRoutes } from "./routes/perfRoutes";
 import { workspaceLocationRoutes } from "./routes/workspaceLocationRoutes";
 import { sessionRoutes } from "./routes/sessionRoutes";
 import { windowRoutes } from "./routes/windowRoutes";
@@ -37,6 +38,7 @@ const routes: MethodRoute[] = [
   ...guideRoutes,
   ...mobileRoutes,
   ...modelRoutes,
+  ...perfRoutes,
   ...sessionRoutes,
   ...partyRoutes,
   ...workspaceLocationRoutes,

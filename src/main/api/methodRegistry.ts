@@ -102,6 +102,22 @@ export function required(value: unknown, field: string): string {
 }
 
 /**
+ * A number from the wire, or undefined when the field was absent.
+ *
+ * Undefined rather than a default matters where the callee clamps: a budget of
+ * "not given" must reach the clamp as absent so it can apply ITS default, while
+ * a given-but-out-of-range value is reported back as clamped. Turning absence
+ * into 0 here would make those two indistinguishable.
+ */
+export function num(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/**
  * A boolean that survives both transports: HTTP query strings can only carry
  * `?refresh=1`, while a phone sends real JSON `true`.
  */

@@ -63,6 +63,7 @@ import { mergeRendererSessions, updateRendererSessionSnapshot } from "./app/sess
 import { isTranscriptRestoreSettled, nextTranscriptRestore, nextTranscriptReveal } from "./app/transcriptRestorePlan";
 import { DEFAULT_SIDEBAR_DRAWERS, type SidebarDrawerId, type SidebarDrawerState } from "../shared/sidebarDrawers";
 import { clearComposerDraftsForMember, clearComposerDraftsForParty } from "./workbench/composerDraftStore";
+import { installRendererMemoryProbe, registerRendererState } from "./perf/rendererMemoryProbe";
 import {
   advanceSessionEventCursor,
   cursorCoversBatch,
@@ -231,6 +232,21 @@ export function App() {
 
   // Lets `GET /api/appearance/fonts` ask Chromium which families are installed.
   useEffect(() => { publishFontProbe(); }, []);
+
+  // Perf inspection: the main process asks this window what it is holding, and
+  // the answer has to be the CURRENT maps. Refs updated after every commit,
+  // rather than a closure captured once, are what keep the report from
+  // reporting the state this window had at mount.
+  const perfStateRef = useRef({ logsBySession, restoredByMember, subagentsBySession });
+  useEffect(() => {
+    perfStateRef.current = { logsBySession, restoredByMember, subagentsBySession };
+  });
+  useEffect(() => {
+    registerRendererState("logsBySession", () => perfStateRef.current.logsBySession, "열린 세션별 대화 블록 — 이 창이 들고 있는 본체");
+    registerRendererState("restoredByMember", () => perfStateRef.current.restoredByMember, "디스크에서 복원한 멤버별 기록(탭을 닫아도 남아 있을 수 있음)");
+    registerRendererState("subagentsBySession", () => perfStateRef.current.subagentsBySession, "세션별 서브에이전트 활동");
+    installRendererMemoryProbe();
+  }, []);
 
   useEffect(() => {
     if (!themeMenuOpen) return;

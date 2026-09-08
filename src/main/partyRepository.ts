@@ -8,6 +8,8 @@ import { sanitizeLayout, type WorkbenchLayout } from "../shared/workbenchLayout"
 import { workspaceKey } from "../shared/workspaceLocation";
 import { log } from "./logger";
 import { ensureStorageDir, STORAGE_DIR } from "./workspaceStorage";
+import { registerMemoryProbe } from "../shared/memoryProbes";
+import { measureKeyed } from "../shared/perfMeasure";
 
 /**
  * The composed, in-memory party state — the shared party index PLUS every
@@ -77,6 +79,26 @@ export class PartyRepository {
    * workspace; a cold entry falls back to a real read.
    */
   private readonly lastWritten = new Map<string, unknown[]>();
+
+  constructor() {
+    this.registerMemoryProbe();
+  }
+
+  /**
+   * Reports what this cache is holding, when someone asks for a perf report.
+   *
+   * The probe lives with the map it measures rather than in the inspector:
+   * nothing else knows what `lastWritten` is keyed by, and a cache that grows
+   * without bound is exactly the kind of thing a report has to be able to name.
+   * Registering costs a function reference — it samples nothing on its own.
+   */
+  private registerMemoryProbe(): void {
+    registerMemoryProbe("partyRepository.lastWritten", () => measureKeyed(
+      "partyRepository.lastWritten",
+      this.lastWritten,
+      { note: "저장된 transcript 의 마지막 사본(앵커 해석용 캐시). 파일 경로별.", topCount: 5 },
+    ));
+  }
 
   /** Whether a cwd contains party data worth offering to the global importer. */
   hasStore(workspacePath: string): boolean {
