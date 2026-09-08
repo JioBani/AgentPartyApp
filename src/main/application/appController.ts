@@ -572,10 +572,11 @@ export class AppController {
    * PowerShell call; off by default for the recorder's repeated ticks, on for a
    * one-off report where the wait does not matter.
    */
-  async getPerfSnapshot(workspacePath: string, options: { includeHarness?: boolean; deep?: boolean } = {}): Promise<PerfSnapshot> {
+  async getPerfSnapshot(workspacePath: string, options: { includeHarness?: boolean; deep?: boolean; disk?: boolean } = {}): Promise<PerfSnapshot> {
     return collectPerfSnapshot(this.perfDeps(workspacePath), {
       includeHarness: options.includeHarness !== false,
       deep: options.deep === true,
+      disk: options.disk === true,
     });
   }
 
@@ -622,6 +623,7 @@ export class AppController {
   private perfDeps(workspacePath: string): PerfInspectorDeps {
     return {
       windowRegistry: this.deps.windowRegistry,
+      partyStoreDir: path.join(this.partyStorageWorkspace(workspacePath), ".agent_party_app"),
       // Harness CLIs are separate OS processes that Chromium's metrics do not
       // see; without them their memory would be attributed to nobody.
       listHarnessProcesses: async () => {

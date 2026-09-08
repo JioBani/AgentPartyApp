@@ -15,6 +15,8 @@
  */
 
 import type { BrowserWindow } from "electron";
+import * as fsSync from "node:fs";
+import * as pathModule from "node:path";
 import { performance } from "node:perf_hooks";
 import { collectMemoryBuckets, registeredProbeNames } from "../../shared/memoryProbes";
 import { counterRates, readCounters, type CounterReading } from "../../shared/perfCounters";
@@ -90,12 +92,24 @@ export interface PerfSnapshot {
    * process is why the whole app "freezes" — including the windows, which can
    * only paint what main lets through.
    */
+  /**
+   * On-disk party store (`?disk=1`). What a window will LOAD, as opposed to
+   * what it currently holds — the reason a fresh window on a big party is
+   * expensive the moment it opens.
+   */
+  disk?: { rootMb: number; parties: Array<{ name: string; mb: number; files: number }>; scannedFiles: number; truncated: boolean };
   eventLoop: { samples: number; p50Ms: number; maxMs: number };
   /**
    * What is FLOWING: monotonic totals plus the per-second rate since the last
    * snapshot this process produced. Sizes cannot show a busy app; rates can.
    */
   flow: { totals: Record<string, number>; ratesPerSec: Record<string, number>; sinceMs?: number; rejectedNames: number };
+  /**
+   * Every measured holder, largest first, across both processes — the one list
+   * to read when the question is "what is using the RAM". The per-process
+   * detail below is for following up on whatever this names.
+   */
+  topHolders: Array<{ name: string; mb: number; where: string; entries?: number; topKey?: string; truncated: boolean }>;
   totals: {
     /** Everything Chromium accounts for, plus any harness processes sampled. */
     processWorkingSetMb: number;
@@ -113,6 +127,12 @@ export interface PerfSnapshot {
 
 export interface PerfInspectorDeps {
   windowRegistry: WindowRegistry;
+  /**
+   * Where the party store lives. Its size on disk is the best predictor of what
+   * a window will pull into memory: opening a party parses that party's files,
+   * so a 46MB party is a 46MB window, before anything else it holds.
+   */
+  partyStoreDir?: string;
   /**
    * Harness CLIs the app has spawned. They are separate OS processes that
    * Chromium's own metrics know nothing about, and they can hold more memory
@@ -140,7 +160,7 @@ let previousCounters: CounterReading | undefined;
 
 export async function collectPerfSnapshot(
   deps: PerfInspectorDeps,
-  options: { includeHarness?: boolean; windowTimeoutMs?: number; deep?: boolean } = {},
+  options: { includeHarness?: boolean; windowTimeoutMs?: number; deep?: boolean; disk?: boolean } = {},
 ): Promise<PerfSnapshot> {
   const notes: string[] = [];
   const memory = process.memoryUsage();
@@ -223,6 +243,26 @@ export async function collectPerfSnapshot(
     notes.push("열린 창이 없어 렌더러 보유량은 이 보고에 없습니다.");
   }
 
+  const topHolders = [
+    ...mainBuckets.map((bucket) => ({ bucket, where: "main" })),
+    ...windows.flatMap((window) => window.buckets.map((bucket) => ({ bucket, where: window.windowId }))),
+  ]
+    .map(({ bucket, where }) => ({
+      name: bucket.name,
+      where,
+      mb: round(bucket.estimate.approxBytes / MB, 1),
+      entries: bucket.entries,
+      topKey: bucket.top?.[0]?.key,
+      truncated: bucket.estimate.truncated,
+    }))
+    .sort((a, b) => b.mb - a.mb)
+    .slice(0, 12);
+
+  const disk = options.disk && deps.partyStoreDir ? measurePartyStore(deps.partyStoreDir) : undefined;
+  if (options.disk && !deps.partyStoreDir) {
+    notes.push("파티 저장소 경로를 알 수 없어 디스크 사용량을 재지 못했습니다.");
+  }
+
   return {
     at: new Date().toISOString(),
     uptimeSec: Math.round(process.uptime()),
@@ -236,6 +276,8 @@ export async function collectPerfSnapshot(
     },
     processes,
     windows,
+    topHolders,
+    ...(disk ? { disk } : {}),
     eventLoop,
     flow: flowSince(),
     totals: {
@@ -255,6 +297,64 @@ interface HarnessRow { Id: number; WorkingSet64: number; CPU?: number }
  * the map cannot outgrow the number of live members.
  */
 const harnessCpuSeconds = new Map<number, { seconds: number; at: number }>();
+
+/**
+ * Party files on disk, by party.
+ *
+ * Opt-in because it walks a directory tree, and bounded by a file budget so a
+ * store that has grown pathological — the exact case worth measuring — cannot
+ * make the measurement pathological too.
+ */
+function measurePartyStore(root: string): PerfSnapshot["disk"] {
+  const budget = 20_000;
+  let scanned = 0;
+  const sizeOf = (dir: string): { bytes: number; files: number } => {
+    let bytes = 0;
+    let files = 0;
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = fsSync.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return { bytes, files };
+    }
+    for (const entry of entries) {
+      if (scanned >= budget) {
+        break;
+      }
+      const full = pathModule.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const nested = sizeOf(full);
+        bytes += nested.bytes;
+        files += nested.files;
+        continue;
+      }
+      scanned += 1;
+      files += 1;
+      try {
+        bytes += fsSync.statSync(full).size;
+      } catch {
+        // A file removed mid-walk is not a measurement failure.
+      }
+    }
+    return { bytes, files };
+  };
+  const partiesDir = pathModule.join(root, "parties");
+  let parties: Array<{ name: string; mb: number; files: number }> = [];
+  try {
+    parties = fsSync.readdirSync(partiesDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => {
+        const measured = sizeOf(pathModule.join(partiesDir, entry.name));
+        return { name: entry.name, mb: round(measured.bytes / MB, 1), files: measured.files };
+      })
+      .sort((a, b) => b.mb - a.mb)
+      .slice(0, 10);
+  } catch {
+    parties = [];
+  }
+  const total = sizeOf(root);
+  return { rootMb: round(total.bytes / MB, 1), parties, scannedFiles: scanned, truncated: scanned >= budget };
+}
 
 /** CPU seconds per pid, for the delta the next reading turns into a percentage. */
 function cpuSecondsByPid(metrics: Array<{ pid: number; cpu?: { cumulativeCPUUsage?: number } }>): Map<number, number> {

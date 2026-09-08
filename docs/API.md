@@ -204,10 +204,22 @@ QA 전용이 아니라 일반 라우트다 — `/api/qa/*` 는 배포 앱에서 
 - `processes[].cpuPercent` 는 두 번의 누적 CPU 초 값 차이로 계산한다. Electron 의
   `percentCPUUsage` 는 코어를 태우는 프로세스에도 0%를 돌려줬다(실측).
 
+`?disk=1` 은 파티 저장소를 파티별로 잰다. **창이 그 파티를 열면 그만큼이 램으로 올라온다** —
+"이 파티를 여니까 앱이 무거워진다" 의 정체이고, 지금 들고 있는 양(위 버킷)과는 다른 질문이다.
+디렉터리를 걷기 때문에 옵션이며, 파일 2만 개 예산을 넘기면 `truncated: true` 로 말한다.
+
+```json
+{ "disk": { "rootMb": 128.6, "scannedFiles": 49, "truncated": false,
+            "parties": [{ "name": "party-…", "mb": 122.8, "files": 23 }] } }
+```
+
 `?deep=1` 을 붙이면 창마다 DevTools 프로토콜을 잠깐 붙여 **400ms 동안의** 스크립트/레이아웃/
 스타일 시간과 현재 노드·리스너 수를 함께 답한다(`ScriptDurationPct`, `LayoutCount`,
 `Nodes`, `JSEventListeners` …). 렌더러가 느린 이유가 **우리 JS 인지 DOM 인지**를 가르는 값이라,
 디버거를 붙이는 비용 때문에 기본이 아니라 옵션이다.
+
+`topHolders` 는 두 프로세스의 모든 버킷을 크기순으로 합쳐 놓은 목록이다. "램을 누가 쓰나"
+한 줄로 묻는 질문에는 이것부터 읽으면 된다.
 
 읽는 법:
 - `windows[].buckets[].top` 이 **"어느 멤버/세션이 얼마나"** 에 해당한다.

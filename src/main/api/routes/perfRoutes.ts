@@ -24,6 +24,9 @@ export const perfRoutes: MethodRoute[] = [
       // timing through the DevTools protocol — a brief debugger attach, so it
       // is opt-in rather than part of every report.
       deep: flag(p.deep),
+      // `?disk=1` also walks the party store: what a window will LOAD when it
+      // opens a party, which is what makes a fresh window expensive.
+      disk: flag(p.disk),
     }),
   },
   {

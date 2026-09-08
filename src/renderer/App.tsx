@@ -237,14 +237,19 @@ export function App() {
   // the answer has to be the CURRENT maps. Refs updated after every commit,
   // rather than a closure captured once, are what keep the report from
   // reporting the state this window had at mount.
-  const perfStateRef = useRef({ logsBySession, restoredByMember, subagentsBySession });
+  const perfStateRef = useRef({ logsBySession, restoredByMember, subagentsBySession, state });
   useEffect(() => {
-    perfStateRef.current = { logsBySession, restoredByMember, subagentsBySession };
+    perfStateRef.current = { logsBySession, restoredByMember, subagentsBySession, state };
   });
   useEffect(() => {
     registerRendererState("logsBySession", () => perfStateRef.current.logsBySession, "열린 세션별 대화 블록 — 이 창이 들고 있는 본체");
     registerRendererState("restoredByMember", () => perfStateRef.current.restoredByMember, "디스크에서 복원한 멤버별 기록(탭을 닫아도 남아 있을 수 있음)");
     registerRendererState("subagentsBySession", () => perfStateRef.current.subagentsBySession, "세션별 서브에이전트 활동");
+    // The app state itself — parties, members, sessions, settings. Not a
+    // transcript, but a window keeps one per party it has visited, and leaving
+    // it unmeasured put it in the unexplained residual where nothing could be
+    // concluded about it.
+    registerRendererState("appState", () => perfStateRef.current.state as unknown as Record<string, unknown>, "이 창이 들고 있는 파티/멤버/세션/설정 상태");
     installRendererMemoryProbe();
   }, []);
 
