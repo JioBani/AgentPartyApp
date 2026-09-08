@@ -1555,7 +1555,11 @@ export const auditKoMessages = {
   "STR-3800": "새 탭 그룹으로 열기",
   "STR-3801": "현재 보고 있는 탭 그룹이 기본값입니다. 새 그룹으로 열 수도 있습니다.",
   "STR-3821": "오른쪽으로 분할",
-  "STR-3822": "아래로 분할"
+  "STR-3822": "아래로 분할",
+  "STR-3823": "툴바 접기",
+  "STR-3824": "툴바 펴기",
+  "STR-3825": "입력창 접기",
+  "STR-3826": "입력창 펴기"
 } as const;
 
 export type AuditMessageKey = keyof typeof auditKoMessages;

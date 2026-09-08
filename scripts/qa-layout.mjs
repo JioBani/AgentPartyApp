@@ -223,6 +223,22 @@ o2 = L.moveTabToOuterSlot(o2, "b", "right");
 assert(o2.grid.dir === "row" && o2.grid.children.length === 3 && o2.grid.children.every((c) => c.type === "leaf"),
   "an outer drop along the root's own axis extends that row (no redundant nesting)");
 
+// sanitising the same layout twice must give the SAME thing: every echo guard
+// (the window's, the main process's) compares layouts by value
+const legacyInput = { panels: [
+  { id: "p1", tabs: ["one"], active: "one", weight: 1 },
+  { id: "p2", tabs: ["two"], active: "two", weight: 1 },
+], focusedPanelId: "p1" };
+assert(JSON.stringify(S.sanitizeLayout(legacyInput)) === JSON.stringify(S.sanitizeLayout(legacyInput)),
+  "sanitising a gridless layout is deterministic (the invented row keeps one id)");
+const patchedInput = {
+  panels: [...legacyInput.panels, { id: "p3", tabs: ["three"], active: "three", weight: 1 }],
+  focusedPanelId: "p1",
+  grid: { type: "leaf", panelId: "p1", weight: 1 },
+};
+assert(JSON.stringify(S.sanitizeLayout(patchedInput)) === JSON.stringify(S.sanitizeLayout(patchedInput)),
+  "…and so is taking in panels the stored grid never heard of");
+
 console.log("");
 if (failures.length) {
   console.log(`LAYOUT LOGIC FAILED: ${failures.length} assertion(s)`);

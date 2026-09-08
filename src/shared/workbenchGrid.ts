@@ -72,10 +72,30 @@ export function gridPanelIds(node: GridNode | undefined): string[] {
   return node.type === "leaf" ? [node.panelId] : node.children.flatMap(gridPanelIds);
 }
 
+/**
+ * A stable id for a grid this module INVENTS — the fallback row for a layout
+ * that carries no grid, or the wrapper that takes in panels a stored grid never
+ * heard of.
+ *
+ * Derived from the panels rather than minted, because these are produced while
+ * READING a layout: with a fresh id each time, sanitising the same stored
+ * layout twice gave two different results. Everything that compares layouts by
+ * value then broke — the window's echo guard never recognised its own layout
+ * coming back, so it stopped pushing the user's changes to the main process at
+ * all, and the main process saw every identical POST as a change to broadcast.
+ */
+function stableSplitId(kind: string, panels: WorkbenchPanel[]): string {
+  let hash = 2166136261;
+  for (const character of panels.map((panel) => panel.id).join("|")) {
+    hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+  }
+  return `split-${kind}-${(hash >>> 0).toString(36)}`;
+}
+
 /** The default geometry: every panel side by side, in panel order. */
 export function rowGrid(panels: WorkbenchPanel[]): GridNode | undefined {
   const children: GridNode[] = panels.map((panel) => ({ type: "leaf", panelId: panel.id, weight: panel.weight }));
-  return normalizeNode({ type: "split", id: nextSplitId(), dir: "row", children, weight: 1 });
+  return normalizeNode({ type: "split", id: stableSplitId("row", panels), dir: "row", children, weight: 1 });
 }
 
 /**
@@ -129,7 +149,7 @@ export function reconcileGrid(node: GridNode | undefined, panels: WorkbenchPanel
   const extra: GridNode[] = missing.map((panel) => ({ type: "leaf", panelId: panel.id, weight: panel.weight }));
   const root: GridSplit = kept.type === "split" && kept.dir === "row"
     ? { ...kept, children: [...kept.children, ...extra] }
-    : { type: "split", id: nextSplitId(), dir: "row", children: [kept, ...extra], weight: 1 };
+    : { type: "split", id: stableSplitId("add", panels), dir: "row", children: [kept, ...extra], weight: 1 };
   return normalizeNode(root);
 }
 

@@ -313,6 +313,8 @@ export const STORIES: Story[] = [
         views={VIEW_MAP}
         density="wide"
         width={PANEL_WIDTH}
+        chrome={{ toolbar: false, composer: false }}
+        onToggleChrome={() => {}}
         draggingMember={null}
         dropAt={null}
         onSelect={() => {}}

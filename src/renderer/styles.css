@@ -1195,6 +1195,78 @@ body.wb-resizing-y {
   user-select: none;
 }
 
+/* Fold toggles for the panel's own bars, parked at the end of the tab strip —
+   the one row that never folds away. Quiet until the panel is hovered or the
+   bar is already folded, so four panels in a grid do not read as eight buttons. */
+.wb-tabstrip-chrome {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding-right: var(--space-1);
+}
+
+.wb-chrome-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-badge);
+  background: none;
+  color: var(--text-3);
+  opacity: 0;
+  transition: opacity .12s ease, color .12s ease, background .12s ease;
+}
+
+.wb-panel:hover .wb-chrome-toggle,
+.wb-panel.is-focused .wb-chrome-toggle,
+.wb-chrome-toggle:focus-visible,
+.wb-chrome-toggle.is-folded {
+  opacity: 1;
+}
+
+.wb-chrome-toggle:hover {
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+.wb-chrome-toggle.is-folded {
+  border-color: var(--accent-bd);
+  color: var(--accent);
+}
+
+/* The composer and its fold control. The button rides the composer's own top
+   edge, right-aligned, so it belongs to the bar it hides; the slot is what the
+   panel's flex column sizes, and it shrinks the same way the composer did. */
+.wb-composer-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+.wb-composer-fold {
+  position: absolute;
+  top: -11px;
+  right: 10px;
+  z-index: 3;
+  background: var(--bg-1);
+}
+
+/* What is left when the composer is folded: a thin rail carrying the way back. */
+.wb-composer-stub {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex: none;
+  height: 22px;
+  padding-right: 10px;
+  border-top: var(--border-width) solid var(--border-subtle);
+}
+
 /* ---------- Tab strip ---------- */
 .wb-tabstrip {
   height: 38px;

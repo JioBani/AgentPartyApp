@@ -1,5 +1,5 @@
 import { PointerEvent, useEffect, useMemo, useState } from "react";
-import { AlignLeft, ChevronDown, X } from "lucide-react";
+import { AlignLeft, ChevronDown, PanelTopClose, PanelTopOpen, X } from "lucide-react";
 import type { MemberView, PanelDensity, PanelState } from "./types";
 import { memberColorVars } from "../theme/memberColors";
 import { harnessLabel } from "./harnessLabel";
@@ -21,6 +21,13 @@ interface TabStripProps {
   onClose: (member: string) => void;
   /** Bring a hidden tab to the front and activate it. */
   onPromote: (member: string) => void;
+  /**
+   * Which of the panel's own bars are folded away. The toggles live HERE rather
+   * than in the toolbar because the toolbar is one of the things they hide: a
+   * control that folds itself away leaves no way back.
+   */
+  chrome: { toolbar: boolean; composer: boolean };
+  onToggleChrome: (which: "toolbar" | "composer") => void;
   onTabPointerDown: (member: string, event: PointerEvent) => void;
 }
 
@@ -49,7 +56,7 @@ function TabMarkers({ view }: { view: MemberView }) {
   );
 }
 
-export function TabStrip({ panel, views, density, width, draggingMember, dropAt, onSelect, onClose, onPromote, onTabPointerDown }: TabStripProps) {
+export function TabStrip({ panel, views, density, width, draggingMember, dropAt, onSelect, onClose, onPromote, onTabPointerDown, chrome, onToggleChrome }: TabStripProps) {
   const [overflowOpen, setOverflowOpen] = useState(false);
   const { visible, hidden } = useMemo(
     () => splitTabs(panel.tabs, panel.active, width),
@@ -126,6 +133,21 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
             </div>
           );
         })}
+      </div>
+
+      {/* Only the TOOLBAR folds from here. The toolbar is the bar this button
+          hides, so its control has to live outside it — while the composer
+          carries its own toggle, in the corner of the thing being folded. */}
+      <div className="wb-tabstrip-chrome">
+        <button
+          type="button"
+          className={"wb-chrome-toggle" + (chrome.toolbar ? " is-folded" : "")}
+          title={localized(chrome.toolbar ? "STR-3824" : "STR-3823")}
+          aria-pressed={chrome.toolbar}
+          onClick={() => onToggleChrome("toolbar")}
+        >
+          {chrome.toolbar ? <PanelTopOpen size={13} /> : <PanelTopClose size={13} />}
+        </button>
       </div>
 
       {hidden.length > 0 && (

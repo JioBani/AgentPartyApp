@@ -405,9 +405,15 @@ const restartMenuItem = menuItems.find((b) => /세션 재시작/.test(b.textCont
 const mcpMenuItem = menuItems.find((b) => /MCP/.test(b.textContent || ""));
 const gateMenuItem = menuItems.find((b) => /Message Gate/.test(b.textContent || ""));
 const cliMenuItem = menuItems.find((b) => /CLI로 이어가기/.test(b.textContent || ""));
+const splitRightItem = menuItems.find((b) => /오른쪽으로 분할/.test(b.textContent || ""));
+const splitDownItem = menuItems.find((b) => /아래로 분할/.test(b.textContent || ""));
 assert(restartMenuItem != null, "⋯ menu offers 세션 재시작");
 assert(gateMenuItem != null, "⋯ menu offers Message Gate 설정");
-assert(mcpMenuItem != null && cliMenuItem != null && menuItems.length === 4, "⋯ menu has restart, Message Gate, MCP, and CLI continuation actions");
+assert(mcpMenuItem != null && cliMenuItem != null && menuItems.length === 6, "⋯ menu has restart, Message Gate, MCP, and CLI continuation actions");
+// Splitting is per-PANEL and lives here because this is the panel's only menu;
+// it is also the only way to split a panel that holds a single tab, which has
+// no second tab to drag to an edge.
+assert(splitRightItem != null && splitDownItem != null, "⋯ menu offers 오른쪽으로/아래로 분할");
 // A busy member's composer offers 대기열에 추가 — NOT Stop. While a member works,
 // that slot is the only way to put a message in its queue, so Stop cannot own it.
 const busySend = document.querySelector('[data-panel-id="pa"] .wb-send-labeled.is-queueing, [data-panel-id="pa"] .wb-send.is-queueing');

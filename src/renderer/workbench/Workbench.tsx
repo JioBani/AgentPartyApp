@@ -172,12 +172,32 @@ const MIN_PANEL_PX = 140;
  */
 const OUTER_EDGE_PX = 26;
 const SUBUI_KEY = "agentparty.subagentUi";
+const CHROME_KEY = "agentparty.panelChrome";
 /**
  * Delays between prewarm attempts for an open tab that still has no session.
  * Widens to stay cheap, then holds at the last value so a workspace engine that
  * only recovers minutes later still revives the tab instead of leaving it dead.
  */
 const PREWARM_RETRY_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
+
+/**
+ * Which of a member's panel bars are folded away, by member name.
+ *
+ * Per MEMBER, like the subagent dock beside it, and kept in this window's
+ * storage rather than in the party layout: it is how one person is reading
+ * right now, not part of the arrangement every window on the party shares.
+ */
+type PanelChromeState = Record<string, { toolbar?: boolean; composer?: boolean }>;
+
+
+function loadPanelChrome(): PanelChromeState {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CHROME_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 /** Per-member subagent UI state (which detail is open + dock collapsed). */
 interface SubagentUiState {
@@ -292,6 +312,7 @@ export function Workbench(props: WorkbenchProps) {
   const [compactTarget, setCompactTarget] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [subUi, setSubUi] = useState<SubagentUiState>(loadSubagentUi);
+  const [panelChrome, setPanelChrome] = useState<PanelChromeState>(loadPanelChrome);
 
   const workAreaRef = useRef<HTMLDivElement>(null);
   const dragStart = useRef<{ member: string; x: number; y: number; active: boolean } | null>(null);
@@ -303,6 +324,20 @@ export function Workbench(props: WorkbenchProps) {
       // Best-effort.
     }
   }, [subUi]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CHROME_KEY, JSON.stringify(panelChrome));
+    } catch {
+      // Best-effort.
+    }
+  }, [panelChrome]);
+
+  function toggleChrome(member: string, which: "toolbar" | "composer") {
+    setPanelChrome((current) => ({
+      ...current,
+      [member]: { ...current[member], [which]: !current[member]?.[which] },
+    }));
+  }
 
   // Subagent dock/detail UI handlers, addressed by member name.
   function toggleSubDock(member: string) {
@@ -752,6 +787,11 @@ export function Workbench(props: WorkbenchProps) {
         onOpenUsage={onOpenUsage}
         onOpenGate={setGateTarget}
         onTabPointerDown={onTabPointerDown}
+        chrome={{
+          toolbar: Boolean(panelChrome[panel.active]?.toolbar),
+          composer: Boolean(panelChrome[panel.active]?.composer),
+        }}
+        onToggleChrome={(which) => toggleChrome(panel.active, which)}
         openSubId={subUi.open[panel.active]}
         subDockCollapsed={subUi.collapsed[panel.active]}
         onToggleSubDock={() => toggleSubDock(panel.active)}

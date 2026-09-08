@@ -1,5 +1,5 @@
 import { PointerEvent, useEffect, useMemo, useState } from "react";
-import { ChevronDown, MoreHorizontal, Plug, RefreshCw, SplitSquareHorizontal, SplitSquareVertical, SquareTerminal } from "lucide-react";
+import { ChevronDown, MoreHorizontal, PanelBottomClose, PanelBottomOpen, Plug, RefreshCw, SplitSquareHorizontal, SplitSquareVertical, SquareTerminal } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
@@ -44,6 +44,13 @@ interface PanelProps {
    * would just move the panel it is already alone in.
    */
   onSplit: (side: GridSide) => void;
+  /**
+   * The panel's folded bars. Collapsing the toolbar gives the transcript the
+   * header row back; collapsing the composer turns the panel into a reading
+   * view — useful once a grid puts four of them on one screen.
+   */
+  chrome: { toolbar: boolean; composer: boolean };
+  onToggleChrome: (which: "toolbar" | "composer") => void;
   /** Move a tab to the front of this panel and activate it (overflow list). */
   onPromoteTab: (member: string) => void;
   onOpenRuntime: (member: string) => void;
@@ -63,7 +70,7 @@ interface PanelProps {
 }
 
 export function Panel(props: PanelProps) {
-  const { panel, views, focused, draggingMember, dropTarget, dropSide, dropAt, actions, onFocus, onSelectTab, onCloseTab, onSplit, onPromoteTab, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenCompact, onOpenUsage, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
+  const { panel, views, focused, draggingMember, dropTarget, dropSide, dropAt, actions, onFocus, onSelectTab, onCloseTab, onSplit, chrome, onToggleChrome, onPromoteTab, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenCompact, onOpenUsage, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density, width } = useDensity<HTMLDivElement>();
   const view = views.get(panel.active);
   const cliOwned = view?.status === "external-cli";
@@ -161,9 +168,11 @@ export function Panel(props: PanelProps) {
         onClose={onCloseTab}
         onPromote={onPromoteTab}
         onTabPointerDown={onTabPointerDown}
+        chrome={chrome}
+        onToggleChrome={onToggleChrome}
       />
 
-      {view && (
+      {view && !chrome.toolbar && (
         // The panel header is present at EVERY width (it no longer disappears
         // when narrow, as the design had it). Density only trims what's inside:
         // the status pill, the diagnostic badge, the K/K range and the effort
@@ -328,13 +337,46 @@ export function Panel(props: PanelProps) {
             density={density}
             actions={actions}
           />
-          <Composer
-            key={`composer:${view.member.partyId || "default"}:${view.name}:${view.member.createdAt || ""}`}
-            view={view}
-            density={density}
-            actions={actions}
-            commandUi={commandUi}
-          />
+          {/* The composer folds from its OWN top-right corner, and unfolds from
+              the stub that takes its place — the control stays with the thing it
+              hides instead of being parked in the tab strip.
+
+              Folding unmounts it rather than hiding it: the composer writes its
+              draft to storage on every change and restores it on mount, so
+              nothing typed is lost, and a folded panel stops paying for an
+              editor it is not showing. */}
+          {chrome.composer ? (
+            <div className="wb-composer-stub">
+              <button
+                type="button"
+                className="wb-chrome-toggle is-folded"
+                title={localized("STR-3826")}
+                aria-pressed
+                onClick={() => onToggleChrome("composer")}
+              >
+                <PanelBottomOpen size={13} />
+              </button>
+            </div>
+          ) : (
+            <div className="wb-composer-slot">
+              <button
+                type="button"
+                className="wb-chrome-toggle wb-composer-fold"
+                title={localized("STR-3825")}
+                aria-pressed={false}
+                onClick={() => onToggleChrome("composer")}
+              >
+                <PanelBottomClose size={13} />
+              </button>
+              <Composer
+                key={`composer:${view.member.partyId || "default"}:${view.name}:${view.member.createdAt || ""}`}
+                view={view}
+                density={density}
+                actions={actions}
+                commandUi={commandUi}
+              />
+            </div>
+          )}
         </>
       ) : (
         <div className="wb-panel-empty"><LocalizedText id="STR-1976" /></div>
