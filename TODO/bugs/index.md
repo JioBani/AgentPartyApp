@@ -7,3 +7,4 @@
 - [BUG-005 · 사용량과 비용이 모든 실제 턴을 빠짐없이 집계하는지 확인하기](./BUG-005-usage-ledger-missing-turn.md)
 - [BUG-006 · 앱이나 화면이 실패해도 사라지지 않고 복구 방법을 알려주기](./BUG-006-crash-error-recovery.md)
 - [BUG-007 · 긴 이름과 좁은 창에서도 조작할 내용을 잘리지 않게 보기](./BUG-007-horizontal-overflow.md)
+- [BUG-008 · 탭을 닫아도 탭 그룹이 있던 자리에 그대로 있게 하기](./BUG-008-panel-order-jumps-on-tab-close.md)
