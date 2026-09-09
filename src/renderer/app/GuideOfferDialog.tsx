@@ -1,5 +1,7 @@
 
-import { LocalizedText } from "../i18n/I18nProvider";/**
+import { LocalizedText } from "../i18n/I18nProvider";
+import { useModalEscape } from "../workbench/useModalEscape";
+/**
  * First-install popup (§8). "Shown" is recorded by the caller the moment this
  * mounts — we do not track whether they finished the guide.
  */
@@ -10,6 +12,8 @@ export function GuideOfferDialog({
   onAccept: () => void;
   onDismiss: () => void;
 }) {
+  // Escape declines: the offer is optional, so dismissing it is the safe default.
+  useModalEscape(onDismiss);
   return (
     <div className="wb-modal-scrim" data-guide-offer="1">
       <div className="wb-modal wb-modal-sm" role="dialog" aria-modal="true" aria-labelledby="guide-offer-title">

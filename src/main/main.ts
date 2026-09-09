@@ -252,6 +252,10 @@ async function createWindow(workspacePath: string): Promise<WindowInfo> {
   window.on("restore", sendRenderState);
   window.on("hide", sendRenderState);
   window.on("show", sendRenderState);
+  // A pause that never lifts looks exactly like the app hanging, so re-check on
+  // focus too: it costs one no-op send, and it means any restore path that fails
+  // to emit restore/show cannot strand every animation in the window as paused.
+  window.on("focus", sendRenderState);
 
   const entry = registry().register(window, workspacePath);
   window.on("closed", () => {

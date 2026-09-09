@@ -1957,6 +1957,21 @@ body.wb-resizing-y {
   animation-play-state: paused !important;
 }
 
+/* ...with one exception, because the turn indicator is not decoration. The
+   bouncing dots next to "작업 중" ARE the statement that a turn is alive;
+   frozen, they say the opposite of what they exist to say, and the app reads as
+   hung. Any scale but 1.0 hit this, so anyone who ever nudged the transcript
+   text size never saw the motion at all.
+
+   Six small shapes, one per visible panel - nothing like the per-card spinners
+   and pulses the pause above was written to stop, which stay paused. Anything
+   added later still gets paused by default; earning an exemption means being
+   the thing that tells the user work is in flight. */
+:root[data-transcript-font-scaled] .wb-transcript-scale .wb-typing-dots i,
+:root[data-transcript-font-scaled] .wb-transcript-scale .wb-working-dots i {
+  animation-play-state: running !important;
+}
+
 /* Keep each message/card at its natural height: when the pane shrinks (e.g. the
    composer grows), the transcript SCROLLS instead of compressing the cards. */
 .wb-transcript-scale > * {

@@ -6,6 +6,7 @@ import { GateReviewerControl } from "./GateReviewerControl";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { effectiveGate, type GateMode, type GateReviewer, type MemberGateOverride, type PartyGate } from "../../shared/messageGate";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { useModalEscape } from "./useModalEscape";
 
 interface MessageGateModalProps {
   view: MemberView;
@@ -31,6 +32,7 @@ const MODE_OPTIONS: Array<{ id: GateMode; label: string }> = [
  * (model + effort only, no harness).
  */
 export function MessageGateModal({ view, routes, partyGate, gateDefaults, onApply, onClose }: MessageGateModalProps) {
+  useModalEscape(onClose);
   const partyRule = partyGate?.rule ?? "";
   const partyOn = Boolean(partyGate?.enabled);
   const gate = view.member.gate;

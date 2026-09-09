@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { useModalEscape } from "./useModalEscape";
 import { useSubtreeVisible } from "./SubtreeVisibility";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronRight, Clock, Lightbulb, Search, SlidersHorizontal, Star, X } from "lucide-react";
@@ -275,28 +276,19 @@ export function ModelCatalogModal({
   // keystroke costs the user far more than it saves. Handled here rather than on
   // the input alone so it works wherever focus sits in the modal; with the query
   // already empty it falls through and closes, as before.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
-        return;
-      }
-      // Innermost layer first: an open harness menu is what Escape means while
-      // it is up, exactly as a query is while one is typed.
-      if (moreOpen) {
-        event.stopPropagation();
-        setMoreOpen(false);
-        return;
-      }
-      if (query) {
-        event.stopPropagation();
-        clearQuery();
-        return;
-      }
-      onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, query, moreOpen]);
+  useModalEscape(() => {
+    // Innermost layer first: an open harness menu is what Escape means while
+    // it is up, exactly as a query is while one is typed.
+    if (moreOpen) {
+      setMoreOpen(false);
+      return;
+    }
+    if (query) {
+      clearQuery();
+      return;
+    }
+    onClose();
+  });
 
   /** The harness menu is a popover, so anything outside it dismisses it. */
   useEffect(() => {

@@ -17,6 +17,7 @@ import { ENV_LABEL, EnvIcon } from "./CwdPicker";
 import { memberLocationOf, splitPathTail } from "./memberGroups";
 import { buildSubDetail, buildSubDock } from "./subagentModel";
 import { workbenchPopupOpen } from "./workbenchPopups";
+import { useModalEscape } from "./useModalEscape";
 import { CliContinuationModal } from "./CliContinuationModal";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 import type { GridSide } from "../../shared/workbenchGrid";
@@ -76,6 +77,9 @@ export function Panel(props: PanelProps) {
   const cliOwned = view?.status === "external-cli";
   // The header's ⋯ overflow menu (session restart / MCP). Local to this panel.
   const [menuOpen, setMenuOpen] = useState(false);
+  // `.wb-header-menu` is in POPUP_SELECTORS, so while it is open the turn-interrupt
+  // below stands down. Something has to take the key, or Escape does nothing at all.
+  useModalEscape(() => setMenuOpen(false), menuOpen);
   const [cliContinuationOpen, setCliContinuationOpen] = useState(false);
 
   // Subagent dock + drill-in detail, derived from the active member's subagents.

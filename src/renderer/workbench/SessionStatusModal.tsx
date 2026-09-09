@@ -3,6 +3,7 @@ import { harnessForRuntime, harnessLabel } from "../../shared/types";
 import { statusLabel } from "./memberStatus";
 import type { MemberView } from "./types";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { useModalEscape } from "./useModalEscape";
 
 function tokens(value: number | undefined): string {
   if (value == null) return "—";
@@ -11,6 +12,7 @@ function tokens(value: number | undefined): string {
 
 /** Visible replacement for /status; all values come from the live MemberView/API snapshot. */
 export function SessionStatusModal({ view, onClose }: { view: MemberView; onClose: () => void }) {
+  useModalEscape(onClose);
   const harness = harnessForRuntime(view.member.runtime);
   const snapshot = view.session?.snapshot;
   const rows = [

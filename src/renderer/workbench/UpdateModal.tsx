@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useModalEscape } from "./useModalEscape";
 import { AlertTriangle, ArrowDownToLine, ExternalLink, PackageCheck, RefreshCw, RotateCw, X } from "lucide-react";
 import { Markdown } from "./Markdown";
 import { formatBytes, releasesUrl, type UpdateStatus } from "../../shared/appUpdate";
@@ -25,11 +26,7 @@ export function UpdateModal({ status, onCheck, onDownload, onInstall, onClose }:
   const [error, setError] = useState("");
   const [confirmInstall, setConfirmInstall] = useState(false);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useModalEscape(onClose);
 
   // A fresh status means whatever the last action complained about is stale.
   useEffect(() => { setError(""); }, [status.state]);

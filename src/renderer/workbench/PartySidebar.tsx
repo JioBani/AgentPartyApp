@@ -11,6 +11,7 @@ import type { RouteLike } from "./routes";
 import { MemberWizard } from "./MemberWizard";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { useModalEscape } from "./useModalEscape";
 import { PartyGroupList } from "./PartyGroupList";
 import { MemberCwdTree } from "./MemberCwdTree";
 import { MoveGroupModal, NewGroupModal, RenameGroupModal } from "./PartyGroupModals";
@@ -803,7 +804,8 @@ export function PartySidebar(props: PartySidebarProps) {
  * belongs to `main`, and the hint says so, because "새 파티 · 경로" reads like
  * the party has a workspace and that idea is exactly what this change removes.
  *
- * Closes ONLY via Cancel — never an outside click.
+ * Closes via Cancel or Escape — never an outside click, so a half-filled form
+ * cannot be lost to a stray click on the sidebar behind it.
  */
 export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, appWorkspaceRoot, now, onBrowseCwd, wsl, onCreateGroup, onCancel, onCreate }: {
   initialName: string;
@@ -819,6 +821,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
   onCancel: () => void;
   onCreate: (input: CreatePartyInput) => Promise<boolean>;
 }) {
+  useModalEscape(onCancel);
   const [name, setName] = useState(initialName);
   const [groupId, setGroupId] = useState(initialGroupId || groups[0]?.id || "");
   const [location, setLocation] = useState<MemberExecutionLocation | undefined>(() => suggestedCwd(cwdPrefs, "windows", appWorkspaceRoot));

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useModalEscape } from "./useModalEscape";
 import { AlertTriangle, ChevronRight, ExternalLink, KeyRound, Lock, Plug, Power, RotateCcw, Search, Wrench, X } from "lucide-react";
 import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
@@ -55,13 +56,7 @@ export function McpModal({ view, actions, onClose }: McpModalProps) {
 
   useEffect(() => { void load(); }, [load]);
 
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useModalEscape(onClose);
 
   const servers = useMemo(() => snapshot?.servers || [], [snapshot]);
   const counts = useMemo(() => ({

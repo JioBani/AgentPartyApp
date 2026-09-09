@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useModalEscape } from "./useModalEscape";
 import { ChevronLeft, ChevronRight, RefreshCw, UserPlus, X, Zap } from "lucide-react";
 import type { RouteLike } from "./routes";
 import { routeKey } from "./routes";
@@ -204,13 +205,7 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
     setBudget(hDefaults?.reasoningBudget ? hDefaults.reasoningBudget : budgetDefault);
   }, [selectedKey]);
 
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onCancel();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  useModalEscape(onCancel);
 
   const thinkingOn = Boolean(thinkingMode) && thinkingMode !== "disabled";
   const showBudget = Boolean(thinkingCap?.budget) && thinkingOn;
