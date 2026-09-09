@@ -199,6 +199,10 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
   const partyMembers = usePartyMembers();
   const modelRoutes = useModelRoutes();
   const [completionDismissed, setCompletionDismissed] = useState(false);
+  /** Typing armed the list; caret movement disarms it. See `completionOpen`. */
+  const [armed, setArmed] = useState(false);
+  /** Whether the popover consumed the last keydown, read by the keyup below. */
+  const consumedKey = useRef(false);
   const [activeIndex, setActiveIndex] = useState(0);
   /**
    * The model chain in progress.
@@ -279,7 +283,12 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
     [resolved],
   );
 
-  const completionOpen = (Boolean(chain) || Boolean(trigger)) && !completionDismissed && rows.length > 0;
+  // A completion belongs to TYPING, not to the caret being somewhere. Moving
+  // into a word used to arm the list — so walking a sentence with → opened a
+  // menu at every word and, because → also committed, rewrote them one by one.
+  // Editors do not work that way: VS Code opens IntelliSense as you type (or on
+  // an explicit Ctrl+Space) and closes it when you move the caret.
+  const completionOpen = armed && (Boolean(chain) || Boolean(trigger)) && !completionDismissed && rows.length > 0;
   /**
    * The heading names what is actually on screen.
    *
@@ -307,6 +316,26 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
       return null;
     }
     return { node: range.startContainer as Text, offset: range.startOffset };
+  }
+
+  /** Keys that exist to move the caret. Pressing one means "go there", not "complete". */
+  const CARET_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+
+  /** The caret moved on purpose: follow it, but put the completion list away. */
+  function onCaretMoved() {
+    syncCaret();
+    setArmed(false);
+  }
+
+  function onKeyUp(event: KeyboardEvent<HTMLDivElement>) {
+    syncCaret();
+    // Only a caret key disarms, and only when the popover did not already act
+    // on it: ↑↓ navigate the list without moving the caret, and → advances a
+    // chain. Disarming on every keyup would close the list on the very
+    // keystroke that opened it, since typing fires keyup too.
+    if (CARET_KEYS.has(event.key) && !consumedKey.current) {
+      setArmed(false);
+    }
   }
 
   /** Re-reads the text before the caret, which drives triggerless completion. */
@@ -398,6 +427,7 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
       setAttachError("");
     }
     syncCaret();
+    setArmed(true);
   }
 
   /**
@@ -545,12 +575,30 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
         event.preventDefault();
         applyCompletionChoice(current(), true);
         return true;
-      case "ArrowRight":
-        // Commit, but stop here. The one key this feature adds to what the user
-        // already knows.
+      case "ArrowRight": {
+        // → is the caret key first and a completion key second.
+        //
+        // Only the model chain ever advertised it: that popover's hint reads
+        // "↑↓ 이동 · Enter 선택 · → 끝으로 이동", while the bare member list — which
+        // any ordinary word opens — says only "↑↓ · Tab". Claiming → there let a
+        // caret moving through a word commit a member instead, and since the
+        // trigger ends AT the caret, the commit replaced the half of the word
+        // before it and left the rest dangling.
+        if (!chain) {
+          return false;
+        }
+        // Even in a chain, only with nothing to the right of the caret. This is
+        // fish's rule for its inline suggestion — → accepts only at end of line,
+        // because anywhere else → plainly means move. (VS Code's list never
+        // accepts on an arrow at all; Tab and Enter above stay the real gesture.)
+        const point = caretPoint();
+        if (!point || point.offset < (point.node.nodeValue || "").length) {
+          return false;
+        }
         event.preventDefault();
         applyCompletionChoice(current(), false);
         return true;
+      }
       case "Escape":
         event.preventDefault();
         setChain(null);
@@ -866,8 +914,10 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
     // …and so does the completion popover. A triggerless first stage claims
     // Tab, while an explicit/continued chain can also claim Enter.
     if (handleCompletionKey(event)) {
+      consumedKey.current = true;
       return;
     }
+    consumedKey.current = false;
     // ArrowUp in an EMPTY composer takes the last queued message back for
     // editing — the fastest correction path when you have just realised the
     // message waiting at the bottom of the queue is wrong. Only when empty, so
@@ -930,9 +980,9 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
         data-draft={draft}
         onInput={syncDraft}
         onKeyDown={(event) => onKeyDown(event, multiline)}
-        onKeyUp={syncCaret}
-        onClick={syncCaret}
-        onFocus={syncCaret}
+        onKeyUp={onKeyUp}
+        onClick={onCaretMoved}
+        onFocus={onCaretMoved}
         onPaste={onPaste}
       />
     );
