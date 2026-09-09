@@ -97,12 +97,16 @@ export function closeTab(state: LayoutState, panelId: string, memberName: string
     const active = panel.active === memberName ? tabs[Math.max(0, tabs.indexOf(memberName) - 0)] || tabs[tabs.length - 1] : panel.active;
     panels.push({ ...panel, tabs, active });
   }
-  // The emptied panel's slot is removed explicitly rather than left to the
-  // reconcile: dropping a leaf collapses its split and hands the freed space
-  // back to the panels that shared it, which is what closing a split view in an
-  // editor does. A bare reconcile would do the same, but only because it must
-  // — saying it here keeps the intent in the operation.
-  return composeLayout(panels, panelId, removePanelFromGrid(state.grid, panelId));
+  // Only a panel that actually went away loses its slot. Removing it whenever a
+  // tab closes tore the grid apart on a panel that was still there: its leaf
+  // vanished, the enclosing split collapsed for want of a second child, and the
+  // reconcile then re-appended the surviving panel to the outermost row — so
+  // closing one tab of two flattened a 2x2 into a single row and reordered it.
+  //
+  // Dropping the slot of a panel that IS gone stays the point: the freed space
+  // goes back to the panels that shared its split, which is what closing a split
+  // view in an editor does.
+  return composeLayout(panels, panelId, gridWithout(state.grid, state.panels, panels));
 }
 
 /**
