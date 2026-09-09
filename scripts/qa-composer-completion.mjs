@@ -231,5 +231,50 @@ press("Enter", { ctrlKey: true });
 await tick();
 assert(calls.some((call) => call[0] === "send" && call[2] === "!cl"), "bang suggestions never steal Ctrl+Enter send");
 
+// --- → is a caret key, not a completion key ------------------------------
+//
+// Reported: typing a word, arrowing back into it, then pressing → committed a
+// member instead of moving. Walking a whole sentence with → rewrote every word,
+// because the trigger ends AT the caret: committing mid-word replaced the half
+// before it and left the rest dangling.
+//
+// Two things were wrong and both are asserted here: the list was armed by caret
+// MOVEMENT (not just typing), and → was claimed unconditionally.
+function moveCaretTo(offset, key = "ArrowLeft") {
+  const text = editor.firstChild;
+  const range = document.createRange();
+  range.setStart(text, offset);
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  editor.dispatchEvent(new window.KeyboardEvent("keyup", { key, bubbles: true }));
+}
+
+typeWord("impl");
+await tick();
+assert(visibleRows().length > 0, "typing a word opens the member list (the precondition)");
+
+moveCaretTo(1);
+await tick();
+assert(visibleRows().length === 0, "REGRESSION: moving the caret into the word closes the list");
+
+// press() returns false when the handler called preventDefault, so this asserts
+// both halves at once: the text is untouched AND the key still reaches the
+// editor, so the caret actually moves instead of being swallowed.
+const notSwallowed = press("ArrowRight");
+await tick();
+assert(editor.dataset.draft === "impl", "REGRESSION: → with the caret mid-word leaves the text alone");
+assert(notSwallowed, "REGRESSION: → is not preventDefault-ed, so the caret still moves");
+
+// Typing again re-arms it — closing on caret movement must not disable the
+// feature for the rest of the sentence.
+typeWord("impl");
+await tick();
+assert(visibleRows().length > 0, "typing after a caret move opens the list again");
+press("Tab");
+await tick();
+assert(editor.dataset.draft === "@impl ", "Tab still commits, which is the gesture that always did");
+
 console.log(failures.length ? `\nCOMPOSER COMPLETION FAILED (${failures.length})` : "\nCOMPOSER COMPLETION PASSED");
 process.exit(failures.length ? 1 : 0);

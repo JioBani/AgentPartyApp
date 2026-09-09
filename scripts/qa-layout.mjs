@@ -172,6 +172,35 @@ const dropped = c.panels.find((panel) => panel.tabs.includes("drop"));
 c = L.closeTab(c, dropped.id, "drop");
 assert(c.grid.type === "leaf" && c.grid.panelId === keepPanel, "closing the last tab of a slot collapses the split back to one panel");
 
+// ...but a panel that SURVIVES the close must keep its slot. The slot used to be
+// removed on every close, so a panel that was still there lost its leaf, the
+// split collapsed for want of a second child, and the reconcile re-appended the
+// panel to the outermost row: closing one tab of two flattened a 2x2 into a row
+// and reordered it. Only the last-tab case above was ever covered, which is how
+// it survived. Both halves are asserted here so neither can regress into the other.
+let nest = L.openMember(L.emptyLayout(), "n-top");
+nest = L.openMember(nest, "n-under");
+const nestTop = nest.panels[0].id;
+nest = L.splitPanel(nest, nestTop, "bottom");
+const nestUnder = nest.panels.find((panel) => panel.id !== nestTop).id;
+nest = L.splitPanel(nest, nestUnder, "right");
+nest = L.splitPanel(nest, nestTop, "right");
+assert(depthDirs(nest.grid).join(",") === "column,row,row", "a 2x2 is the nested shape under test");
+
+const nestShape = depthDirs(nest.grid).join(",");
+const nestOrder = leafIds(nest.grid).join(",");
+nest = L.openMemberInTabGroup(nest, "n-extra", nestTop);
+const underTest = nest.panels.find((panel) => panel.id === nestTop);
+assert(underTest.tabs.includes("n-extra") && underTest.tabs.length > 1, "the panel under test holds the extra tab beside others, so closing it cannot empty the panel");
+assert(nest.panels.length === 4, "opening a second tab adds no panel");
+
+const nestClosed = L.closeTab(nest, nestTop, "n-extra");
+assert(nestClosed.panels.length === 4, "closing a non-last tab removes no panel");
+assert(depthDirs(nestClosed.grid).join(",") === nestShape, "REGRESSION: a surviving panel keeps the grid nested");
+assert(leafIds(nestClosed.grid).join(",") === nestOrder, "REGRESSION: closing a non-last tab does not reorder the slots");
+const survivor = nestClosed.panels.find((panel) => panel.id === nestTop);
+assert(survivor && !survivor.tabs.includes("n-extra"), "the tab really was closed, so the assertions above are not vacuous");
+
 // resizing a column divider moves only that pair, on the vertical axis
 let rz = L.openMember(L.emptyLayout(), "u");
 rz = L.openMember(rz, "d");

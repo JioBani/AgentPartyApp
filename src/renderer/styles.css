@@ -4910,6 +4910,19 @@ body.wb-resizing-y {
 .wb-dd-menu.align-left { left: 0; }
 .wb-dd-menu.align-right { right: 0; }
 
+/* Portalled to <body> and placed in viewport coordinates by Dropdown.tsx, which
+ * owns top/bottom/left and the max-height for the room actually available.
+ * Everything it does not set is inherited from .wb-dd-menu above.
+ *
+ * The z-index is the point: in the panel the menu sat inside its container's
+ * stacking context, and out at <body> it has to clear every overlay it can be
+ * opened from on its own — the modal scrim (900), the command palette (1100),
+ * the tool modal and toasts (1200), the mention popup (1400). A menu the user
+ * just opened is always the frontmost thing on screen. */
+.wb-dd-menu.is-floating {
+  z-index: 1500;
+}
+
 .wb-dd-item {
   display: flex;
   align-items: center;
