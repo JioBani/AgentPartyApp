@@ -63,6 +63,7 @@
     "test:e2e:font-zoom": "npm run build && node scripts/e2e-font-zoom.mjs",
     "test:e2e:modal-escape": "npm run build && node scripts/e2e-modal-escape-and-busy-motion.mjs",
     "test:e2e:grid-tab-close": "npm run build && node scripts/e2e-grid-tab-close.mjs",
+    "test:e2e:dropdown-clipping": "npm run build && node scripts/e2e-dropdown-clipping.mjs",
     "test:e2e:font-family": "npm run build && node scripts/e2e-font-family.mjs",
     "test:e2e:locale": "npm run build && node scripts/e2e-locale.mjs",
     "test:e2e:theme": "npm run build && node scripts/e2e-theme.mjs",
