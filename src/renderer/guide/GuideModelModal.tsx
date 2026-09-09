@@ -5,6 +5,7 @@ import type { RouteLike } from "../workbench/routes";
 import type { GuideChatSettings } from "../../shared/guideChat";
 import type { EffortSetting, HarnessId } from "../../shared/types";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { useModalEscape } from "../workbench/useModalEscape";
 
 /**
  * Model settings for the guide — the WORKBENCH catalog with the harness row
@@ -50,18 +51,7 @@ export function GuideModelModal({
   }
 
   if (error) {
-    // A catalog we could not load must say so — never a silently empty list.
-    return (
-      <div className="wb-modal-scrim is-dim" onClick={onClose}>
-        <div className="wb-modal wb-modal-sm" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-          <div className="wb-modal-head"><div className="wb-modal-title"><strong><LocalizedText id="STR-1295" /></strong></div></div>
-          <div className="wb-modal-body-col"><div className="wb-inline-note is-warning">{error}</div></div>
-          <div className="wb-modal-foot wb-modal-foot-end">
-            <div className="wb-modal-actions"><button type="button" className="ghost-btn" onClick={onClose}><LocalizedText id="STR-1296" /></button></div>
-          </div>
-        </div>
-      </div>
-    );
+    return <CatalogErrorModal message={error} onClose={onClose} />;
   }
 
   return (
@@ -80,5 +70,21 @@ export function GuideModelModal({
       onApply={(next) => void apply(next)}
       onClose={onClose}
     />
+  );
+}
+
+/** A catalog we could not load must say so — never a silently empty list. */
+function CatalogErrorModal({ message, onClose }: { message: string; onClose: () => void }) {
+  useModalEscape(onClose);
+  return (
+    <div className="wb-modal-scrim is-dim" onClick={onClose}>
+      <div className="wb-modal wb-modal-sm" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="wb-modal-head"><div className="wb-modal-title"><strong><LocalizedText id="STR-1295" /></strong></div></div>
+        <div className="wb-modal-body-col"><div className="wb-inline-note is-warning">{message}</div></div>
+        <div className="wb-modal-foot wb-modal-foot-end">
+          <div className="wb-modal-actions"><button type="button" className="ghost-btn" onClick={onClose}><LocalizedText id="STR-1296" /></button></div>
+        </div>
+      </div>
+    </div>
   );
 }

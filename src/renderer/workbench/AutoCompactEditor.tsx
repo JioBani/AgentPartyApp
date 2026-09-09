@@ -16,6 +16,7 @@ import type { MemberView } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { thresholdWindowFor } from "./memberStatus";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { useModalEscape } from "./useModalEscape";
 
 // The Auto-compact dialog's threshold slider band — the SAME settable range as the
 // Runtime modal's editor (10–95, step 1), so the two entry points never disagree.
@@ -140,6 +141,7 @@ interface ModalProps {
  * to the member — "완료" just closes.
  */
 export function CompactModal({ view, actions, onClose }: ModalProps) {
+  useModalEscape(onClose);
   const [local, setLocal] = useState<AutoCompactSetting>(view.autoCompact);
   const persistTimer = useRef<ReturnType<typeof setTimeout>>();
   const contextWindow = thresholdWindowFor(view);

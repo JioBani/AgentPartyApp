@@ -65,6 +65,8 @@ export function Dropdown({ value, options, onChange, title, compact, drop = "dow
     }
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
+      // Consume it: a popover inside a dialog must not close the dialog too.
+      event.preventDefault();
         setOpen(false);
       }
     }

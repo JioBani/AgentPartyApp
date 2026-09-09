@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useModalEscape } from "./useModalEscape";
 import { Check, Clipboard, SquareTerminal, X } from "lucide-react";
 import type { CliContinuationDetails, CliContinuationResult } from "../../shared/cliContinuation";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
@@ -24,13 +25,8 @@ export function CliContinuationModal({ member, color, onClose }: CliContinuation
     return () => { cancelled = true; };
   }, [member]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !launching) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [launching, onClose]);
+  // Not while a launch is in flight — the dialog is reporting on work it started.
+  useModalEscape(onClose, !launching);
 
   const details = result?.supported ? result : undefined;
   const needsCwdRecovery = Boolean(details?.locationProblem);

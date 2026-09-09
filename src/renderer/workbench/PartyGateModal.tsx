@@ -7,6 +7,7 @@ import { GateReviewerControl } from "./GateReviewerControl";
 import type { RouteLike } from "./routes";
 import { effectiveGate, type GateMode, type GateReviewer, type PartyGate } from "../../shared/messageGate";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { useModalEscape } from "./useModalEscape";
 
 interface PartyGateModalProps {
   party: PartyDefinition;
@@ -34,6 +35,7 @@ const MODE_OPTIONS: Array<{ id: GateMode; label: string }> = [
  * closes. Closes ONLY via 완료/✕ — never an outside click.
  */
 export function PartyGateModal({ party, members, routes, gateDefaults, onSetPartyGate, onSetMemberGate, onClearMemberRule, onOpenMemberGate, onClose }: PartyGateModalProps) {
+  useModalEscape(onClose);
   const partyGate: PartyGate = party.gate ?? { enabled: false, rule: "" };
   const [enabled, setEnabled] = useState(partyGate.enabled);
   const [rule, setRule] = useState(partyGate.rule);

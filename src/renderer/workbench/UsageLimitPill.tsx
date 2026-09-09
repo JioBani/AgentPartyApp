@@ -49,10 +49,11 @@ export function UsageLimitPill({ usage, membersByProvider, onOpenSettings, onRef
         setOpen(false);
       }
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false);
-      }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      // Consume it: a popover inside a dialog must not close the dialog too.
+      event.preventDefault();
+      setOpen(false);
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);

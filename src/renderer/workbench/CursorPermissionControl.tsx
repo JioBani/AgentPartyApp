@@ -47,7 +47,10 @@ export function CursorPermissionControl({
       if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key !== "Escape") return;
+      // Consume it: a popover inside a dialog must not close the dialog too.
+      event.preventDefault();
+      setOpen(false);
     };
     document.addEventListener("mousedown", onPointer);
     document.addEventListener("keydown", onKey);

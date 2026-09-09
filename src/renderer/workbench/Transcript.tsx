@@ -1,4 +1,5 @@
 import { Fragment, memo, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useModalEscape } from "./useModalEscape";
 import { createPortal } from "react-dom";
 import { AlertTriangle, AlignLeft, ArrowDownLeft, Ban, ArrowRight, ArrowUpRight, Brain, Check, ChevronRight, Circle, CircleDot, Copy, CornerUpLeft, FastForward, FileDiff, ImageOff, Info, ListChecks, Loader, LoaderCircle, Maximize2, Minimize2, Search, ShieldCheck, Shuffle, Terminal, UserMinus, UserPlus, X } from "lucide-react";
 import type { MemberView, PanelDensity, TranscriptBlock } from "./types";
@@ -1351,8 +1352,10 @@ function DetailModal({ title, onClose, actions, wide, imageViewer, dismissOnBack
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  // Escape goes through the shared owner (R-13: popup before the panel's R-12
+  // interrupt); this effect keeps the focus trap and focus restore, which are
+  // this overlay's alone.
+  useModalEscape(onClose);
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus();
@@ -1374,14 +1377,6 @@ function DetailModal({ title, onClose, actions, wide, imageViewer, dismissOnBack
         }
         return;
       }
-      if (event.key !== "Escape") {
-        return;
-      }
-      // Claim Escape so a focused panel's R-12 interrupt does not also fire
-      // while this overlay is open (R-13: popup first).
-      event.preventDefault();
-      event.stopPropagation();
-      onCloseRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => {

@@ -5,10 +5,12 @@ import { HarnessPermissionControl } from "./HarnessPermissionControl";
 import type { WorkbenchActions } from "./actions";
 import type { MemberView } from "./types";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { useModalEscape } from "./useModalEscape";
 
 /** AgentParty-owned replacement for terminal-only /permissions pickers. */
 export function PermissionModal({ view, actions, onClose }: { view: MemberView; actions: WorkbenchActions; onClose: () => void }) {
   const harness = harnessForRuntime(view.member.runtime);
+  useModalEscape(onClose);
   return (
     <div className="wb-modal-scrim">
       <div className="wb-modal wb-modal-sm wb-command-modal" role="dialog" aria-modal="true" aria-label={localized("STR-2085")}>

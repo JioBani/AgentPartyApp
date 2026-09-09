@@ -2,13 +2,15 @@ import { useState } from "react";
 import { Folder, FolderInput, FolderPlus, PencilLine, X } from "lucide-react";
 import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { useModalEscape } from "./useModalEscape";
 
 /**
  * The two dialogs that manage party groups: create one, and move a party.
  *
- * Both close through Cancel only — never an outside click — like every other
- * modal in this app, so a half-typed group name cannot be lost by clicking the
- * sidebar behind it.
+ * All three close through Cancel or Escape — never an outside click — like
+ * every other modal in this app, so a half-typed group name cannot be lost by
+ * clicking the sidebar behind it, while the key that means "back out of this"
+ * everywhere else still works here.
  *
  * Markup mirrors the claude.ai/design mockup (`workbench.html`
  * `#overlay-new-group`, `#overlay-move-group`): the move list deliberately
@@ -21,6 +23,7 @@ export function NewGroupModal({ onCancel, onCreate }: {
   onCancel: () => void;
   onCreate: (name: string) => void;
 }) {
+  useModalEscape(onCancel);
   const [name, setName] = useState("");
   const trimmed = name.trim();
 
@@ -76,6 +79,7 @@ export function RenameGroupModal({ group, onCancel, onRename }: {
   onCancel: () => void;
   onRename: (name: string) => void;
 }) {
+  useModalEscape(onCancel);
   const [name, setName] = useState(group.name);
   const trimmed = name.trim();
 
@@ -126,6 +130,7 @@ export function MoveGroupModal({ party, groups, partyCountByGroup, onCancel, onM
   onCancel: () => void;
   onMove: (groupId: string) => void;
 }) {
+  useModalEscape(onCancel);
   const [target, setTarget] = useState(party.groupId);
 
   return (
