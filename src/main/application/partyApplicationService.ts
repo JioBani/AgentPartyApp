@@ -2365,9 +2365,11 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
-    if (member.name === "main") {
-      throw new Error("Main member cannot be removed. Remove or recreate the party instead.");
-    }
+    // `main` is removable like any other member. It is only the member a new
+    // party is BORN with, not a role anything depends on: no routing, session,
+    // storage or gate path looks it up by name, and a party with none is a party
+    // whose members the user chose. Blocking it forced "delete the whole party"
+    // on someone who just wanted a different first member.
     if (member.sessionId) {
       this.stopRecording(member.sessionId);
 

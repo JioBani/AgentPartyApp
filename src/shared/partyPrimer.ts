@@ -75,7 +75,7 @@ const TOOLS_BODY = [
   `- \`${tool("member-status")}\` — check whether a member's turn is running (busy) or stopped; omit \`name\` for all members.`,
   `- \`${tool("interrupt")}\` — stop a member's in-flight turn (\`target\`: member name, or 'all' for everyone except you). You cannot interrupt yourself.`,
   `- \`${tool("member-create")}\` — create and start one member with the top-level fields, or several with \`members: [...]\`. Pass \`tabGroup\` as a \`list().tabGroups[].id\` (or a unique member name in that group); omit it for a new group. Call \`${tool("list-models")}\` for harness/model settings and \`${tool("list-locations")}\` for recent cwd suggestions. Pass \`location: {host, cwd, distro?}\` to choose Windows/WSL explicitly; omit it to inherit your location.`,
-  `- \`${tool("member-remove")}\` — remove one member with \`name\`, or several with a name array (cannot remove 'main').`,
+  `- \`${tool("member-remove")}\` — remove one member with \`name\`, or several with a name array.`,
   `- \`${tool("member-permission")}\` — change another member's permission; use \`permissionMode\` (Claude Code), \`codexPolicy\` (Codex), or \`cursorPolicy\` (Cursor).`,
   `- \`${tool("member-runtime")}\` — change another member's \`model\`, \`effort\`, and/or \`fast\` mode. Call \`${tool("list-models")}\` for valid values; the member's harness does not change.`,
   `- \`${tool("gate-set")}\` — set another member's Message Gate (the reviewer of that member's OUTGOING messages): \`mode\` (inherit|on|off), \`rule\` (text to enforce, null to inherit the party rule), \`reviewer\` ({model, effort}, null for the default).`,

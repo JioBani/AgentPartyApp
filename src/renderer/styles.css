@@ -9800,6 +9800,9 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-party-group.is-open .wb-group-row { border-bottom: 1px solid var(--border-subtle); }
 .wb-group-row:hover { background: var(--bg-4, var(--bg-3)); color: var(--text-0); }
 .wb-group-icon { flex: none; color: var(--accent); filter: drop-shadow(0 0 5px var(--accent-dim)); }
+/* 즐겨찾기 그룹은 폴더가 아니라 별이다 — 저장된 그룹과 한눈에 구분되도록
+   accent 대신 live 색을 쓰고, 채운 별로 그린다. */
+.wb-group-icon.is-favorite { color: var(--live); fill: var(--live); filter: drop-shadow(0 0 5px var(--live-dim)); }
 .wb-group-count { flex: none; min-width: 22px; padding: 2px 7px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-2); color: var(--text-0); font-size: 11px; font-weight: var(--weight-bold); text-align: center; }
 /* 파티는 그룹 상자 안에 들어간다 — 왼쪽 세로선 대신 상자가 소속을 말한다. */
 .wb-group-parties { gap: 1px; padding: 4px; margin-left: 0; border-left: 0; }

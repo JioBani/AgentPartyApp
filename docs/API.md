@@ -1095,6 +1095,20 @@ Two properties are deliberate and worth knowing when driving this over HTTP:
   `GET /api/state` against the ids in `GET /api/models` — stored-but-unshown is
   therefore observable rather than invisible.
 
+`favoriteParties` is the list of party **ids** the user has starred, and follows
+the same never-auto-pruned rule for the same reason (an id that resolves to
+nothing may just belong to a workspace this window is not showing). A starred
+party is MIRRORED into a virtual 즐겨찾기 group pinned above the real groups; it
+keeps the group it was filed in, so un-starring moves nothing and loses nothing.
+The virtual group is not a stored group: it never appears in
+`GET /api/party-groups`, cannot be renamed, deleted, reordered or filed into.
+
+`sidebarGroupFolds` is which sidebar groups are folded shut, e.g.
+`{"sidebarGroupFolds": {"party": ["group-3"], "member": ["c:\project\svc"]}}`.
+It stores what is CLOSED, never what is open: a group nobody has touched — one
+created later, or by another window — must appear open, and only "closed wins"
+gives that. Folds persist across restarts.
+
 Tidying the list is an explicit write to this endpoint, never a side effect of
 opening a screen.
 
@@ -2355,6 +2369,12 @@ owns none. It is checked in the environment it names BEFORE anything is created,
 so an unusable path returns an error and leaves nothing half-made. Omitted, it
 falls back to the request's workspace. `groupId` defaults to the default group.
 
+`newWindow: true` opens the new party in ANOTHER desktop window and leaves the
+calling window on the party it is already showing — the same thing the "새 창에서
+생성" button in the new-party dialog does. It is a routing hint for the desktop
+layer: nothing about it is stored on the party, and without a calling window
+(plain HTTP with no `?window`) it simply opens a window for that workspace.
+
 ### `POST /api/parties/:id/select`
 
 Selects the active party for member creation and compatibility endpoints. Party
@@ -2832,8 +2852,10 @@ Fully removes a member. This is destructive.
 ### `POST /api/party/members/remove`
 
 Batch removal. Body: `{ "name": ["impl", "qa"] }`. The response separates
-`removed` and `failed`; `main` remains protected and appears in `failed` if it
-was included. Duplicate or empty names are rejected before deletion begins.
+`removed` and `failed`. `main` is removable like any other member — it is the
+member a new party is born with, not a role anything routes through — so a party
+can end up with no members at all. Duplicate or empty names are rejected before
+deletion begins.
 
 ### `POST /api/party/members/:name/status`
 

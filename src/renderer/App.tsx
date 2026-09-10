@@ -30,6 +30,8 @@ import type { MemberMessagingSettings } from "../shared/memberMessaging";
 import { usePublishComposerPrefs } from "./app/composerPrefs";
 import { usePublishFavoriteModels } from "./app/favoriteModelPrefs";
 import { toggleFavoriteModel as nextFavoriteModels } from "../shared/favoriteModels";
+import { DEFAULT_FAVORITE_PARTIES, toggleFavoriteParty as nextFavoriteParties } from "../shared/favoriteParties";
+import { DEFAULT_SIDEBAR_GROUP_FOLDS, normalizeSidebarGroupFolds, toggleSidebarGroupFold, type SidebarGroupFolds } from "../shared/sidebarGroupFolds";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
 import { providerOfRuntime, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
 import { UsageLimitPill } from "./workbench/UsageLimitPill";
@@ -1268,7 +1270,18 @@ export function App() {
         gate: input?.gate,
         groupId: input?.groupId,
         location: input?.location ? serializeMemberLocation(input.location) : undefined,
+        newWindow: input?.newWindow,
       });
+      if (input?.newWindow) {
+        // Main already opened the window this party belongs to. Here we only
+        // refresh the list so the new party appears in this window's sidebar —
+        // applying the result would switch this window to it, which is the one
+        // thing "새 창에서 생성" promises not to do.
+        setPartyNotice(result.message);
+        await refreshParty();
+        await refreshGroups();
+        return true;
+      }
       await applyPartyResult(result);
       setCurrentView("workbench");
       return true;
@@ -1607,6 +1620,25 @@ export function App() {
     const favoriteModels = nextFavoriteModels(state.settings.favoriteModels || [], id);
     const settings = await window.agentParty.updateSettings({ favoriteModels });
     setState((current) => ({ ...current, settings }));
+  }
+
+  /**
+   * Stars/unstars a party. Mirrors it into the 즐겨찾기 group; the party keeps
+   * the group it was filed in, so un-starring loses nothing.
+   */
+  async function toggleFavoriteParty(partyId: string) {
+    const favoriteParties = nextFavoriteParties(state.settings.favoriteParties || [], partyId);
+    const settings = await window.agentParty.updateSettings({ favoriteParties });
+    setState((current) => ({ ...current, settings }));
+  }
+
+  /** Persists one sidebar group's folded/unfolded state. */
+  async function toggleGroupFold(which: keyof SidebarGroupFolds, groupId: string, closed: boolean) {
+    const current = normalizeSidebarGroupFolds(state.settings.sidebarGroupFolds);
+    const settings = await window.agentParty.updateSettings({
+      sidebarGroupFolds: toggleSidebarGroupFold(current, which, groupId, closed),
+    });
+    setState((next) => ({ ...next, settings }));
   }
 
   /** Persists a message-input preference (send key). */
@@ -2292,6 +2324,10 @@ export function App() {
                 onMemberOpened={() => undefined}
                 onVisibleMembersChange={(partyId, names) => setVisibleMemberScope({ partyId, names })}
                 onToggleDrawer={(which, patch) => void saveDrawer(which, patch)}
+                favoriteParties={state.settings.favoriteParties || DEFAULT_FAVORITE_PARTIES}
+                onToggleFavoriteParty={(partyId) => void toggleFavoriteParty(partyId)}
+                groupFolds={state.settings.sidebarGroupFolds || DEFAULT_SIDEBAR_GROUP_FOLDS}
+                onToggleGroupFold={(which, groupId, closed) => void toggleGroupFold(which, groupId, closed)}
                 onOpenUsage={openUsageView}
               />
             </>

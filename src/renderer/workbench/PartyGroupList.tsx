@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronDown, FolderPlus, Pin, Plus, SquareStack, type LucideIcon } from "lucide-react";
+import { ChevronDown, FolderPlus, Pin, Plus, SquareStack, Star, type LucideIcon } from "lucide-react";
+import { isFavoriteGroupId } from "../../shared/favoriteParties";
 import type { PartyGroupView, PartySummary } from "../../shared/partyGroups";
 import { partySummaryLine } from "../../shared/partyGroups";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
@@ -161,7 +162,10 @@ export function PartyGroupList({
 
   useEffect(() => stopDragScroll, []);
   useEffect(() => {
-    const ids = groups.map(({ group }) => group.id);
+    // The virtual 즐겨찾기 group is left out: it appears the moment the first
+    // party is starred, and treating that as "a new group was created" would
+    // scroll the list to the top under the hand that just starred something.
+    const ids = groups.map(({ group }) => group.id).filter((id) => !isFavoriteGroupId(id));
     // The first render establishes the baseline; nothing is "new" yet.
     if (!seenGroupIds.current) {
       seenGroupIds.current = new Set(ids);
@@ -216,13 +220,15 @@ export function PartyGroupList({
 
   /** The order the list would have if the drag were dropped right now. */
   function orderAfterDrop(dragged: string, target: string, after: boolean): string[] {
-    const ids = groups.map(({ group }) => group.id).filter((id) => id !== dragged);
+    // The virtual 즐겨찾기 group is not stored and is always first, so it never
+    // appears in an order the group store is asked to save.
+    const ids = groups.map(({ group }) => group.id).filter((id) => id !== dragged && !isFavoriteGroupId(id));
     const at = ids.indexOf(target);
     ids.splice(at < 0 ? ids.length : at + (after ? 1 : 0), 0, dragged);
     return ids;
   }
 
-  const groupOf = (partyId: string) => groups.find(({ parties }) => parties.some((party) => party.id === partyId))?.group.id;
+  const groupOf = (partyId: string) => groups.find(({ group, parties }) => !isFavoriteGroupId(group.id) && parties.some((party) => party.id === partyId))?.group.id;
   /**
    * Whether a group will take THIS drag.
    *
@@ -306,7 +312,9 @@ export function PartyGroupList({
                 const target = reorderTarget;
                 setReorderTarget(undefined);
                 setDraggingGroupId(undefined);
-                if (movedGroup !== group.id) {
+                // Dropping onto 즐겨찾기 would ask the store to place a group
+                // relative to one it does not have.
+                if (movedGroup !== group.id && !isFavoriteGroupId(group.id)) {
                   onReorderGroups(orderAfterDrop(movedGroup, group.id, Boolean(target?.after)));
                 }
                 return;
@@ -327,7 +335,7 @@ export function PartyGroupList({
               className="wb-group-row"
               title={localized("STR-3665")}
               aria-expanded={open}
-              draggable={Boolean(onReorderGroups)}
+              draggable={Boolean(onReorderGroups) && !isFavoriteGroupId(group.id)}
               onDragStart={(event) => {
                 event.dataTransfer.setData(GROUP_DRAG_TYPE, group.id);
                 event.dataTransfer.effectAllowed = "move";
@@ -345,13 +353,15 @@ export function PartyGroupList({
               }}
             >
               <ChevronDown size={13} className="wb-group-caret" />
-              <GroupIcon size={15} strokeWidth={2.2} className="wb-group-icon" />
+              {isFavoriteGroupId(group.id)
+                ? <Star size={15} strokeWidth={2.2} className="wb-group-icon is-favorite" />
+                : <GroupIcon size={15} strokeWidth={2.2} className="wb-group-icon" />}
               <span className="wb-group-name">{group.name}</span>
               {group.kind === "default" && <span className="wb-group-badge"><LocalizedText id="STR-3666" /></span>}
               <span className="wb-mono wb-group-count">{parties.length}</span>
             </button>
             <div className="wb-group-parties">
-              {onCreateParty && (
+              {onCreateParty && !isFavoriteGroupId(group.id) && (
                 <button
                   type="button"
                   className="wb-group-add wb-party-add"
