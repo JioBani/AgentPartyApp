@@ -11,7 +11,8 @@
  *
  * Asserts: identity is closure-bound (from is never agent input), member-create
  * auto-starts and persists reasoning, codex is accepted, sending to an off/absent
- * member errors, list/list-models return rich data, and broadcasts fire.
+ * member errors, list returns bounded summaries plus opt-in member detail,
+ * list-models returns rich data, and broadcasts fire.
  */
 import { build } from "esbuild";
 import { mkdtempSync, mkdirSync } from "node:fs";
@@ -177,12 +178,19 @@ assert(/from="main"/.test(sentTurns[before].text) && /please review PR 42/.test(
 const ghost = await bridge.send("main", "ghost", "hi");
 assert(!ghost.ok && /does not exist/i.test(ghost.error || ""), "send to a nonexistent member errors");
 
-// --- list: rich member view --------------------------------------------------
+// --- list: bounded summary + one-member detail -------------------------------
 const listed = await bridge.list();
 const names = (listed.data?.members || []).map((m) => m.name);
 assert(listed.ok && names.includes("main") && names.includes("reviewer"), "list returns the party members");
+assert(listed.data?.detail === "summary" && listed.data?.totalMembers === names.length, "list labels the bounded summary and reports the total member count");
 assert(listed.data?.tabGroups?.some((group) => group.id && group.anchor === "reviewer" && group.members.includes("main")), "list exposes current tab groups and an exact reusable member-create id");
 assert(listed.data.members.find((m) => m.name === "reviewer")?.harness === "claude-code", "list carries harness per member");
+assert(!("gate" in listed.data.members[0]) && !("model" in listed.data.members[0]) && !("location" in listed.data.members[0]), "list summary omits repeated member configuration and gate rules");
+const reviewerDetail = await bridge.list({ name: "reviewer" });
+assert(reviewerDetail.ok && reviewerDetail.data?.detail === "member" && reviewerDetail.data?.members?.length === 1, "list name filter returns exactly one detailed member");
+assert(reviewerDetail.data?.members?.[0]?.name === "reviewer" && reviewerDetail.data.members[0].model === "sonnet" && reviewerDetail.data.members[0].gate?.rule !== undefined, "one-member detail keeps model and effective gate settings inspectable");
+const missingDetail = await bridge.list({ name: "ghost" });
+assert(!missingDetail.ok && /does not exist/i.test(missingDetail.error || ""), "list name filter fails visibly for an unknown member");
 
 // --- member-remove: main protected, others removable -------------------------
 const rmMain = await bridge.removeMember("main");
@@ -376,6 +384,7 @@ assert(Array.isArray(dynamicSendSpec?.properties?.to?.oneOf), "dynamic send sche
 assert(dynamic.tools.find((tool) => tool.name === "member-create")?.inputSchema?.properties?.members?.type === "array", "dynamic member-create schema exposes the members batch field");
 assert(Array.isArray(dynamic.tools.find((tool) => tool.name === "member-remove")?.inputSchema?.properties?.name?.oneOf), "dynamic member-remove schema exposes string-or-array names");
 assert(dynamic.tools.find((tool) => tool.name === "broadcast")?.inputSchema?.properties?.exclude?.type === "array", "dynamic broadcast schema exposes excluded members");
+assert(dynamic.tools.find((tool) => tool.name === "list")?.inputSchema?.properties?.name?.type === "string", "dynamic list schema exposes the exact-name detail filter");
 const beforeDynamic = sentTurns.length;
 const dynamicOut = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}send`, { to: "buddy", content: "hello from codex" });
 assert(dynamicOut.ok, "Codex dispatcher accepts namespaced party tool names");
@@ -437,6 +446,10 @@ assert(dynamicPermission.ok && svc.list().members.find((m) => m.name === "buddy"
 const dynamicGate = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}gate-set`, { name: "buddy", mode: "on", rule: "Be concise." });
 const buddyGate = svc.list().members.find((m) => m.name === "buddy")?.gate;
 assert(dynamicGate.ok && buddyGate?.mode === "on" && buddyGate?.rule === "Be concise.", "gate-set routes through the bridge and persists the member override");
+assert(dynamicGate.data?.gate?.ruleChars === 11 && !("rule" in dynamicGate.data.gate), "gate-set confirms rule length without echoing arbitrary rule text");
+const dynamicPartyGate = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}party-gate-set`, { enabled: true, rule: "Keep handoffs direct." });
+assert(dynamicPartyGate.ok && dynamicPartyGate.data?.gate?.ruleChars === 21 && !("rule" in dynamicPartyGate.data.gate), "party-gate-set confirms rule length without echoing the party rule");
+assert(svc.list().parties.find((item) => item.id === partyId)?.gate?.rule === "Keep handoffs direct.", "party-gate-set still persists the complete rule");
 
 const excludedBroadcast = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}broadcast`, {
   content: "only batch-a should receive this batch probe",

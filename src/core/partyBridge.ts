@@ -92,6 +92,20 @@ export interface PartyModelQuery {
   includeUnavailable?: boolean;
 }
 
+/**
+ * Query for the member-facing party list.
+ *
+ * The default is deliberately a coordination summary. A party-wide Message
+ * Gate rule can be several thousand characters and the old shape repeated that
+ * same text once per inheriting member. Exact-name detail keeps every setting
+ * inspectable without making the common "who is here?" call scale as
+ * `members x rule length`.
+ */
+export interface PartyListQuery {
+  /** Return full configuration for exactly this member instead of all summaries. */
+  name?: string;
+}
+
 export interface PartyPermissionRequest {
   permissionMode?: string;
   codexPolicy?: CodexPolicy;
@@ -139,8 +153,8 @@ export interface PartyBridge {
   gateSet(name: string, patch: PartyGatePatch): Promise<PartyToolResult>;
   /** Set the PARTY-WIDE Message Gate every "inherit" member follows. */
   partyGateSet(patch: PartyGateGlobalPatch): Promise<PartyToolResult>;
-  /** List the caller's party members and their status. */
-  list(): Promise<PartyToolResult>;
+  /** List compact member summaries, or full configuration for one exact name. */
+  list(query?: PartyListQuery): Promise<PartyToolResult>;
   /** List supported execution hosts plus recent/default cwd suggestions. */
   listLocations(): Promise<PartyToolResult>;
   /** Discover available harnesses + models + per-model reasoning options.
@@ -212,7 +226,7 @@ export function partyBridgeFromInvoker(
     setPermission: (name, request) => hostInvoke("member-permission", { name, ...request }),
     gateSet: (name, patch) => hostInvoke("gate-set", { name, ...patch }),
     partyGateSet: (patch) => hostInvoke("party-gate-set", patch),
-    list: () => hostInvoke("list", {}),
+    list: (query) => hostInvoke("list", query || {}),
     listLocations: () => hostInvoke("list-locations", {}),
     listModels: (query) => hostInvoke("list-models", query || {}),
     status: (name) => hostInvoke("member-status", name ? { name } : {}),
@@ -258,9 +272,9 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "member-create": "Create and start one or more members. Use the existing top-level fields for one member, or pass `members` as an array of member objects for a batch. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?} to choose Windows or WSL explicitly; omit it to inherit your own execution location.",
   "member-remove": "Remove one or more members from your party. Pass `name` as one member name or an array of names. Cannot remove 'main'.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
-  "gate-set": "Set another member's Message Gate — the delivery-time reviewer of that member's OUTGOING messages. mode: inherit|on|off. rule: the communication rule text the reviewer enforces (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate.",
-  "party-gate-set": "Set the PARTY-WIDE Message Gate — the default every member with mode 'inherit' follows. enabled: turn the party gate on/off. rule: the communication rule text enforced party-wide. reviewer: {model, effort} for a party-wide headless reviewer (null to use the settings default). This changes the default for EVERY inheriting member at once, so prefer gate-set when only one member should be affected. A member that set mode on/off, or its own rule, keeps overriding this.",
-  list: "List your party's members, current status, and tabGroups. Pass a chosen tabGroups[].id to member-create.tabGroup.",
+  "gate-set": "Set another member's Message Gate — the delivery-time reviewer of that member's OUTGOING messages. mode: inherit|on|off. rule: the communication rule text the reviewer enforces (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate. The result confirms ruleChars without echoing the rule; use list {name} when you need to inspect it.",
+  "party-gate-set": "Set the PARTY-WIDE Message Gate — the default every member with mode 'inherit' follows. enabled: turn the party gate on/off. rule: the communication rule text enforced party-wide. reviewer: {model, effort} for a party-wide headless reviewer (null to use the settings default). This changes the default for EVERY inheriting member at once, so prefer gate-set when only one member should be affected. A member that set mode on/off, or its own rule, keeps overriding this. The result confirms ruleChars without echoing the rule.",
+  list: "List compact member summaries and current tabGroups. Pass `name` to inspect one member's full model, permission, location, and Message Gate settings. Full detail for every member is intentionally unavailable because long inherited gate rules would be repeated once per member. Pass a chosen tabGroups[].id to member-create.tabGroup.",
   "list-locations": "List the execution hosts this app supports plus recent and default cwd suggestions. Use a returned host/cwd/distro tuple as member-create.location. Entries with problem are shown for diagnostics but must not be used until repaired.",
   "list-models": "Discover available harnesses, models, and reasoning options for member-create. Called with NO arguments it returns a compact index of every model — label, which harnesses run it, and the id to pass to member-create when that id differs from the label. Pass `harness`, `provider`, and/or `query` to get the FULL detail (effort/thinking options, service tier, pricing, context window) for just the matches; that is the cheap way to answer 'what settings does this one model take'. Filters narrow, they never paginate: dropping them always widens back to everything. A filter that matches nothing is an ERROR listing what does exist, never an empty result — so an empty answer never means 'this model is unavailable'. Routes that cannot currently be used are excluded from detail rows but their count is always reported and `includeUnavailable: true` brings them back with the reason.",
   "member-status": "Check whether a member's turn is running (busy) or stopped (idle/error). Omit name to get every member's turn state.",
@@ -441,7 +455,13 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     },
     additionalProperties: false,
   },
-  list: { type: "object", properties: {}, additionalProperties: false },
+  list: {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "Exact member name to inspect in full. Omit for compact summaries of every member." },
+    },
+    additionalProperties: false,
+  },
   "list-locations": { type: "object", properties: {}, additionalProperties: false },
   "list-models": {
     type: "object",
@@ -765,7 +785,9 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       return bridge.partyGateSet(patch);
     }
     case "list":
-      return bridge.list();
+      return bridge.list({
+        name: typeof input.name === "string" && input.name ? input.name : undefined,
+      });
     case "list-locations":
       return bridge.listLocations();
     case "list-models":
@@ -962,7 +984,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     ),
     tool(
       "gate-set",
-      "Set another member's Message Gate (the delivery-time reviewer of that member's OUTGOING messages). mode: inherit|on|off. rule: the communication rule to enforce (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate.",
+      partyDynamicToolDescriptions["gate-set"],
       {
         name: z.string().describe("Target member name in your party."),
         mode: z.enum(["inherit", "on", "off"]).optional().describe("inherit = follow the party gate; on/off overrides just enablement."),
@@ -976,7 +998,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     ),
     tool(
       "party-gate-set",
-      "Set the PARTY-WIDE Message Gate — the default every member with mode 'inherit' follows. This changes the default for EVERY inheriting member at once, so prefer gate-set when only one member should be affected. A member that set its own mode or rule keeps overriding this.",
+      partyDynamicToolDescriptions["party-gate-set"],
       {
         enabled: z.boolean().optional().describe("Turn the party-wide gate on or off."),
         rule: z.string().optional().describe("Communication rule enforced party-wide for inheriting members."),
@@ -987,7 +1009,12 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       },
       async (args: PartyGateGlobalPatch) => envelope(await bridge.partyGateSet(args)),
     ),
-    tool("list", "List your party's members and their current status.", {}, async () => envelope(await bridge.list())),
+    tool(
+      "list",
+      partyDynamicToolDescriptions.list,
+      { name: z.string().optional().describe("Exact member name for full detail. Omit for compact summaries of every member.") },
+      async (args: PartyListQuery) => envelope(await bridge.list(args)),
+    ),
     tool("list-locations", partyDynamicToolDescriptions["list-locations"], {}, async () => envelope(await bridge.listLocations())),
     tool(
       "list-models",

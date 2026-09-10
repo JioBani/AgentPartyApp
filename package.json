@@ -86,6 +86,7 @@
     "test:claude-auth-separation": "node scripts/qa-claude-auth-separation.mjs",
     "test:e2e:member-liveness": "npm run build && node scripts/e2e-member-liveness.mjs",
     "test:e2e:member-tab-group": "npm run build && node scripts/e2e-member-tab-group.mjs",
+    "test:e2e:party-tool-output-budget": "npm run build && node scripts/e2e-party-tool-output-budget.mjs",
     "test:e2e:member-remove-state": "npm run build && node scripts/e2e-member-remove-state.mjs",
     "test:e2e:discord-bridge": "npm run build && node scripts/e2e-discord-bridge.mjs",
     "test:e2e:auto-compact": "npm run build && node scripts/e2e-auto-compact.mjs",
