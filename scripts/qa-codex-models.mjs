@@ -46,7 +46,7 @@ const RAW_MODELS = [
 ];
 
 // ---- Layer 1: normalization --------------------------------------------------
-const { normalizeCodexModels, normalizeCodexModel } = await bundle("src/shared/codexModels.ts", "codex-models.mjs", []);
+const { normalizeCodexModels, normalizeCodexModel, supersedesCodexDiscovery } = await bundle("src/shared/codexModels.ts", "codex-models.mjs", []);
 console.log("\ncodexModels normalization:");
 const models = normalizeCodexModels(RAW_MODELS);
 assert(models.length === 3, "hidden + slugless entries are dropped (3 of 5 kept)");
@@ -182,6 +182,21 @@ assert((errorBanner?.textContent || "").includes("codex exited with code 1"), "t
 click(errorBanner?.querySelector("button"));
 await tick();
 assert(retried, "the retry button invokes onRefreshCodexModels");
+
+// Arrival order of the two model-info sources. A window mirrors main-process
+// state, and the mirror must never move backwards: the boot snapshot can carry a
+// pre-discovery catalog and land AFTER the push that carries the settled one,
+// which is how a window ended up stuck on fallback routes (no Fast tier) for its
+// whole life.
+const pendingDiscovery = { status: "pending", models: [] };
+const readyDiscovery = { status: "ready", models: [], at: "2026-09-10T10:00:00.000Z" };
+const laterDiscovery = { status: "ready", models: [], at: "2026-09-10T10:05:00.000Z" };
+assert(supersedesCodexDiscovery(undefined, pendingDiscovery), "a window with nothing applied takes a pending payload");
+assert(supersedesCodexDiscovery(pendingDiscovery, readyDiscovery), "a settled payload replaces a pending one");
+assert(!supersedesCodexDiscovery(readyDiscovery, pendingDiscovery), "a stale pending snapshot never replaces settled routes");
+assert(supersedesCodexDiscovery(readyDiscovery, readyDiscovery), "an equal stamp still applies (a catalog refresh rebuilds routes from the same discovery)");
+assert(supersedesCodexDiscovery(readyDiscovery, laterDiscovery), "a newer discovery replaces an older one");
+assert(!supersedesCodexDiscovery(laterDiscovery, readyDiscovery), "an older discovery does not replace a newer one");
 
 console.log(failures.length ? `\nFAILED: ${failures.length}` : "\nCODEX MODELS QA PASSED");
 process.exit(failures.length ? 1 : 0);

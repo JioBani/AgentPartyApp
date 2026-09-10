@@ -641,6 +641,20 @@ ${body}
   sessionManager.on("codex-models", () => {
     void appController?.notifyCodexModelsChanged();
   });
+  // The model catalog is APP state, not something a window fetches for itself.
+  // Warming it here — rather than leaving the first window's state request to
+  // kick it as a side effect — means discovery no longer races the first render
+  // it is a dependency of, and the listener above is already attached, so the
+  // settle is pushed to whatever windows exist by then.
+  const codexDiscoveryStartedAt = Date.now();
+  void sessionManager.warmCodexModels().then((state) => {
+    log(state.status === "error" ? "warn" : "info", "codex", "account catalog discovery settled", {
+      status: state.status,
+      models: state.models.length,
+      ms: Date.now() - codexDiscoveryStartedAt,
+      ...(state.error ? { error: state.error } : {}),
+    });
+  });
   // Provider rate-limit usage changed. These limits are ACCOUNT-global (shared by
   // every workspace/window using that provider), so push to ALL windows.
   sessionManager.on("usage", (snapshot: unknown) => {
