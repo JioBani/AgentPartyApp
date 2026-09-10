@@ -104,7 +104,7 @@ async function verify(label, resumeSessionId) {
   const options = queryOptions[0];
   check(Boolean(server), `${label}: agentparty-app server was created`);
   check(server?.alwaysLoad === true, `${label}: party tools bypass deferred ToolSearch`);
-  check(server?.tools?.length === 17, `${label}: all 17 party tools are always available`);
+  check(server?.tools?.length === 18, `${label}: all 18 party tools are always available`);
   check(Boolean(options?.mcpServers?.["agentparty-app"]), `${label}: server was attached to the Claude query`);
   check((options?.resume ?? null) === (resumeSessionId ?? null), `${label}: expected conversation resume target was preserved`);
   adapter.dispose();

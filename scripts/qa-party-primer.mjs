@@ -53,6 +53,7 @@ for (const phrase of [
   assert.equal(primer.indexOf(phrase), primer.lastIndexOf(phrase), `the canonical default does not duplicate: ${phrase}`);
 }
 assert(primer.includes("party-contract") && primer.includes("new-worker") && primer.includes(identity.role), "a new member receives the same defaults with its own identity rendered");
+assert(primer.includes("mcp__agentparty-app__member-runtime") && primer.includes("model") && primer.includes("effort") && primer.includes("fast"), "the primer teaches members the model / effort / Fast runtime tool");
 
 assert.deepEqual(
   primerModule.PARTY_PRIMER_DELIVERY.map(({ harness, channel, delivered }) => ({ harness, channel, delivered })),

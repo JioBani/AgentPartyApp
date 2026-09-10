@@ -1641,6 +1641,26 @@ response that under-reports it is worse than a large one:
 Filters narrow, they never paginate, so dropping arguments always widens back to
 the whole catalog.
 
+### Party tool `member-runtime` (agent-facing)
+
+Changes one other member without changing its harness. Pass `name` plus at least
+one of `model`, `effort`, or `fast`; model ids and effort values come from
+`list-models` filtered to that member's harness.
+
+```json
+{ "name": "reviewer", "model": "gpt-5.5", "effort": "high", "fast": true }
+```
+
+`fast` is intentionally a boolean instead of a provider tier id. `true` maps to
+the route's native Fast tier (`priority` on Codex, `fast` on Cursor); `false`
+selects Standard, or clears a stale tier when the selected model has no service
+tier. Unsupported combinations fail with the valid options and do not partially
+change the member. Model and mutable effort changes apply live. A tier or other
+process-start change respawns the session while resuming its existing
+conversation; a busy target is refused rather than interrupted. The calling
+member cannot target itself because a required respawn would destroy its
+in-flight tool result.
+
 ### `GET /api/harnesses/cursor/status`
 
 Runs read-only Cursor CLI diagnostics and returns the discovered installation,
@@ -2900,6 +2920,23 @@ For a Cursor harness:
 ```json
 { "cursorPolicy": { "mode": "agent", "approval": "auto-review" } }
 ```
+
+### `POST /api/party/members/:name/runtime`
+
+Changes the named member's model controls through the same
+`PartyApplicationService.setMemberRuntime` implementation as the agent-facing
+`member-runtime` tool. Unlike the MCP tool, HTTP may target any member because
+the request is not executing inside that member's harness.
+
+```json
+{ "model": "Grok 4.5", "effort": "high", "fast": true }
+```
+
+At least one field is required. The model remains on the member's current
+harness and all values are checked against the model catalog before anything is
+changed. The response is the normal party mutation result containing the updated
+member and party state. Changes requiring a process respawn preserve the native
+conversation and fail while the member is busy instead of killing its turn.
 
 ### `POST /api/party/members/:name/gate`
 

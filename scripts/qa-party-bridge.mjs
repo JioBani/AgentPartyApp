@@ -79,6 +79,8 @@ const sessionManager = {
   interrupt(id) { interrupted.push(id); },
   setPermissionMode(id, permissionMode) { permissionChanges.push({ id, permissionMode }); },
   setCodexPolicy(id, codexPolicy) { permissionChanges.push({ id, codexPolicy }); },
+  setModel() {},
+  setEffort() {},
   // A session is "compacting" while its id is in this set (the real manager sets it
   // in compact() and clears it on the outcome). Interrupt-on-send must respect it.
   compacting: new Set(),
@@ -87,7 +89,7 @@ const sessionManager = {
   notifyPartyChanged() { notifyCount += 1; },
   // Live codex catalog: discovered, so list-models must expose it per-harness.
   getCodexModelState() {
-    return { status: "ready", models: [{ model: "gpt-5.5", displayName: "GPT-5.5", isDefault: true, hidden: false, defaultReasoningEffort: "medium", reasoningEfforts: [{ id: "low" }, { id: "medium" }, { id: "high" }, { id: "xhigh" }], serviceTiers: [] }] };
+    return { status: "ready", models: [{ model: "gpt-5.5", displayName: "GPT-5.5", isDefault: true, hidden: false, defaultReasoningEffort: "medium", reasoningEfforts: [{ id: "low" }, { id: "medium" }, { id: "high" }, { id: "xhigh" }], serviceTiers: [{ id: "priority", name: "Fast", description: "QA Fast tier" }] }] };
   },
 };
 
@@ -151,10 +153,32 @@ const changedCx = await bridge.setPermission("cx", { codexPolicy: changedCodexPo
 assert(changedCx.ok && JSON.stringify(svc.list().members.find((m) => m.name === "cx")?.codexPolicy) === JSON.stringify(changedCodexPolicy), "one member can change another Codex member's policy");
 assert(permissionChanges.some((change) => change.codexPolicy?.guardian === true), "live Codex permission change reaches the target adapter");
 
+// --- member-runtime: catalog-validated model / effort / Fast ----------------
+const cxSessionBeforeRuntime = svc.list().members.find((m) => m.name === "cx")?.sessionId;
+snapshots.get(cxSessionBeforeRuntime).status = "responding";
+const busyRuntime = await bridge.setRuntime("cx", { model: "gpt-5.5", effort: "high", fast: true });
+assert(!busyRuntime.ok && /busy/i.test(busyRuntime.error || ""), "member-runtime refuses a restart while the target has an active turn");
+assert(svc.list().members.find((m) => m.name === "cx")?.serviceTier === undefined, "a refused busy runtime change does not mutate persisted settings");
+snapshots.get(cxSessionBeforeRuntime).status = "idle";
+const changedRuntime = await bridge.setRuntime("cx", { model: "gpt-5.5", effort: "high", fast: true });
+const cxAfterRuntime = svc.list().members.find((m) => m.name === "cx");
+assert(changedRuntime.ok && changedRuntime.data?.fast === true && changedRuntime.data?.serviceTier === "priority", "member-runtime maps fast=true to the model catalog's native Fast tier");
+assert(cxAfterRuntime?.effort === "high" && cxAfterRuntime?.serviceTier === "priority", "member-runtime persists model effort and native service tier together");
+assert(cxAfterRuntime?.sessionId !== cxSessionBeforeRuntime && changedRuntime.data?.restarted === true, "a Fast tier change respawns the session while preserving its conversation path");
+const invalidRuntime = await bridge.setRuntime("cx", { effort: "impossible" });
+assert(!invalidRuntime.ok && /Use: low, medium, high, xhigh/.test(invalidRuntime.error || ""), "member-runtime rejects an unsupported effort with the valid options");
+assert(svc.list().members.find((m) => m.name === "cx")?.effort === "high", "an invalid runtime request leaves the member unchanged");
+const selfRuntime = await bridge.setRuntime("main", { effort: "high" });
+assert(!selfRuntime.ok && /calling member/i.test(selfRuntime.error || ""), "member-runtime refuses to restart or mutate the caller during its own tool call");
+const emptyRuntime = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}member-runtime`, { name: "cx" });
+assert(!emptyRuntime.ok && /at least one/i.test(emptyRuntime.error || ""), "member-runtime requires at least one runtime field");
+const malformedRuntime = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}member-runtime`, { name: "cx", fast: "yes", effort: "low" });
+assert(!malformedRuntime.ok && /fast must be a boolean/i.test(malformedRuntime.error || ""), "member-runtime rejects a malformed field instead of partially applying the valid fields beside it");
+
 // --- member-create: claude-code auto-starts + persists reasoning -------------
 const make = await bridge.createMember({ name: "reviewer", role: "Code reviewer", tabGroup: "main", harness: "claude-code", model: "sonnet", reasoning: "enabled", permissionMode: "plan" });
 assert(make.ok, "member-create (claude-code) succeeds");
-assert(captured.length === 3, "member-create auto-starts the new member's session");
+assert(captured.some((binding) => binding.identity?.member === "reviewer"), "member-create auto-starts the new member's session");
 const reviewer = svc.list().members.find((m) => m.name === "reviewer");
 assert(reviewer?.reasoning === "enabled", "reasoning is persisted on the created member");
 assert(reviewer?.status === "running", "created member is live");
@@ -383,6 +407,7 @@ assert(dynamicSendSpec?.properties?.interrupt?.type === "boolean" && dynamicSend
 assert(Array.isArray(dynamicSendSpec?.properties?.to?.oneOf), "dynamic send schema exposes string-or-array recipients");
 assert(dynamic.tools.find((tool) => tool.name === "member-create")?.inputSchema?.properties?.members?.type === "array", "dynamic member-create schema exposes the members batch field");
 assert(Array.isArray(dynamic.tools.find((tool) => tool.name === "member-remove")?.inputSchema?.properties?.name?.oneOf), "dynamic member-remove schema exposes string-or-array names");
+assert(dynamic.tools.find((tool) => tool.name === "member-runtime")?.inputSchema?.properties?.fast?.type === "boolean", "dynamic member-runtime schema exposes Fast as a boolean");
 assert(dynamic.tools.find((tool) => tool.name === "broadcast")?.inputSchema?.properties?.exclude?.type === "array", "dynamic broadcast schema exposes excluded members");
 assert(dynamic.tools.find((tool) => tool.name === "list")?.inputSchema?.properties?.name?.type === "string", "dynamic list schema exposes the exact-name detail filter");
 const beforeDynamic = sentTurns.length;

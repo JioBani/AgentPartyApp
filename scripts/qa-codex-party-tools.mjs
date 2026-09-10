@@ -41,6 +41,7 @@ const bridge = {
   async createMember() { return { ok: true }; },
   async removeMember() { return { ok: true }; },
   async setPermission() { return { ok: true }; },
+  async setRuntime() { return { ok: true }; },
   async list() {
     listCalls += 1;
     return { ok: true, data: { members: [{ name: "main", status: "running", harness: "codex" }] } };
@@ -72,7 +73,7 @@ try {
   const mcp = await adapter.listMcpServers();
   const partyServer = mcp.servers.find((server) => server.name === "agentparty-app");
   assert(Boolean(partyServer), "Codex MCP snapshot includes the app-hosted agentparty-app surface");
-  assert(partyServer?.tools?.length === 17, "agentparty-app exposes all seventeen party tools (coordination, gates, permissions, Discord, and attachments)");
+  assert(partyServer?.tools?.length === 18, "agentparty-app exposes all eighteen party tools (coordination, runtime, gates, permissions, Discord, and attachments)");
   assert(
     partyServer?.tools?.some((tool) => tool.name === "mcp__agentparty-app__party-gate-set"),
     "the PARTY-WIDE gate is drivable by an agent, not just the per-member override",

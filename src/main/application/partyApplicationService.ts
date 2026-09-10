@@ -9,6 +9,7 @@ import type {
   PartyMember,
   PartyMessage,
   MemberPermissionInput,
+  MemberRuntimeInput,
   StartPartyMemberInput,
   SessionView,
   TranscriptSave,
@@ -78,7 +79,7 @@ import type { SessionManager, SessionPartyBinding } from "../sessionManager";
 import { invokePartyTool, type PartyBridge, type PartyModelQuery, type PartyToolResult } from "../../core/partyBridge";
 import { IMAGE_MEDIA_TYPES, readImageFile } from "../../core/imageFile";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
-import { buildModelRoutes } from "../../core/modelRegistry";
+import { buildModelRoutes, type ModelRoute } from "../../core/modelRegistry";
 import { resolveCatalogModel } from "../../shared/modelCatalog";
 import { harnesses } from "../harness/types";
 import { DEFAULT_CODEX_POLICY, isCodexPolicy, requireCodexPolicy, type CodexPolicy } from "../../shared/codexPolicy";
@@ -802,6 +803,142 @@ export class PartyApplicationService {
       cursorPolicy: member.cursorPolicy,
     });
     return this.result(`Member '${member.name}' permission updated.`, state, member);
+  }
+
+  /**
+   * Changes one member's model controls through the same catalog used by the
+   * Runtime picker and list-models. Catalog validation finishes before a live
+   * adapter or persisted state is touched, so invalid input cannot leave a
+   * half-applied profile behind.
+   *
+   * Model and mutable effort changes are applied live. Provider serving tiers
+   * (and any non-mutable effort) are process-start settings, so those changes
+   * respawn the harness while resuming its existing conversation. A busy turn
+   * is never killed implicitly; the caller must wait or interrupt it first.
+   */
+  setMemberRuntime(name: string, input: MemberRuntimeInput, partyId?: string): PartyCommandResult {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw new Error("Member runtime input must be an object.");
+    }
+    if (input.model === undefined && input.effort === undefined && input.fast === undefined) {
+      throw new Error("Member runtime requires at least one of: model, effort, fast.");
+    }
+    if (input.model !== undefined && (typeof input.model !== "string" || !input.model.trim())) {
+      throw new Error("model must be a non-empty string.");
+    }
+    if (input.effort !== undefined && (typeof input.effort !== "string" || !input.effort.trim())) {
+      throw new Error("effort must be a non-empty string.");
+    }
+    if (input.fast !== undefined && typeof input.fast !== "boolean") {
+      throw new Error("fast must be a boolean.");
+    }
+
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    this.assertNotOwnedByExternalCli(member, "change its runtime");
+    if (member.sessionId && !this.deps.sessionManager.hasSession(member.sessionId) && sessionOwnerMayBeAlive(member.sessionBootId)) {
+      throw new Error(`Member '${member.name}' is running in another AgentParty process. Change it from that window, or close it there first.`);
+    }
+    const harnessId = normalizeHarnessId(member.runtime);
+    const defaults = harnessDefaultsOf(getSettings(), harnessId);
+    const routes = buildModelRoutes(
+      member.model || defaults.model,
+      [],
+      [],
+      this.deps.sessionManager.getCodexModelState()?.models,
+    ).filter((route) => route.harnessId === harnessId);
+    const wantedModel = (input.model || member.model || defaults.model).trim();
+    const route = resolveMemberRuntimeRoute(routes, wantedModel, harnessId);
+    this.assertNotBetaLocked(harnessId, route.model);
+
+    const currentEffort = member.effort;
+    const nextEffort = input.effort?.trim() || currentEffort;
+    const effortOptions = route.capabilities.effort.options.map((option) => option.id);
+    if (input.effort !== undefined && !route.capabilities.effort.supported) {
+      throw new Error(`Model '${route.model}' on ${harnessId} does not support an effort setting.`);
+    }
+    if (nextEffort && route.capabilities.effort.supported && !effortOptions.some((option) => option.toLowerCase() === nextEffort.toLowerCase())) {
+      throw new Error(`Effort '${nextEffort}' is not available for '${route.model}' on ${harnessId}. Use: ${effortOptions.join(", ")}.`);
+    }
+    const resolvedEffort = nextEffort && route.capabilities.effort.supported
+      ? effortOptions.find((option) => option.toLowerCase() === nextEffort.toLowerCase())
+      : undefined;
+
+    const currentTier = normalizeServiceTierSelection(member.serviceTier);
+    const tierCapability = route.capabilities.serviceTier;
+    let nextTier = currentTier;
+    if (input.fast === true) {
+      if (!tierCapability?.supported) {
+        throw new Error(`Model '${route.model}' on ${harnessId} does not support Fast mode.`);
+      }
+      const fastOption = tierCapability.options.find(isFastServiceTierOption);
+      if (!fastOption) {
+        throw new Error(`Model '${route.model}' on ${harnessId} has no Fast service tier.`);
+      }
+      nextTier = fastOption.id;
+    } else if (input.fast === false) {
+      if (!tierCapability?.supported) {
+        // Disabling Fast on a model with no tiers is a valid no-op, and clears
+        // any stale tier left by a previous model.
+        nextTier = undefined;
+      } else {
+        const standard = tierCapability.options.find((option) => option.id.toLowerCase() === "standard" || option.label.toLowerCase() === "standard");
+        if (!standard) {
+          throw new Error(`Model '${route.model}' on ${harnessId} cannot disable Fast mode because it has no Standard tier.`);
+        }
+        nextTier = standard.id;
+      }
+    } else if (nextTier && !tierCapability?.options.some((option) => option.id.toLowerCase() === nextTier!.toLowerCase())) {
+      // A tier from the old model cannot leak into a model that does not define
+      // it. The receipt below makes the cleared state explicit to the caller.
+      nextTier = undefined;
+    }
+
+    const liveSessionId = member.sessionId && this.deps.sessionManager.hasSession(member.sessionId) ? member.sessionId : undefined;
+    const modelChanged = route.model !== member.model;
+    const effortChanged = resolvedEffort !== currentEffort;
+    const tierChanged = normalizeServiceTierSelection(nextTier) !== currentTier;
+    const restartRequired = Boolean(liveSessionId && (
+      tierChanged || (effortChanged && route.capabilities.effort.mutableDuringSession === false)
+    ));
+    if (restartRequired && this.isSessionBusy(liveSessionId)) {
+      throw new Error(`Member '${member.name}' is busy. Wait for the turn to finish or interrupt it before changing settings that restart its session.`);
+    }
+
+    if (restartRequired) {
+      return this.respawnMember(member.name, {
+        model: route.model,
+        effort: resolvedEffort as StartPartyMemberInput["effort"],
+        selectedProviderId: route.providerId as StartPartyMemberInput["selectedProviderId"],
+        serviceTier: nextTier ?? "inherit",
+      }, this.partyIdOf(member));
+    }
+
+    if (liveSessionId) {
+      if (modelChanged) {
+        this.deps.sessionManager.setModel(liveSessionId, route.model, route.providerId, route.runtimeModel);
+      }
+      if (effortChanged && resolvedEffort) {
+        this.deps.sessionManager.setEffort(liveSessionId, resolvedEffort);
+      }
+    }
+    member.model = route.model;
+    member.effort = resolvedEffort;
+    member.serviceTier = nextTier;
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "member runtime updated", {
+      workspace,
+      partyId: this.partyIdOf(member),
+      member: member.name,
+      harnessId,
+      model: member.model,
+      effort: member.effort,
+      serviceTier: member.serviceTier,
+      restarted: false,
+    });
+    return this.result(`Member '${member.name}' runtime updated.`, state, member);
   }
 
   /**
@@ -3279,6 +3416,38 @@ export class PartyApplicationService {
           return { ok: false, error: errorMessage(error) };
         }
       },
+      setRuntime: async (name, request) => {
+        if (name === selfMember) {
+          return {
+            ok: false,
+            error: "member-runtime cannot target the calling member because a runtime change may restart the session while this tool call is in flight. Ask another member or use the UI/HTTP endpoint.",
+          };
+        }
+        try {
+          const before = this.readState().members.find((member) => member.name === name && this.partyIdOf(member) === party);
+          const previousSessionId = before?.sessionId;
+          const result = this.setMemberRuntime(name, request, party);
+          notify();
+          const member = result.member;
+          const tier = normalizeServiceTierSelection(member?.serviceTier);
+          return {
+            ok: true,
+            data: {
+              ok: true,
+              name: member?.name || name,
+              harness: member ? normalizeHarnessId(member.runtime) : undefined,
+              model: member?.model,
+              effort: member?.effort,
+              fast: tier === "fast" || tier === "priority",
+              serviceTier: tier ?? null,
+              restarted: Boolean(previousSessionId && member?.sessionId && previousSessionId !== member.sessionId),
+              status: member?.status,
+            },
+          };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
       gateSet: async (name, patch) => {
         try {
           const result = this.setMemberGate(name, patch, party);
@@ -3544,6 +3713,28 @@ export class PartyApplicationService {
   partyLabelOf(partyId: string): string {
     return this.list().parties.find((party) => party.id === partyId)?.name || partyId;
   }
+}
+
+function resolveMemberRuntimeRoute(routes: ModelRoute[], model: string, harnessId: HarnessId): ModelRoute {
+  const matches = routes.filter((route) => route.model.toLowerCase() === model.toLowerCase());
+  if (!matches.length) {
+    const known = [...new Set(routes.filter((route) => route.enabled !== false).map((route) => route.model))];
+    throw new Error(`Model '${model}' is not available on ${harnessId}. Call list-models with harness='${harnessId}' for valid ids. Available: ${known.join(", ")}.`);
+  }
+  const usable = matches.filter((route) => route.enabled !== false);
+  if (!usable.length) {
+    throw new Error(matches[0].unavailableReason || `Model '${model}' is currently unavailable on ${harnessId}.`);
+  }
+  if (usable.length > 1) {
+    throw new Error(`Model id '${model}' is ambiguous on ${harnessId} (${usable.map((route) => route.providerId).join(", ")}). Use the exact id returned by list-models.`);
+  }
+  return usable[0];
+}
+
+function isFastServiceTierOption(option: { id: string; label: string }): boolean {
+  const id = option.id.toLowerCase();
+  const label = option.label.toLowerCase();
+  return id === "fast" || id === "priority" || label === "fast";
 }
 
 /**
