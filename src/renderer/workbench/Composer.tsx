@@ -115,6 +115,8 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
   const prefs = useComposerPrefs();
   /** The rich editing surface. Its serialization IS `draft`. */
   const editorRef = useRef<HTMLDivElement>(null);
+  /** Viewport anchor for the portalled slash-command palette. */
+  const composerRef = useRef<HTMLFormElement>(null);
   /**
    * Every reference the editor has held this draft. Kept so a draft restored
    * from outside (queue edit) can turn its paths back into chips; the editor's
@@ -989,7 +991,13 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
   }
 
   const palettePopover = palette.open ? (
-    <CommandPalette commands={palette.matches} activeIndex={palette.activeIndex} onHover={palette.setActiveIndex} onSelect={palette.apply} />
+    <CommandPalette
+      commands={palette.matches}
+      activeIndex={palette.activeIndex}
+      onHover={palette.setActiveIndex}
+      onSelect={palette.apply}
+      anchor={composerRef.current}
+    />
   ) : null;
   const mentionPopover = completionOpen ? (
     <CompletionPopover
@@ -1126,7 +1134,7 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
 
   if (density === "narrow" && !expanded) {
     return (
-      <form className={"wb-composer is-narrow" + (dragging ? " is-drag" : "")} onSubmit={submit} {...dragProps}>
+      <form ref={composerRef} className={"wb-composer is-narrow" + (dragging ? " is-drag" : "")} onSubmit={submit} {...dragProps}>
         {palettePopover}
         {mentionPopover}
         {queuePanel}
@@ -1144,7 +1152,7 @@ function ComposerView({ view, density, actions, commandUi, permission: showPermi
   }
 
   return (
-    <form className={"wb-composer" + (dragging ? " is-drag" : "")} onSubmit={submit} {...dragProps}>
+    <form ref={composerRef} className={"wb-composer" + (dragging ? " is-drag" : "")} onSubmit={submit} {...dragProps}>
       {palettePopover}
       {mentionPopover}
       {queuePanel}

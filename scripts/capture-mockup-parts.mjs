@@ -47,9 +47,9 @@ const get = async (route) => {
  *
  * `kind` says where the part belongs in the assembled page: `chrome` is the
  * window frame, `view` swaps inside it, `overlay` lies over everything, and
- * `inline` is a panel the app renders in place (the member wizard inside the
- * sidebar, the command palette above the composer) — those cannot be moved to
- * the overlay layer without lying about where the app puts them.
+ * `inline` is activated from a host inside the view. The runtime command
+ * palette portals to body to escape panel clipping, but the static mockup still
+ * attaches its captured node to the composer that opens and closes it.
  */
 const PARTS = [
   { id: "titlebar", kind: "chrome", selector: ".app-titlebar", scene: "workbench" },

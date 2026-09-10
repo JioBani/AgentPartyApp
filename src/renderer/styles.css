@@ -4580,11 +4580,10 @@ body.wb-resizing-y {
 
 /* ---------- Command / skill palette ---------- */
 .wb-cmd-palette {
-  position: absolute;
-  left: 11px;
-  right: 11px;
-  bottom: calc(100% - 4px);
-  z-index: 1100;
+  /* Viewport coordinates are supplied by CommandPalette. It lives under body,
+     outside the clipping composer/panel hierarchy. */
+  position: fixed;
+  z-index: 1400;
   display: flex;
   flex-direction: column;
   max-height: 340px;

@@ -115,13 +115,15 @@ console.log("\nCommandPalette DOM:");
 // Put the disabled 'legacy' skill as the active row so its preview shows.
 const commands = palette.commands;
 const legacyIndex = commands.findIndex((c) => c.id === "legacy");
-const host = mount(React.createElement(CommandPalette, { commands, activeIndex: legacyIndex, onHover() {}, onSelect() {} }));
+const anchor = document.createElement("div");
+document.body.appendChild(anchor);
+mount(React.createElement(CommandPalette, { commands, activeIndex: legacyIndex, onHover() {}, onSelect() {}, anchor }));
 await settle();
-const sources = [...host.querySelectorAll(".wb-cmd-source")].map((s) => s.textContent);
+const sources = [...document.querySelectorAll(".wb-cmd-source")].map((s) => s.textContent);
 assert(sources.includes("skill") && sources.includes("plugin"), "source badges (skill, plugin) render in the list");
-assert(Boolean(host.querySelector(".wb-cmd-row.is-disabled")), "disabled command row is dimmed");
-assert(Boolean(host.querySelector(".wb-cmd-preview-disabled")), "preview shows the disabled reason");
-assert(host.querySelector(".wb-cmd-preview-disabled")?.textContent === "비활성화된 skill", "the disabled reason text is correct");
+assert(Boolean(document.querySelector(".wb-cmd-row.is-disabled")), "disabled command row is dimmed");
+assert(Boolean(document.querySelector(".wb-cmd-preview-disabled")), "preview shows the disabled reason");
+assert(document.querySelector(".wb-cmd-preview-disabled")?.textContent === "비활성화된 skill", "the disabled reason text is correct");
 
 console.log(failures.length ? `\nCODEX DISCOVERY FAILED (${failures.length})` : "\nCODEX DISCOVERY PASSED");
 process.exit(failures.length ? 1 : 0);

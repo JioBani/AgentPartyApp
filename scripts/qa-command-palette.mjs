@@ -162,6 +162,7 @@ assert(!document.querySelector(".wb-cmd-palette"), "palette is closed with an em
 setDraft("/");
 await new Promise((r) => setTimeout(r, 40));
 assert(Boolean(document.querySelector(".wb-cmd-palette")), "typing '/' opens the palette");
+assert(document.querySelector(".wb-cmd-palette")?.parentElement === document.body, "palette is portalled outside clipping panel containers");
 assert(document.querySelectorAll(".wb-cmd-row").length === cc.commands.length, "all commands listed for bare '/'");
 
 setDraft("/comp");
@@ -234,17 +235,17 @@ const liveTextarea = liveRoot.querySelector(".wb-composer-textarea");
 const setLive = (val) => { liveTextarea.textContent = val; liveTextarea.dispatchEvent(new window.Event("input", { bubbles: true })); };
 setLive("/work");
 await new Promise((r) => setTimeout(r, 50));
-const liveNames = [...liveRoot.querySelectorAll(".wb-cmd-row .wb-cmd-name")].map((n) => n.textContent);
+const liveNames = [...document.querySelectorAll(".wb-cmd-row .wb-cmd-name")].map((n) => n.textContent);
 assert(liveNames.includes("/workflow-create"), "discovered skill (workflow-create) from the session snapshot appears");
 setLive("/");
 await new Promise((r) => setTimeout(r, 50));
-const allLive = [...liveRoot.querySelectorAll(".wb-cmd-row .wb-cmd-name")].map((n) => n.textContent);
+const allLive = [...document.querySelectorAll(".wb-cmd-row .wb-cmd-name")].map((n) => n.textContent);
 assert(!allLive.includes("/code-review"), "static-only commands are dropped once the live inventory drives the palette");
 assert(allLive.includes("/codex:rescue"), "namespaced discovered command (codex:rescue) is present");
-const rescueRow = [...liveRoot.querySelectorAll(".wb-cmd-row")].find((row) => row.querySelector(".wb-cmd-name")?.textContent === "/codex:rescue");
+const rescueRow = [...document.querySelectorAll(".wb-cmd-row")].find((row) => row.querySelector(".wb-cmd-name")?.textContent === "/codex:rescue");
 rescueRow.dispatchEvent(new window.MouseEvent("mouseover", { bubbles: true }));
 await new Promise((r) => setTimeout(r, 30));
-assert(liveRoot.querySelector(".wb-cmd-preview-title .wb-mono")?.textContent === "/codex:rescue", "hover preview follows the visually grouped row, not the pre-group array index");
+assert(document.querySelector(".wb-cmd-preview-title .wb-mono")?.textContent === "/codex:rescue", "hover preview follows the visually grouped row, not the pre-group array index");
 
 const codexBuilt = buildPalette("codex", [
   { name: "review-agent", source: "skill", description: "Review changes" },
