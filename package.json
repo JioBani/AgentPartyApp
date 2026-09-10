@@ -1,7 +1,7 @@
 {
   "name": "agentparty-app",
   "productName": "AgentParty",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "AgentParty desktop client for local multi-agent coding sessions.",
   "author": "AgentParty",
   "license": "UNLICENSED",
