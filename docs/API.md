@@ -3273,6 +3273,25 @@ For `send`, a queued success includes compact delivery metadata:
 verify inheritance and explicit overrides even if the recipient wakes and
 auto-drains the row before a follow-up queue read.
 
+The `list` tool is bounded by default. `{ "arguments": {} }` returns
+`detail: "summary"`, `totalMembers`, tab groups, and only `name`, `role`,
+`status`, and `harness` for each member. Roles longer than 160 characters are
+marked with `roleTruncated: true`; model, permission, location, and Message Gate
+configuration are omitted so a long inherited gate rule is not repeated once
+per member. To inspect those settings, pass one exact name:
+
+```json
+{ "arguments": { "name": "reviewer" } }
+```
+
+That returns `detail: "member"` and full configuration for only that member.
+An unknown name is an explicit tool error. There is intentionally no
+"full detail for every member" mode.
+
+`gate-set` and `party-gate-set` mutation results confirm the stored rule with
+`ruleChars` rather than echoing its arbitrary text. Read the full effective rule
+through `list { name }` when it is actually needed.
+
 ### `GET /api/parties/:partyId/members/:name/mcp-tools`
 
 Runs MCP `initialize` + `tools/list` through the same real host-local stdio

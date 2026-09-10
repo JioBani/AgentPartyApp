@@ -157,6 +157,12 @@ export interface DiscordBridgePort {
 // a session in one of these snapshot states is mid-turn ("working" in the UI).
 const BUSY_SESSION_STATUSES = new Set(["requesting", "responding", "interrupting"]);
 
+/** Confirmation shape for gate mutations. Keep arbitrary rule text out of tool results. */
+function effectiveGateReceipt(gate: EffectiveGate): Omit<EffectiveGate, "rule"> & { ruleChars: number } {
+  const { rule, ...rest } = gate;
+  return { ...rest, ruleChars: rule.length };
+}
+
 export class PartyApplicationService {
   private readonly repository = new PartyRepository();
 
@@ -3279,7 +3285,7 @@ export class PartyApplicationService {
           notify();
           const state = this.readState();
           const member = result.member ? this.effectiveGateOf(result.member, state) : undefined;
-          return { ok: true, data: { ok: true, name, gate: member } };
+          return { ok: true, data: { ok: true, name, gate: member ? effectiveGateReceipt(member) : undefined } };
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
         }
@@ -3303,42 +3309,76 @@ export class PartyApplicationService {
           const result = this.setPartyGate(party, next);
           notify();
           const gate = this.readState().parties?.find((item) => item.id === party)?.gate;
-          return { ok: true, data: { ok: result.ok, partyId: party, gate } };
+          return {
+            ok: true,
+            data: {
+              ok: result.ok,
+              partyId: party,
+              gate: gate
+                ? { enabled: gate.enabled, reviewer: gate.reviewer, ruleChars: gate.rule.length }
+                : undefined,
+            },
+          };
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
         }
       },
-      list: async () => {
-        const state = this.readState();
-        const members = state.members
-          .filter((member) => this.partyIdOf(member) === party)
-          .map((member) => this.withLiveStatus(member))
-          .map((member) => ({
-            name: member.name,
-            role: member.role ?? "",
-            status: member.status,
-            harness: member.runtime ?? "claude-code",
-            executionHarness: normalizeHarnessId(member.runtime),
-            model: member.model ?? "",
-            permissionMode: member.permissionMode,
-            codexPolicy: member.codexPolicy,
-            location: member.location
-              ? { ...memberLocationRequestOf(parseMemberLocation(member.location)), location: member.location }
-              : undefined,
-            // The effective Message Gate so a member editing another's gate can
-            // read its current on/off + rule + reviewer.
-            gate: this.effectiveGateOf(member, state),
-          }));
-        const storedLayout = this.getPartyLayout(party);
-        const visibleLayout = storedLayout
-          ?? (members[0] ? openMemberTab(EMPTY_LAYOUT, members[0].name) : EMPTY_LAYOUT);
-        const tabGroups = visibleLayout.panels.map((panel) => ({
-          id: panel.id,
-          anchor: panel.active,
-          members: [...panel.tabs],
-          active: panel.active,
-        }));
-        return { ok: true, data: { members, tabGroups } };
+      list: async (query) => {
+        try {
+          const state = this.readState();
+          const allMembers = state.members
+            .filter((member) => this.partyIdOf(member) === party)
+            .map((member) => this.withLiveStatus(member));
+          const wanted = query?.name?.trim();
+          const selected = wanted
+            ? [this.withLiveStatus(this.requireMember(state, wanted, party))]
+            : allMembers;
+          const members = selected.map((member) => {
+            const role = member.role ?? "";
+            if (!wanted) {
+              const roleTruncated = role.length > 160;
+              return {
+                name: member.name,
+                role: roleTruncated ? `${role.slice(0, 159)}…` : role,
+                ...(roleTruncated ? { roleTruncated: true } : {}),
+                status: member.status,
+                harness: member.runtime ?? "claude-code",
+              };
+            }
+            return {
+              name: member.name,
+              role,
+              status: member.status,
+              harness: member.runtime ?? "claude-code",
+              executionHarness: normalizeHarnessId(member.runtime),
+              model: member.model ?? "",
+              permissionMode: member.permissionMode,
+              codexPolicy: member.codexPolicy,
+              cursorPolicy: member.cursorPolicy,
+              location: member.location
+                ? { ...memberLocationRequestOf(parseMemberLocation(member.location)), location: member.location }
+                : undefined,
+              gate: this.effectiveGateOf(member, state),
+            };
+          });
+          const storedLayout = this.getPartyLayout(party);
+          const visibleLayout = storedLayout
+            ?? (allMembers[0] ? openMemberTab(EMPTY_LAYOUT, allMembers[0].name) : EMPTY_LAYOUT);
+          const tabGroups = visibleLayout.panels
+            .filter((panel) => !wanted || panel.tabs.includes(selected[0].name))
+            .map((panel) => ({
+              id: panel.id,
+              anchor: panel.active,
+              members: [...panel.tabs],
+              active: panel.active,
+            }));
+          return {
+            ok: true,
+            data: { detail: wanted ? "member" : "summary", totalMembers: allMembers.length, members, tabGroups },
+          };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
       },
       listLocations: async () => {
         if (!this.deps.executionLocations) {
