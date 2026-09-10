@@ -597,6 +597,18 @@ export interface MemberPermissionInput {
   cursorPolicy?: CursorPolicy;
 }
 
+/**
+ * Atomic model controls for one existing party member. `fast` deliberately
+ * hides provider-specific tier ids (`priority` for Codex, `fast` for Cursor):
+ * callers ask for the product behavior and the model catalog supplies the
+ * concrete value.
+ */
+export interface MemberRuntimeInput {
+  model?: string;
+  effort?: string;
+  fast?: boolean;
+}
+
 export interface SessionView {
   id: string;
   title: string;

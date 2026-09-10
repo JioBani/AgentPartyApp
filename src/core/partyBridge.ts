@@ -112,6 +112,12 @@ export interface PartyPermissionRequest {
   cursorPolicy?: CursorPolicy;
 }
 
+export interface PartyRuntimeRequest {
+  model?: string;
+  effort?: string;
+  fast?: boolean;
+}
+
 /**
  * A Message Gate override patch for one member. Each axis is optional; a `null`
  * clears that axis back to inherit (party rule / settings reviewer default).
@@ -149,6 +155,8 @@ export interface PartyBridge {
   removeMember(name: string): Promise<PartyToolResult>;
   /** Change another member's permission policy in the caller's own party. */
   setPermission(name: string, request: PartyPermissionRequest): Promise<PartyToolResult>;
+  /** Change another member's model, effort and/or Fast mode. */
+  setRuntime(name: string, request: PartyRuntimeRequest): Promise<PartyToolResult>;
   /** Set another member's Message Gate override (mode / rule / reviewer). */
   gateSet(name: string, patch: PartyGatePatch): Promise<PartyToolResult>;
   /** Set the PARTY-WIDE Message Gate every "inherit" member follows. */
@@ -224,6 +232,7 @@ export function partyBridgeFromInvoker(
     createMember: (request) => hostInvoke("member-create", request),
     removeMember: (name) => hostInvoke("member-remove", { name }),
     setPermission: (name, request) => hostInvoke("member-permission", { name, ...request }),
+    setRuntime: (name, request) => hostInvoke("member-runtime", { name, ...request }),
     gateSet: (name, patch) => hostInvoke("gate-set", { name, ...patch }),
     partyGateSet: (patch) => hostInvoke("party-gate-set", patch),
     list: (query) => hostInvoke("list", query || {}),
@@ -264,7 +273,7 @@ export async function invokePartyToolFromExecutionHost(
   return invoke(name, input);
 }
 
-export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "gate-set", "party-gate-set", "list", "list-locations", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image"] as const;
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "member-runtime", "gate-set", "party-gate-set", "list", "list-locations", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
@@ -272,6 +281,7 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "member-create": "Create and start one or more members. Use the existing top-level fields for one member, or pass `members` as an array of member objects for a batch. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?} to choose Windows or WSL explicitly; omit it to inherit your own execution location.",
   "member-remove": "Remove one or more members from your party. Pass `name` as one member name or an array of names. Cannot remove 'main'.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
+  "member-runtime": "Change one other member's model, reasoning effort, and/or Fast mode without changing its harness. Call list-models with the member's harness for valid model ids and effort options. Fast is a boolean: true selects that route's native Fast tier (for example priority on Codex or fast on Cursor), false selects Standard or clears an inapplicable stale tier. Existing conversation is preserved when a session restart is required. A busy target is refused instead of having its turn killed.",
   "gate-set": "Set another member's Message Gate — the delivery-time reviewer of that member's OUTGOING messages. mode: inherit|on|off. rule: the communication rule text the reviewer enforces (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate. The result confirms ruleChars without echoing the rule; use list {name} when you need to inspect it.",
   "party-gate-set": "Set the PARTY-WIDE Message Gate — the default every member with mode 'inherit' follows. enabled: turn the party gate on/off. rule: the communication rule text enforced party-wide. reviewer: {model, effort} for a party-wide headless reviewer (null to use the settings default). This changes the default for EVERY inheriting member at once, so prefer gate-set when only one member should be affected. A member that set mode on/off, or its own rule, keeps overriding this. The result confirms ruleChars without echoing the rule.",
   list: "List compact member summaries and current tabGroups. Pass `name` to inspect one member's full model, permission, location, and Message Gate settings. Full detail for every member is intentionally unavailable because long inherited gate rules would be repeated once per member. Pass a chosen tabGroups[].id to member-create.tabGroup.",
@@ -415,6 +425,18 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
       },
     },
     required: ["name"],
+    additionalProperties: false,
+  },
+  "member-runtime": {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "Target member name in your party (not yourself)." },
+      model: { type: "string", description: "Exact model id returned by list-models for the member's current harness." },
+      effort: { type: "string", description: "Reasoning effort supported by that model." },
+      fast: { type: "boolean", description: "True selects the model's native Fast tier; false selects Standard or clears Fast when tiers do not apply." },
+    },
+    required: ["name"],
+    anyOf: [{ required: ["model"] }, { required: ["effort"] }, { required: ["fast"] }],
     additionalProperties: false,
   },
   "gate-set": {
@@ -743,6 +765,29 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         cursorPolicy: input.cursorPolicy && typeof input.cursorPolicy === "object" ? input.cursorPolicy as CursorPolicy : undefined,
       });
     }
+    case "member-runtime": {
+      const memberName = typeof input.name === "string" ? input.name.trim() : "";
+      if (!memberName) {
+        return { ok: false, error: "member-runtime requires string argument: name." };
+      }
+      if ("model" in input && typeof input.model !== "string") {
+        return { ok: false, error: "member-runtime model must be a string." };
+      }
+      if ("effort" in input && typeof input.effort !== "string") {
+        return { ok: false, error: "member-runtime effort must be a string." };
+      }
+      if ("fast" in input && typeof input.fast !== "boolean") {
+        return { ok: false, error: "member-runtime fast must be a boolean." };
+      }
+      const request: PartyRuntimeRequest = {};
+      if (typeof input.model === "string") request.model = input.model;
+      if (typeof input.effort === "string") request.effort = input.effort;
+      if (typeof input.fast === "boolean") request.fast = input.fast;
+      if (!Object.keys(request).length) {
+        return { ok: false, error: "member-runtime requires at least one of: model, effort, fast." };
+      }
+      return bridge.setRuntime(memberName, request);
+    }
     case "gate-set": {
       const memberName = typeof input.name === "string" ? input.name : "";
       if (!memberName) {
@@ -981,6 +1026,17 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         }).optional().describe("Cursor mode and approval policy."),
       },
       async (args: { name: string } & PartyPermissionRequest) => envelope(await bridge.setPermission(args.name, args)),
+    ),
+    tool(
+      "member-runtime",
+      partyDynamicToolDescriptions["member-runtime"],
+      {
+        name: z.string().describe("Target member name in your party (not yourself)."),
+        model: z.string().optional().describe("Exact model id returned by list-models for the member's current harness."),
+        effort: z.string().optional().describe("Reasoning effort supported by that model."),
+        fast: z.boolean().optional().describe("True selects the native Fast tier; false selects Standard or clears Fast when tiers do not apply."),
+      },
+      async (args: { name: string } & PartyRuntimeRequest) => envelope(await invokePartyTool(bridge, identity, "member-runtime", args)),
     ),
     tool(
       "gate-set",

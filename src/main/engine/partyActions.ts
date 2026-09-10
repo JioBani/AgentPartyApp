@@ -3,7 +3,7 @@ import type { PartyApplicationService } from "../application/partyApplicationSer
 import { sanitizeAttachments } from "../../shared/attachments";
 import { normalizeAutoCompact } from "../../shared/autoCompact";
 
-export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "force-stop" | "broadcast" | "auto-compact" | "compact" | "permission" | "gate" | "outbound-interrupt" | "sleep" | "wake" | "keep-awake";
+export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "force-stop" | "broadcast" | "auto-compact" | "compact" | "permission" | "runtime" | "gate" | "outbound-interrupt" | "sleep" | "wake" | "keep-awake";
 
 type PartyActionHandler = (party: PartyApplicationService, name: string, body: any, partyId?: string) => PartyMutationResult | Promise<PartyMutationResult>;
 
@@ -33,6 +33,9 @@ const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
   // id to send this to, and it is woken for it rather than silently skipped.
   compact: (party, name, _body, partyId) => party.compactMember(name, partyId),
   permission: (party, name, body, partyId) => party.setMemberPermission(name, body || {}, partyId),
+  // Atomic model / effort / Fast controls. This is also the implementation
+  // behind the member-runtime MCP tool.
+  runtime: (party, name, body, partyId) => party.setMemberRuntime(name, body || {}, partyId),
   // Per-member Message Gate override (mode/rule/reviewer patch). Cross-editable.
   gate: (party, name, body, partyId) => party.setMemberGate(name, body?.gate ?? body ?? {}, partyId),
   "outbound-interrupt": (party, name, body, partyId) => party.setMemberOutboundInterrupt(name, body?.outboundInterrupt, partyId),
