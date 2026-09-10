@@ -18,6 +18,8 @@ import type { ComposerSettings } from "./composerSettings";
 import type { FontSettings } from "./appFonts";
 import type { ThemePreference } from "./appTheme";
 import type { FavoriteModels } from "./favoriteModels";
+import type { FavoriteParties } from "./favoriteParties";
+import type { SidebarGroupFolds } from "./sidebarGroupFolds";
 import type { MemberMessagingSettings } from "./memberMessaging";
 import type { PartyIdentity, PartyPrimerSettings } from "./partyPrimer";
 import type { UpdateChannel } from "./appUpdate";
@@ -173,6 +175,18 @@ export interface AppSettings {
    * explains why an unresolvable id is kept instead of dropped.
    */
   favoriteModels: FavoriteModels;
+  /**
+   * Party ids the user has starred. They are MIRRORED into a virtual 즐겨찾기
+   * group above the real ones, never moved out of their own group — see
+   * `shared/favoriteParties.ts`.
+   */
+  favoriteParties: FavoriteParties;
+  /**
+   * Sidebar groups the user folded shut, remembered across launches. Stores what
+   * is CLOSED so a group nobody has touched opens — see
+   * `shared/sidebarGroupFolds.ts`.
+   */
+  sidebarGroupFolds: SidebarGroupFolds;
   /**
    * Discord bridge credentials and inbound whitelist. Edited in Settings →
    * Discord; the token is masked when read back. See `shared/discordBridge.ts`.
@@ -524,6 +538,15 @@ export interface CreatePartyInput {
   name: string;
   /** Optional initial Message Gate for the new party (default: off, no rule). */
   gate?: PartyGate;
+  /**
+   * Open the new party in ANOTHER window instead of switching this one to it.
+   *
+   * A routing hint for the desktop layer, not part of the party: nothing about
+   * it is stored, and the party service never reads it. It exists so "새 창에서
+   * 생성" is one call — creating and then switching windows in two steps would
+   * leave the creating window on the new party in between.
+   */
+  newWindow?: boolean;
   /** Which party group to file it under; default group when omitted. */
   groupId?: string;
   /**

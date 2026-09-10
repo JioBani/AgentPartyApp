@@ -2228,8 +2228,11 @@ export class AppController {
     // created, so a bad path leaves nothing half-made behind.
     const location = await this.requireUsableLocation(input.location, workspacePath);
     const result = await this.partyEngine(workspacePath).createParty({ ...input, location: location.serialized });
-    // The window that created the party switches to it (others are untouched).
-    if (windowId && result.currentPartyId) {
+    // The window that created the party switches to it (others are untouched) —
+    // unless it asked for the party to open elsewhere, in which case this window
+    // must stay exactly where it was. Pinning it here and moving it back would
+    // still repaint the party it was showing.
+    if (windowId && result.currentPartyId && !input.newWindow) {
       this.activePartyByWindow.set(windowId, result.currentPartyId);
     }
     // Only a creation that SUCCEEDED puts the cwd in the recent list (README §6).
@@ -2238,6 +2241,11 @@ export class AppController {
     this.publishSettings();
     await this.syncPartyRegistry(workspacePath);
     await this.broadcastParty(workspacePath);
+    // Opened AFTER the registry sync so the new window's first load already sees
+    // the party it is being pinned to.
+    if (input.newWindow && result.currentPartyId) {
+      await this.openWindow(workspacePath, result.currentPartyId);
+    }
     return result;
   }
 

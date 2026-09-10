@@ -216,10 +216,6 @@ assert(reviewerDetail.data?.members?.[0]?.name === "reviewer" && reviewerDetail.
 const missingDetail = await bridge.list({ name: "ghost" });
 assert(!missingDetail.ok && /does not exist/i.test(missingDetail.error || ""), "list name filter fails visibly for an unknown member");
 
-// --- member-remove: main protected, others removable -------------------------
-const rmMain = await bridge.removeMember("main");
-assert(!rmMain.ok, "member-remove refuses to remove 'main'");
-
 // A different process/window can move the advisory last-active hint while this
 // bridge remains bound to its own party. Removing a member must return that
 // acted-on party's view, close only that member's session, and leave the other
@@ -487,9 +483,12 @@ assert(!unknownExclude.ok && /unknown member/i.test(unknownExclude.error || ""),
 
 const duplicateRemoval = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}member-remove`, { name: ["batch-a", "batch-a"] });
 assert(!duplicateRemoval.ok && /duplicate/i.test(duplicateRemoval.error || "") && svc.list().members.some((m) => m.name === "batch-a"), "batch removal rejects duplicate names before deleting anything");
-const batchRemoved = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}member-remove`, { name: ["batch-a", "main", "batch-b"] });
-assert(batchRemoved.ok && batchRemoved.data.removed.sort().join() === "batch-a,batch-b" && batchRemoved.data.failed.some((item) => item.name === "main"), "member-remove accepts arrays and reports partial failures without hiding successful removals");
-assert(!svc.list().members.some((m) => m.name === "batch-a" || m.name === "batch-b") && svc.list().members.some((m) => m.name === "main"), "batch removal deletes normal members and preserves main");
+// A name that does not exist is the partial-failure case now that no member is
+// protected: the removals that CAN happen still happen, and the one that cannot
+// is reported instead of quietly dropping the whole batch.
+const batchRemoved = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}member-remove`, { name: ["batch-a", "ghost-member", "batch-b"] });
+assert(batchRemoved.ok && batchRemoved.data.removed.sort().join() === "batch-a,batch-b" && batchRemoved.data.failed.some((item) => item.name === "ghost-member"), "member-remove accepts arrays and reports partial failures without hiding successful removals");
+assert(!svc.list().members.some((m) => m.name === "batch-a" || m.name === "batch-b"), "batch removal deletes the members it could delete");
 
 // --- session primer: deterministic surface knowledge (no model memory) -------
 console.log("\nParty primer assertions:");
@@ -535,6 +534,13 @@ assert(live.has(afterSession), "the reloaded session is live");
 assert(resumedWith.includes(beforeThread), "respawn RESUMES the old harness thread (conversation continues, not a fresh chat)");
 assert(svc.list().members.find((m) => m.name === "respawner")?.harnessSessionId === beforeThread, "the live harness thread id was captured onto the member before teardown");
 assert(svc.list().members.find((m) => m.name === "respawner")?.model === "sonnet", "respawn preserves the member's persisted config (model)");
+
+// --- member-remove: every member is removable, 'main' included ---------------
+// 'main' is the member a party is BORN with, not a role anything routes through,
+// so removing it is an ordinary removal and a party may end up with none.
+const rmMain = await bridge.removeMember("main");
+assert(rmMain.ok, "member-remove removes 'main' like any other member");
+assert(!svc.list(partyId).members.some((m) => m.name === "main"), "'main' is gone from the party after removal");
 
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nPARTY BRIDGE PASSED");
 process.exit(failures.length ? 1 : 0);

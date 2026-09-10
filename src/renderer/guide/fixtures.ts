@@ -18,6 +18,8 @@ import type { TranscriptBlock } from "../../shared/transcript";
 import type { WorkbenchLayout } from "../../shared/workbenchLayout";
 import type { ClaudeSessionSnapshot } from "../../core/events";
 import { DEFAULT_SIDEBAR_DRAWERS } from "../../shared/sidebarDrawers";
+import { DEFAULT_FAVORITE_PARTIES } from "../../shared/favoriteParties";
+import { DEFAULT_SIDEBAR_GROUP_FOLDS } from "../../shared/sidebarGroupFolds";
 
 
 export const WORKSPACE = "C:\\work\\todo-api";
@@ -258,6 +260,8 @@ export function baseState(party: InitialAppState["party"], sessions: SessionView
       memberMessaging: { ...DEFAULT_MEMBER_MESSAGING_SETTINGS },
       favoriteModels: [],
       sidebarDrawers: DEFAULT_SIDEBAR_DRAWERS,
+      favoriteParties: DEFAULT_FAVORITE_PARTIES,
+      sidebarGroupFolds: DEFAULT_SIDEBAR_GROUP_FOLDS,
     },
     workspace: { uri: WORKSPACE, kind: "local", path: WORKSPACE },
     auth,

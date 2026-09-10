@@ -23,6 +23,8 @@ import { DEFAULT_IDLE_SLEEP } from "../../../shared/idleSleep";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS } from "../../../shared/memberMessaging";
 import type { AppLocale } from "../../../shared/appLocale";
 import { DEFAULT_SIDEBAR_DRAWERS } from "../../../shared/sidebarDrawers";
+import { DEFAULT_FAVORITE_PARTIES } from "../../../shared/favoriteParties";
+import { DEFAULT_SIDEBAR_GROUP_FOLDS } from "../../../shared/sidebarGroupFolds";
 
 export const EMPTY_GUIDE_SNAPSHOT: GuideSnapshot = {
   state: {
@@ -57,6 +59,8 @@ export const EMPTY_GUIDE_SNAPSHOT: GuideSnapshot = {
       memberMessaging: { ...DEFAULT_MEMBER_MESSAGING_SETTINGS },
       favoriteModels: [],
       sidebarDrawers: DEFAULT_SIDEBAR_DRAWERS,
+      favoriteParties: DEFAULT_FAVORITE_PARTIES,
+      sidebarGroupFolds: DEFAULT_SIDEBAR_GROUP_FOLDS,
     },
     auth: [],
     sessions: [],

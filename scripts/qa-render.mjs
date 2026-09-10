@@ -430,7 +430,10 @@ const firstPartyRow = document.querySelector(".wb-party-row");
 if (firstPartyRow) {
   firstPartyRow.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 30 }));
   await new Promise((resolve) => setTimeout(resolve, 60));
-  const openPartyWindowItem = document.querySelector(".wb-ctx-menu .wb-ctx-item");
+  // By LABEL, not by position: the party menu's first item is the 즐겨찾기
+  // toggle, and an index here would silently start testing that instead.
+  const openPartyWindowItem = [...document.querySelectorAll(".wb-ctx-menu .wb-ctx-item")]
+    .find((item) => (item.textContent || "").includes("새 창"));
   openPartyWindowItem?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await new Promise((resolve) => setTimeout(resolve, 60));
 }

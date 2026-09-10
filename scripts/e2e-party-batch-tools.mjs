@@ -93,10 +93,17 @@ try {
   const mcpBroadcastOutcomes = [...(mcpBroadcast.data?.delivered || []), ...(mcpBroadcast.data?.queuedMembers || []), ...(mcpBroadcast.data?.failed || []).map((item) => item.name)];
   assert(mcpBroadcast.ok && mcpBroadcastOutcomes.includes("mcp-a") && !mcpBroadcastOutcomes.includes("mcp-b"), "real stdio MCP broadcast honors exclude");
 
-  const mcpRemoved = await invokeMcp("member-remove", { name: ["mcp-a", "main", "mcp-b"] });
-  assert(mcpRemoved.ok && mcpRemoved.data?.removed?.sort().join() === "mcp-a,mcp-b" && mcpRemoved.data?.failed?.some((item) => item.name === "main"), "real stdio MCP member-remove accepts arrays and reports protected main");
+  const mcpRemoved = await invokeMcp("member-remove", { name: ["mcp-a", "mcp-b"] });
+  assert(mcpRemoved.ok && mcpRemoved.data?.removed?.sort().join() === "mcp-a,mcp-b" && (mcpRemoved.data?.failed || []).length === 0, "real stdio MCP member-remove accepts arrays");
   party = await get("/api/party");
   assert(party.members.length === 1 && party.members[0]?.name === "main", "all successful batch removals persist in the real app state");
+
+  // 'main' carries no special protection any more: it is removable like any
+  // other member, and the party is then simply empty.
+  const mainRemoved = await invokeMcp("member-remove", { name: "main" });
+  assert(mainRemoved.ok && mainRemoved.data?.removed?.join() === "main", "real stdio MCP member-remove removes 'main'");
+  party = await get("/api/party");
+  assert(party.members.length === 0, "a party with its last member removed is empty rather than refusing");
 
   await app.close();
 } catch (error) {

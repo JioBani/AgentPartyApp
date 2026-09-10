@@ -42,6 +42,7 @@ import { CompactModal } from "./AutoCompactEditor";
 import { PermissionModal } from "./PermissionModal";
 import { SessionStatusModal } from "./SessionStatusModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { SidebarGroupFolds } from "../../shared/sidebarGroupFolds";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface WorkbenchProps {
@@ -107,6 +108,11 @@ interface WorkbenchProps {
   /** Members frontmost in a panel — what the user is actually looking at. */
   onVisibleMembersChange: (partyId: string, members: string[]) => void;
   onToggleDrawer: (which: SidebarDrawerId, patch: Partial<SidebarDrawerState>) => void;
+  /** Starred parties and folded sidebar groups — both persisted settings. */
+  favoriteParties: readonly string[];
+  onToggleFavoriteParty: (partyId: string) => void;
+  groupFolds: SidebarGroupFolds;
+  onToggleGroupFold: (which: keyof SidebarGroupFolds, groupId: string, closed: boolean) => void;
   /** App-shell views opened by AgentParty-backed slash commands. */
   onOpenUsage: () => void;
 }
@@ -256,7 +262,7 @@ function loadSubagentUi(): SubagentUiState {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, appWorkspaceRoot, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleDrawer, onOpenUsage } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, appWorkspaceRoot, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, onOpenUsage } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -879,6 +885,10 @@ export function Workbench(props: WorkbenchProps) {
         defaultTabGroupId={layout.focusedPanelId || undefined}
         drawers={drawers}
         onToggleDrawer={onToggleDrawer}
+        favoriteParties={favoriteParties}
+        onToggleFavoriteParty={onToggleFavoriteParty}
+        groupFolds={groupFolds}
+        onToggleGroupFold={onToggleGroupFold}
         routes={routes}
         codexModels={codexModels}
         onRefreshCodexModels={onRefreshCodexModels}

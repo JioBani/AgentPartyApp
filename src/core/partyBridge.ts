@@ -151,7 +151,7 @@ export interface PartyBridge {
   send(from: string, to: string, content: string, interrupt?: boolean, force?: boolean, forceReason?: string): Promise<PartyToolResult>;
   /** Create a member in the caller's own party and auto-start its session. */
   createMember(request: PartyCreateMemberRequest): Promise<PartyToolResult>;
-  /** Remove a member from the caller's own party (cannot remove `main`). */
+  /** Remove a member from the caller's own party. */
   removeMember(name: string): Promise<PartyToolResult>;
   /** Change another member's permission policy in the caller's own party. */
   setPermission(name: string, request: PartyPermissionRequest): Promise<PartyToolResult>;
@@ -279,7 +279,7 @@ export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   send: "Send the same message to one or more members of your party. Pass `to` as one member name or an array of names. Batch results separate delivered, queued, and failed recipients. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in, or queue=true to explicitly wait behind the current turn. Legacy interrupt=false is treated as omitted so model-generated false values cannot disable the saved setting.",
   "member-create": "Create and start one or more members. Use the existing top-level fields for one member, or pass `members` as an array of member objects for a batch. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?} to choose Windows or WSL explicitly; omit it to inherit your own execution location.",
-  "member-remove": "Remove one or more members from your party. Pass `name` as one member name or an array of names. Cannot remove 'main'.",
+  "member-remove": "Remove one or more members from your party. Pass `name` as one member name or an array of names.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
   "member-runtime": "Change one other member's model, reasoning effort, and/or Fast mode without changing its harness. Call list-models with the member's harness for valid model ids and effort options. Fast is a boolean: true selects that route's native Fast tier (for example priority on Codex or fast on Cursor), false selects Standard or clears an inapplicable stale tier. Existing conversation is preserved when a session restart is required. A busy target is refused instead of having its turn killed.",
   "gate-set": "Set another member's Message Gate — the delivery-time reviewer of that member's OUTGOING messages. mode: inherit|on|off. rule: the communication rule text the reviewer enforces (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate. The result confirms ruleChars without echoing the rule; use list {name} when you need to inspect it.",
@@ -1005,7 +1005,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     ),
     tool(
       "member-remove",
-      "Remove one or more members from your party (cannot remove 'main'). Closes running sessions. Batch results report removed and failed names separately.",
+      "Remove one or more members from your party. Closes running sessions. Batch results report removed and failed names separately.",
       { name: z.union([z.string(), z.array(z.string()).min(1)]).describe("One member name or a non-empty array of unique member names.") },
       async (args: { name: string | string[] }) => envelope(await invokePartyTool(bridge, identity, "member-remove", args)),
     ),

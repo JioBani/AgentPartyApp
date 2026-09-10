@@ -1,8 +1,8 @@
 /*
  * Regression for the Workbench sidebar delete controls (right-click context
  * menu):
- *  - Member rows (except 'main') → '삭제하기' calls onRemoveMember. 'main' is
- *    not removable (no menu).
+ *  - Member rows → '삭제하기' calls onRemoveMember, 'main' included: it is the
+ *    member a party is born with, not a protected role.
  *  - Party rows → a two-step confirm: the first click arms ('파티 삭제…'), the
  *    second calls onRemoveParty. Deleting a party cascades to its members, so
  *    the confirm guards against an accidental single click.
@@ -50,6 +50,8 @@ const props = {
   onCreateMember: () => {}, onOpenMember: () => {}, onRestartMember: () => {}, onSetMemberKeepAwake: () => {}, onSleepMember: () => {}, onWakeMember: () => {},
   onRemoveMember: (name) => removed.push(name), onRemoveParty: (id) => removedParties.push(id),
   onOpenPartyGate: () => {}, onOpenPartyInNewWindow: () => {}, onToggleDrawer: () => {},
+  favoriteParties: [], onToggleFavoriteParty: () => {},
+  groupFolds: { party: [], member: [] }, onToggleGroupFold: () => {},
 };
 reactDom.createRoot(document.getElementById("root")).render(React.createElement(PartySidebar, props));
 await new Promise((r) => setTimeout(r, 80));
@@ -63,15 +65,15 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
 console.log("\nMember-remove (right-click context menu) assertions:");
 assert(rows.length === 2, "both members rendered");
 
-// Right-click 'main' → a menu without 삭제하기. The menu used to be suppressed
-// entirely here (main is not removable and had no session, so nothing was
-// actionable), but 항상 실행 상태 유지 applies to every member including main, so the
+// Right-click 'main' → an ORDINARY member menu, 삭제하기 included: 'main' is the
+// member a party is born with, not a protected role, so the menu offers exactly
+// what it offers for any other member. 항상 실행 상태 유지 applies to it too, so the
 // menu now opens; only the delete item stays absent.
 rightClick(rowFor("main")); await tick();
 const mainCtx = document.querySelector(".wb-ctx-menu");
 assert(Boolean(mainCtx), "right-click on 'main' opens a context menu");
 const mainItems = mainCtx ? [...mainCtx.querySelectorAll(".wb-ctx-item")] : [];
-assert(!mainItems.some((b) => /삭제하기/.test(b.textContent || "")), "'main' context menu has no 삭제하기");
+assert(mainItems.some((b) => /삭제하기/.test(b.textContent || "")), "'main' context menu offers 삭제하기 like any other member");
 assert(mainItems.some((b) => /항상 실행 상태 유지/.test(b.textContent || "")), "'main' context menu offers 항상 실행 상태 유지");
 
 // Right-click 'alice' → a context menu with a delete item appears; no removal yet.

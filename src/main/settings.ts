@@ -14,6 +14,8 @@ import { DEFAULT_COMPOSER_SETTINGS, normalizeComposerSettings } from "../shared/
 import { DEFAULT_FONT_SETTINGS, normalizeFontSettings } from "../shared/appFonts";
 import { DEFAULT_THEME_PREFERENCE, isThemePreference, normalizeThemePreference, type ThemePreference } from "../shared/appTheme";
 import { DEFAULT_FAVORITE_MODELS, normalizeFavoriteModels } from "../shared/favoriteModels";
+import { DEFAULT_FAVORITE_PARTIES, normalizeFavoriteParties } from "../shared/favoriteParties";
+import { DEFAULT_SIDEBAR_GROUP_FOLDS, normalizeSidebarGroupFolds } from "../shared/sidebarGroupFolds";
 import { DEFAULT_MEMBER_MESSAGING_SETTINGS, normalizeMemberMessagingSettings } from "../shared/memberMessaging";
 import { MOBILE_SETTINGS_DEFAULTS, type MobileSettings } from "../shared/mobileProtocol";
 import { normalizePartyPrimerSettings } from "../shared/partyPrimer";
@@ -79,6 +81,8 @@ const defaults: AppSettings = {
   composer: { ...DEFAULT_COMPOSER_SETTINGS },
   memberMessaging: { ...DEFAULT_MEMBER_MESSAGING_SETTINGS },
   favoriteModels: [...DEFAULT_FAVORITE_MODELS],
+  favoriteParties: [...DEFAULT_FAVORITE_PARTIES],
+  sidebarGroupFolds: { party: [...DEFAULT_SIDEBAR_GROUP_FOLDS.party], member: [...DEFAULT_SIDEBAR_GROUP_FOLDS.member] },
   discord: { ...DEFAULT_DISCORD_SETTINGS },
   mobile: { ...MOBILE_SETTINGS_DEFAULTS },
 };
@@ -222,6 +226,8 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   // delete the user's choice in the second case. The catalog resolves the list
   // when it renders, so an unknown id draws nothing and returns on its own.
   const favoriteModels = normalizeFavoriteModels(withRuntimeOverrides.favoriteModels);
+  const favoriteParties = normalizeFavoriteParties(withRuntimeOverrides.favoriteParties);
+  const sidebarGroupFolds = normalizeSidebarGroupFolds(withRuntimeOverrides.sidebarGroupFolds);
   const idleSleep = sanitizeIdleSleep(withRuntimeOverrides.idleSleep);
   const theme = normalizeThemePreference(withRuntimeOverrides.theme);
   const fonts = normalizeFontSettings(withRuntimeOverrides.fonts);
@@ -232,7 +238,7 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   // start with a prompt the settings screen would not show.
   const partyPrimer = normalizePartyPrimerSettings(withRuntimeOverrides.partyPrimer);
   const sidebarDrawers = normalizeSidebarDrawers(withRuntimeOverrides.sidebarDrawers);
-  return { ...withRuntimeOverrides, locale: normalizeAppLocale(withRuntimeOverrides.locale), updateChannel, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, discord, theme, fonts, mobile, partyPrimer, sidebarDrawers, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  return { ...withRuntimeOverrides, locale: normalizeAppLocale(withRuntimeOverrides.locale), updateChannel, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, favoriteParties, sidebarGroupFolds, discord, theme, fonts, mobile, partyPrimer, sidebarDrawers, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

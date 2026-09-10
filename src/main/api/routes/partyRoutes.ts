@@ -3,7 +3,7 @@ import { parseQueueCommand } from "../../../shared/messageQueue";
 import { buildPartyMcpToolSpecs } from "../../../core/partyBridge";
 import { PARTY_ACTION_NAMES } from "../../engine/partyActions";
 import type { CreateMemberInput } from "../../../shared/types";
-import { ApiError, camelAction, optText, required, text, type MethodRoute } from "../methodRegistry";
+import { ApiError, camelAction, flag, optText, required, text, type MethodRoute } from "../methodRegistry";
 
 /**
  * Member actions that do NOT get a generated `/:action` endpoint:
@@ -68,7 +68,9 @@ export const partyRoutes: MethodRoute[] = [
   {
     name: "party.create",
     http: "POST /api/parties",
-    handler: (p, ctx) => ctx.controller.createParty(ctx.workspace, { ...p, name: required(p.name, "name") }, ctx.windowId),
+    // `newWindow` is coerced here rather than trusted: over HTTP it arrives as
+    // a string, and a truthy "false" would open a window nobody asked for.
+    handler: (p, ctx) => ctx.controller.createParty(ctx.workspace, { ...p, name: required(p.name, "name"), newWindow: flag(p.newWindow) }, ctx.windowId),
   },
   {
     name: "party.select",

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronsLeft, ChevronsRight, ExternalLink, FolderInput, Moon, PencilLine, Pin, Play, Plus, RotateCcw, Sun, Terminal, Trash2, UserRound, Users, X } from "lucide-react";
+import { Check, ChevronsLeft, ChevronsRight, ExternalLink, FolderInput, Moon, PencilLine, Pin, Play, Plus, RotateCcw, Star, Sun, Terminal, Trash2, UserRound, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
@@ -17,7 +17,8 @@ import { MemberCwdTree } from "./MemberCwdTree";
 import { MoveGroupModal, NewGroupModal, RenameGroupModal } from "./PartyGroupModals";
 import { CwdPicker, ENV_LABEL, EnvIcon, selectableWslDistroError, type WslBrowsing } from "./CwdPicker";
 import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
-import { groupParties } from "../../shared/partyGroups";
+import { FAVORITE_PARTY_GROUP_ID, groupPartiesWithFavorites, isFavoriteGroupId, isFavoriteParty } from "../../shared/favoriteParties";
+import type { SidebarGroupFolds } from "../../shared/sidebarGroupFolds";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
 import { checkLocationShape, parseMemberLocation, suggestedCwd } from "../../shared/memberLocation";
 import { SIDEBAR_DRAWER_MAX_WIDTH, SIDEBAR_DRAWER_MIN_WIDTH, type SidebarDrawerId, type SidebarDrawerSettings, type SidebarDrawerState } from "../../shared/sidebarDrawers";
@@ -105,6 +106,12 @@ interface PartySidebarProps {
   /** Drawer open/width state, and how to change it. Owned by the app shell. */
   drawers: SidebarDrawerSettings;
   onToggleDrawer: (which: SidebarDrawerId, patch: Partial<SidebarDrawerState>) => void;
+  /** Starred party ids, mirrored into the 즐겨찾기 group above the real ones. */
+  favoriteParties: readonly string[];
+  onToggleFavoriteParty: (partyId: string) => void;
+  /** Which groups the user folded shut. Persisted, so a fold survives a restart. */
+  groupFolds: SidebarGroupFolds;
+  onToggleGroupFold: (which: keyof SidebarGroupFolds, groupId: string, closed: boolean) => void;
 }
 
 /**
@@ -120,6 +127,8 @@ export interface CreatePartyInput {
   groupId: string;
   location: MemberExecutionLocation;
   gate?: PartyGate;
+  /** Open the party in another window instead of switching this one to it. */
+  newWindow?: boolean;
 }
 
 /** The row the context menu was opened on, re-read live so its items reflect the
@@ -230,11 +239,9 @@ function MemberContextMenuItems({ name, view, location, onRestart, onSetKeepAwak
           <Moon size={13} />  <LocalizedText id="STR-2056" />
         </button>
       )}
-      {name !== "main" && (
-        <button type="button" className="wb-ctx-item is-danger" onClick={run(() => onRemove(name))}>
-          <Trash2 size={13} />  <LocalizedText id="STR-2057" />
-        </button>
-      )}
+      <button type="button" className="wb-ctx-item is-danger" onClick={run(() => onRemove(name))}>
+        <Trash2 size={13} />  <LocalizedText id="STR-2057" />
+      </button>
     </>
   );
 }
@@ -333,7 +340,7 @@ function fitContextMenuToViewport(
  */
 
 export function PartySidebar(props: PartySidebarProps) {
-  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, views, openMembers, tabGroups, defaultTabGroupId, drawers, onToggleDrawer, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
+  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, views, openMembers, tabGroups, defaultTabGroupId, drawers, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
   /**
    * The width being dragged RIGHT NOW, if any.
    *
@@ -400,21 +407,24 @@ export function PartySidebar(props: PartySidebarProps) {
   /** Which group a new party should land in, when opened from a group's menu. */
   const [newPartyGroupId, setNewPartyGroupId] = useState<string | null>(null);
   /**
-   * Which groups are expanded. Starts with every group open: a first run that
-   * hid the parties behind three closed folders would look like an empty app.
+   * Which groups are folded shut, from the persisted setting. Tracking what is
+   * CLOSED (never what is open) is what makes a group nobody has touched — one
+   * created after the setting was written, or by another window — appear open
+   * instead of hidden behind a fold nobody chose.
    */
-  const [closedGroupIds, setClosedGroupIds] = useState<ReadonlySet<string>>(() => new Set());
-  /**
-   * The member tree's own folded groups, by the same rule and for the same
-   * reason: tracking what is CLOSED means a member created in a directory nobody
-   * has seen before appears in an open group rather than a hidden one.
-   */
-  const [closedMemberGroupIds, setClosedMemberGroupIds] = useState<ReadonlySet<string>>(() => new Set());
-  const openGroupIds = useMemo(
-    () => new Set(groups.map((group) => group.id).filter((id) => !closedGroupIds.has(id))),
-    [groups, closedGroupIds],
+  const closedGroupIds = useMemo(() => new Set(groupFolds.party), [groupFolds.party]);
+  /** The member tree's own folds, same rule and same storage. */
+  const closedMemberGroupIds = useMemo(() => new Set(groupFolds.member), [groupFolds.member]);
+  const grouped = useMemo(
+    () => groupPartiesWithFavorites(groups, partySummaries, favoriteParties),
+    [groups, partySummaries, favoriteParties],
   );
-  const grouped = useMemo(() => groupParties(groups, partySummaries), [groups, partySummaries]);
+  // Derived from the rendered groups, not from the stored ones, so the virtual
+  // 즐겨찾기 group can be folded like any other.
+  const openGroupIds = useMemo(
+    () => new Set(grouped.map((entry) => entry.group.id).filter((id) => !closedGroupIds.has(id))),
+    [grouped, closedGroupIds],
+  );
   const partyCountByGroup = useMemo(
     () => Object.fromEntries(grouped.map((entry) => [entry.group.id, entry.parties.length])),
     [grouped],
@@ -500,28 +510,13 @@ export function PartySidebar(props: PartySidebarProps) {
    * make folding a party group close a directory that merely shares its id.
    */
   function toggleMemberGroup(groupId: string) {
-    setClosedMemberGroupIds((current) => {
-      const next = new Set(current);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
-      return next;
-    });
+    onToggleGroupFold("member", groupId, !closedMemberGroupIds.has(groupId));
   }
 
   function toggleGroup(groupId: string) {
-    setClosedGroupIds((current) => {
-      const next = new Set(current);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
-      return next;
-    });
+    onToggleGroupFold("party", groupId, !closedGroupIds.has(groupId));
   }
+
 
   async function createMember(input: CreateMemberInput) {
     if (memberSubmittingRef.current) return;
@@ -561,15 +556,31 @@ export function PartySidebar(props: PartySidebarProps) {
           onToggleGroup={toggleGroup}
           onSelectParty={onSelectParty}
           onCreateGroup={() => setNewGroupOpen(true)}
-          onCreateParty={(groupId) => { setNewPartyGroupId(groupId); setNewPartyOpen(true); }}
+          onCreateParty={(groupId) => { setNewPartyGroupId(isFavoriteGroupId(groupId) ? null : groupId); setNewPartyOpen(true); }}
           createPartyDisabled={newPartyOpen}
-          onDropParty={onMovePartyToGroup}
+          onDropParty={(partyId, groupId) => {
+            // The 즐겨찾기 group owns no parties, so a drop there cannot be a
+            // move. It reads as "put this in favourites", which is a star.
+            if (isFavoriteGroupId(groupId)) {
+              if (!isFavoriteParty(favoriteParties, partyId)) {
+                onToggleFavoriteParty(partyId);
+              }
+              return;
+            }
+            onMovePartyToGroup(partyId, groupId);
+          }}
           onReorderGroups={onReorderGroups}
           onPartyContextMenu={(party, event) => {
             setConfirmParty(false);
             setMenu({ kind: "party", partyId: party.id, name: party.name, x: event.clientX, y: event.clientY });
           }}
           onGroupContextMenu={(group, event) => {
+            // Nothing on the group menu applies to 즐겨찾기: it cannot be
+            // renamed, deleted or filed into, and offering those would be four
+            // disabled rows. Un-starring lives on the party rows inside it.
+            if (isFavoriteGroupId(group.id)) {
+              return;
+            }
             setConfirmGroup(false);
             setMenu({ kind: "group", groupId: group.id, name: group.name, isDefault: group.kind === "default", x: event.clientX, y: event.clientY });
           }}
@@ -694,6 +705,14 @@ export function PartySidebar(props: PartySidebarProps) {
                   what makes running several parties at once cheap: they share one
                   engine and one harness per member. Deliberately does NOT select
                   the party here — this window stays where it is. */}
+              <button
+                type="button"
+                className={"wb-ctx-item" + (isFavoriteParty(favoriteParties, menu.partyId) ? " is-on" : "")}
+                title="즐겨찾기 그룹에 함께 표시합니다. 파티는 지금 그룹에 그대로 남습니다."
+                onClick={() => { onToggleFavoriteParty(menu.partyId); setMenu(null); }}
+              >
+                <Star size={13} />  {isFavoriteParty(favoriteParties, menu.partyId) ? "즐겨찾기 해제" : "즐겨찾기"}
+              </button>
               <button
                 type="button"
                 className="wb-ctx-item"
@@ -834,14 +853,14 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
   const distroProblem = selectableWslDistroError(location, wsl);
   const canCreate = name.trim().length > 0 && Boolean(location?.cwd) && !locationProblem && !distroProblem;
 
-  async function create() {
+  async function create(newWindow = false) {
     if (!canCreate || !location || submittingRef.current) {
       return;
     }
     submittingRef.current = true;
     setSubmitting(true);
     try {
-      await onCreate({ name: name.trim(), groupId, location, gate: gateOn ? { enabled: true, rule } : undefined });
+      await onCreate({ name: name.trim(), groupId, location, gate: gateOn ? { enabled: true, rule } : undefined, newWindow });
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -926,6 +945,18 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
           <span className="wb-flex-spacer" />
           <div className="wb-modal-actions">
             <button type="button" className="wb-btn wb-btn-ghost" disabled={submitting} onClick={onCancel}><LocalizedText id="STR-2083" /></button>
+            {/* Same creation, different destination: the new party opens in
+                another window and THIS window keeps the party it is showing. */}
+            <button
+              type="button"
+              className="wb-btn wb-btn-ghost"
+              aria-busy={submitting}
+              disabled={!canCreate || submitting}
+              title="새 창에서 이 파티를 열고, 이 창은 지금 파티를 그대로 둡니다"
+              onClick={() => void create(true)}
+            >
+              <ExternalLink size={14} />  새 창에서 생성
+            </button>
             <button type="button" className="wb-btn wb-btn-accent" aria-busy={submitting} disabled={!canCreate || submitting} onClick={() => void create()}><LocalizedText id="STR-2084" /></button>
           </div>
         </footer>
