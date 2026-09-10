@@ -68,7 +68,8 @@ async function main() {
 
     await post("/api/qa/seed", {
       party: "grid",
-      members: ["a", "b", "c", "d"].map((n) => ({ name: n, role: "r", model: "sonnet", status: "idle" })),
+      members: ["a", "b", "c", "d", "right-top", "center", "right-bottom", "impl", "ci-sol"]
+        .map((n) => ({ name: n, role: "r", model: "sonnet", status: "idle" })),
     });
     await post("/api/navigation", { view: "workbench" });
     // Panel 0 gets two tabs, so its ✕ closes a tab without removing the panel.
@@ -126,6 +127,56 @@ async function main() {
     assert(afterPanel.panels.length === 2, `closing the last tab removed its panel (${afterPanel.panels.length})`);
     assert(shape(afterPanel.grid, ids) === "row(L0,L2)",
       `the emptied slot's split collapsed and freed its space (${shape(afterPanel.grid, ids)})`);
+
+    // --- exact reported shape: flat storage order != visual grid order -------
+    // Drag-created layouts append panels to the flat array while inserting
+    // their leaves at the drop point. The user's impl group was therefore last
+    // in `panels` but first in the grid. Closing its inactive ci-sol tab must
+    // preserve that visual position; losing the leaf would reconcile it at the
+    // end of the row and make the whole group jump.
+    const reportedIds = ["p-right-top", "p-center", "p-right-bottom", "p-impl"];
+    await post("/api/party/layout", { layout: {
+      panels: [
+        { id: reportedIds[0], tabs: ["right-top"], active: "right-top", weight: 1 },
+        { id: reportedIds[1], tabs: ["center"], active: "center", weight: 1 },
+        { id: reportedIds[2], tabs: ["right-bottom"], active: "right-bottom", weight: 1 },
+        { id: reportedIds[3], tabs: ["impl", "ci-sol"], active: "impl", weight: 1 },
+      ],
+      focusedPanelId: reportedIds[3],
+      grid: {
+        type: "split", id: "reported-root", dir: "row", weight: 1,
+        children: [
+          { type: "leaf", panelId: reportedIds[3], weight: 1 },
+          { type: "leaf", panelId: reportedIds[1], weight: 1 },
+          { type: "split", id: "reported-right", dir: "column", weight: 1, children: [
+            { type: "leaf", panelId: reportedIds[0], weight: 1 },
+            { type: "leaf", panelId: reportedIds[2], weight: 1 },
+          ] },
+        ],
+      },
+    } });
+    await delay(700);
+
+    const reportedBefore = await layout();
+    const reportedShape = shape(reportedBefore.grid, reportedIds);
+    assert(reportedBefore.panels.map((panel) => panel.id).join(",") === reportedIds.join(","),
+      "the reported layout keeps storage order different from visual order");
+    assert(reportedShape === "row(L3,L1,column(L0,L2))",
+      `the impl panel starts in its grid position (${reportedShape})`);
+
+    const inactiveClicked = await post("/api/capture", {
+      path: path.join(outDir, "grid-after-reported-inactive-tab.png"),
+      click: `[data-panel-id="${reportedIds[3]}"] [data-drop-tab="ci-sol"] .wb-tab-close`,
+    });
+    assert(inactiveClicked.ok, "clicked the inactive ci-sol tab in the real UI");
+    await delay(700);
+
+    const reportedAfter = await layout();
+    assert(reportedAfter.panels.find((panel) => panel.id === reportedIds[3])?.tabs.join(",") === "impl",
+      "closing ci-sol leaves the impl panel alive");
+    assert(shape(reportedAfter.grid, reportedIds) === reportedShape,
+      `REGRESSION TARGET: the impl panel keeps its visual slot (${shape(reportedAfter.grid, reportedIds)})`);
+    assert(await countOf(".wb-split") === 2, "the reported nested grid remains intact in the DOM");
 
     await post("/api/window/close", {});
   } catch (error) {
