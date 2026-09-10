@@ -550,6 +550,18 @@ permission changed while the session was down was dropped and the control
 snapped back, which users reported as "the Codex permission resets itself".
 It picks an OS-assigned free port, so lanes can run it concurrently.
 
+`node scripts/e2e-permission-popover-layouts.mjs` (or
+`npm run test:e2e:permission-popover-layouts`) launches the real app and proves
+the Codex permission popover is outside the clipping composer/panel hierarchy,
+inside the viewport, and actually frontmost at both its top and bottom edges.
+It covers one panel/one tab, four narrow columns, a vertical split with Codex at
+the bottom, a five-tab overflow group, and the reported two-tab left group
+beside a center panel and a nested right column. It also changes the open Codex
+menu to Full Access so the extra warning row exercises live remeasurement, then
+repeats the narrow four-column case for Cursor. The paint assertions use
+`elementsFromPoint` via `POST /api/measure`; bounding boxes alone cannot detect
+an element painted behind a clipping transcript.
+
 `node scripts/e2e-live-codex-party-tools.mjs` (or
 `npm run test:e2e:live-codex-party-tools`) is a billed one-turn GPT mini check of
 the actual Codex stdio MCP surface. It requires the model to call

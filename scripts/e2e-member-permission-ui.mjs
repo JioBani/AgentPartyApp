@@ -24,7 +24,9 @@ const ws = path.join(os.tmpdir(), "ap-perm-ui-e2e-ws");
 const userData = path.join(os.tmpdir(), "ap-perm-ui-e2e-ud");
 const failures = [];
 const assert = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) failures.push(m); };
-const partyRoot = path.join(ws, ".agent_party_app");
+// Desktop parties are global now. In E2E that store is isolated under the
+// supplied userData directory, not under the viewed workspace.
+const partyRoot = path.join(userData, "party-store", ".agent_party_app");
 const readJson = (f) => JSON.parse(fs.readFileSync(f, "utf8"));
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -70,7 +72,10 @@ async function main() {
     // even when the window lookup fails, so a driver that assumes instead of
     // checking is how an e2e once repointed a real installation.
     const served = (await get("/api/state")).workspacePath || (await get("/api/windows")).windows?.[0]?.workspacePath;
-    assert(served === ws, `the app under test serves the isolated QA workspace (got ${served})`);
+    assert(
+      path.resolve(served).toLowerCase() === path.resolve(ws).toLowerCase(),
+      `the app under test serves the isolated QA workspace (got ${served})`,
+    );
 
     await post("/api/qa/reset").catch(() => {});
     await post("/api/qa/seed", { party: "permui", members: [{ name: "claudey", role: "claude permission UI QA" }] });

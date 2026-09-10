@@ -4909,7 +4909,7 @@ body.wb-resizing-y {
 .wb-dd-menu.align-left { left: 0; }
 .wb-dd-menu.align-right { right: 0; }
 
-/* Portalled to <body> and placed in viewport coordinates by Dropdown.tsx, which
+/* Portalled to <body> and placed in viewport coordinates by FloatingMenu, which
  * owns top/bottom/left and the max-height for the room actually available.
  * Everything it does not set is inherited from .wb-dd-menu above.
  *

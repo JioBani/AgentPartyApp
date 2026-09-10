@@ -6,6 +6,7 @@ import {
   type CursorPolicy,
 } from "../../shared/cursorPolicy";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+import { FloatingMenu } from "./FloatingMenu";
 
 const MODE_LABELS: Record<CursorAgentMode, string> = {
   agent: "Agent",
@@ -41,25 +42,6 @@ export function CursorPermissionControl({
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => setDraft(policy), [policy.mode, policy.approval]);
-  useEffect(() => {
-    if (!open || variant === "inline") return;
-    const onPointer = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      // Consume it: a popover inside a dialog must not close the dialog too.
-      event.preventDefault();
-      setOpen(false);
-    };
-    document.addEventListener("mousedown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, variant]);
-
   function update(next: CursorPolicy) {
     setDraft(next);
     onChange(next);
@@ -110,9 +92,17 @@ export function CursorPermissionControl({
         <ChevronDown size={11} className="wb-pill-caret" />
       </button>
       {open && (
-        <div className="wb-dd-menu drop-up align-right wb-codex-perm-menu" role="dialog" aria-label={localized("STR-1641")}>
+        <FloatingMenu
+          anchor={ref.current}
+          className="wb-codex-perm-menu"
+          role="dialog"
+          ariaLabel={localized("STR-1641")}
+          onDismiss={() => setOpen(false)}
+          drop="up"
+          align="right"
+        >
           {fields}
-        </div>
+        </FloatingMenu>
       )}
     </div>
   );

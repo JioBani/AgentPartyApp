@@ -9,6 +9,7 @@ import {
   codexPresetOf,
 } from "../../shared/codexPolicy";
 import { LocalizedText } from "../i18n/I18nProvider";
+import { FloatingMenu } from "./FloatingMenu";
 
 const SANDBOX_SHORT: Record<SandboxMode, string> = { "read-only": "read", "workspace-write": "write", "danger-full-access": "full" };
 const APPROVAL_SHORT: Record<ApprovalPolicy, string> = { untrusted: "untrusted", "on-request": "ask", never: "never" };
@@ -40,30 +41,6 @@ export function CodexPermissionControl({
   useEffect(() => {
     setDraft(policy);
   }, [policy.sandbox, policy.approval, policy.guardian]);
-
-  useEffect(() => {
-    if (!open || variant === "inline") {
-      return;
-    }
-    function onPointer(event: MouseEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-      // Consume it: a popover inside a dialog must not close the dialog too.
-      event.preventDefault();
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, variant]);
 
   function update(next: CodexPolicy) {
     setDraft(next);
@@ -138,9 +115,17 @@ export function CodexPermissionControl({
         <ChevronDown size={11} className="wb-pill-caret" />
       </button>
       {open && (
-        <div className="wb-dd-menu drop-up align-right wb-codex-perm-menu" role="dialog" aria-label="Sandbox & approvals">
+        <FloatingMenu
+          anchor={ref.current}
+          className="wb-codex-perm-menu"
+          role="dialog"
+          ariaLabel="Sandbox & approvals"
+          onDismiss={() => setOpen(false)}
+          drop="up"
+          align="right"
+        >
           {fields}
-        </div>
+        </FloatingMenu>
       )}
     </div>
   );
