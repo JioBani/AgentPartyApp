@@ -768,6 +768,18 @@ export class SessionManager extends EventEmitter {
     return this.codexModels;
   }
 
+  /**
+   * Starts account-catalog discovery if it has not started yet and resolves when
+   * it settles. Boot calls this so the catalog is app-owned state that is ready
+   * (or reported failed) whether or not a window has asked for it — leaving the
+   * first window's state request to kick it made discovery race the very render
+   * that depends on it.
+   */
+  async warmCodexModels(): Promise<CodexModelDiscoveryState> {
+    this.getCodexModelState();
+    return (await this.codexDiscovery) || this.codexModels;
+  }
+
   async refreshCodexModels(): Promise<CodexModelDiscoveryState> {
     this.codexDiscovery = this.runCodexDiscovery();
     return this.codexDiscovery;

@@ -4,6 +4,7 @@ import type { HarnessDefaults, HarnessId, InitialAppState, MemberPermissionInput
 import { HARNESS_IDS } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime, normalizeServiceTierSelection } from "../shared/types";
 import { applyNativeCliAuthProgress, nativeCliAuthProgressCheck } from "../shared/nativeCliAuth";
+import { supersedesCodexDiscovery, type CodexModelDiscoveryState } from "../shared/codexModels";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { IdleSleepSettings } from "../shared/idleSleep";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
@@ -176,6 +177,33 @@ export function App() {
   // Tracks whether a live party broadcast has arrived, so a late-resolving
   // initial-state load cannot clobber it with a stale snapshot.
   const partyBroadcastSeen = useRef(false);
+  /**
+   * Discovery stamp of the model routes this window currently shows. Model info
+   * is app state owned by the main process; a window only mirrors it, and the
+   * mirror must never move backwards — see {@link supersedesCodexDiscovery}.
+   */
+  const appliedCodexDiscovery = useRef<CodexModelDiscoveryState | undefined>(undefined);
+
+  type ModelDiscoveryPayload = { modelRoutes?: unknown[]; codexModels?: CodexModelDiscoveryState };
+  /**
+   * Takes a model-info payload — the boot snapshot, the `models:update` push, or
+   * the catch-up fetch — unless it is older than what this window already shows.
+   * Returns the fields to apply, or undefined when the payload is stale, so a
+   * caller merging a larger snapshot knows to keep the model fields it has.
+   */
+  const takeModelDiscovery = useCallback((payload: ModelDiscoveryPayload | undefined) => {
+    if (!Array.isArray(payload?.modelRoutes) || !supersedesCodexDiscovery(appliedCodexDiscovery.current, payload?.codexModels)) {
+      return undefined;
+    }
+    appliedCodexDiscovery.current = payload?.codexModels;
+    return { modelRoutes: payload?.modelRoutes as unknown[], codexModels: payload?.codexModels };
+  }, []);
+  const applyModelDiscovery = useCallback((payload: ModelDiscoveryPayload | undefined) => {
+    const models = takeModelDiscovery(payload);
+    if (models) {
+      setState((current) => ({ ...current, ...models }));
+    }
+  }, [takeModelDiscovery]);
   // Members with an in-flight session start, and members already prewarmed once.
   const startingRef = useRef<Set<string>>(new Set());
   // Last reported prewarm failure per member, so the retry cadence reports each
@@ -715,10 +743,16 @@ export function App() {
       // If a party broadcast already arrived, keep it (avoid the load race).
       // Same for appearance: a late snapshot's default Light must not replace
       // a legacy migration that already committed Dark.
+      // Model info belongs to the main process, and this snapshot may have been
+      // taken before discovery settled — take it only if it is not older than
+      // what a push already delivered.
+      const models = takeModelDiscovery(next);
       setState((current) => {
         const merged = partyBroadcastSeen.current ? { ...next, party: current.party } : next;
         return {
           ...merged,
+          modelRoutes: models ? models.modelRoutes : current.modelRoutes,
+          codexModels: models ? models.codexModels : current.codexModels,
           settings: retainAppearanceOnInitialState(current.settings, merged.settings, committedTheme.current),
         };
       });
@@ -809,11 +843,14 @@ export function App() {
     // Codex catalog discovery settled: refresh the selectable model routes and
     // the discovery status (pending/ready/error) that pickers surface.
     const offModelsUpdate = window.agentParty.onModelsUpdate((payload) => {
-      const update = payload as { modelRoutes?: unknown[]; codexModels?: InitialAppState["codexModels"] };
-      if (Array.isArray(update?.modelRoutes)) {
-        setState((current) => ({ ...current, modelRoutes: update.modelRoutes as unknown[], codexModels: update.codexModels }));
-      }
+      applyModelDiscovery(payload as ModelDiscoveryPayload);
     });
+    // A push only reaches a window that is already subscribed, and discovery can
+    // settle while this one is still mounting. Ask for the current list once so a
+    // push that landed before the line above is recovered rather than lost.
+    void window.agentParty.listModels()
+      .then((payload) => { applyModelDiscovery(payload as ModelDiscoveryPayload); })
+      .catch((error) => { console.error("[models] catch-up fetch failed", error); });
     const offQaLayout = window.agentParty.onQaLayout((payload) => {
       const panels = (payload as { panels?: string[][] })?.panels;
       if (Array.isArray(panels)) {

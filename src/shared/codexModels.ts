@@ -99,3 +99,30 @@ export function normalizeCodexModels(rawModels: unknown[]): CodexModelInfo[] {
 function stringOf(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
+
+/**
+ * Whether an incoming discovery payload may replace the one a window already
+ * applied. Model info reaches a window from two directions that can arrive in
+ * either order — the boot snapshot it requested, and the push that follows a
+ * settled discovery — so "last write wins" once left a window showing the
+ * pre-discovery fallback catalog (no Fast tier, no account-only models) for the
+ * rest of its life.
+ *
+ * `at` is stamped once per settle and therefore orders the two sources: a
+ * payload older than what is already applied is a stale snapshot. Equal stamps
+ * still apply, because a model-catalog refresh rebuilds routes from the SAME
+ * discovery result and must not be dropped as a duplicate. A payload with no
+ * `at` is still pending, so it may seed an empty window but never replace a
+ * settled one.
+ */
+export function supersedesCodexDiscovery(
+  applied: CodexModelDiscoveryState | undefined,
+  incoming: CodexModelDiscoveryState | undefined,
+): boolean {
+  const appliedAt = applied?.at;
+  if (!appliedAt) {
+    return true;
+  }
+  const incomingAt = incoming?.at;
+  return Boolean(incomingAt) && (incomingAt as string) >= appliedAt;
+}

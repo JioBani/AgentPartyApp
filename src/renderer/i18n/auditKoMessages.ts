@@ -1023,7 +1023,7 @@ export const auditKoMessages = {
   "STR-1886": "이미지 입력",
   "STR-1887": "실행 설정",
   "STR-1888": "추론 강도 · 높을수록 처리 시간이 길어지고 정확도가 향상됩니다",
-  "STR-1889": "Cursor Grok serving speed",
+  "STR-1889": "선택한 서빙 티어에 따라 처리 속도와 사용량 소모가 달라집니다",
   "STR-1890": "Service mode",
   "STR-1891": "추론 모드 · 필요한 경우에만 확장된 추론을 사용합니다",
   "STR-1892": "Thinking budget",
