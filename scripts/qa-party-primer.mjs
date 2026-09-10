@@ -48,6 +48,10 @@ for (const phrase of [
   "continue your primary task and parallelize independent work",
   "queue the request, or coordinate the ordering explicitly",
   "reduce the overall task's critical path and other members' waiting time",
+  "Keep tool output proportional to the decision",
+  "request the smallest useful scope",
+  "Do not fetch full detail speculatively",
+  "widen only when the smaller result cannot resolve the decision",
 ]) {
   assert(primer.includes(phrase), `the canonical default includes: ${phrase}`);
   assert.equal(primer.indexOf(phrase), primer.lastIndexOf(phrase), `the canonical default does not duplicate: ${phrase}`);
