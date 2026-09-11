@@ -24,6 +24,12 @@ const toolOutFile = process.env.AGENTPARTY_FAKE_CODEX_TOOL_OUT || "";
 const authLifecycleOut = process.env.AGENTPARTY_FAKE_CODEX_AUTH_OUT || "";
 const envOutFile = process.env.AGENTPARTY_FAKE_CODEX_ENV_OUT || "";
 const sqliteFailOnceFile = process.env.AGENTPARTY_FAKE_CODEX_SQLITE_FAIL_ONCE || "";
+// A `KIND=stream` turn writes delayed JSON-RPC notifications to stdout. This
+// lets product E2E exercise the real child-process -> CodexAdapter boundary
+// without making a provider call or injecting already-normalized events.
+const streamOutFile = process.env.AGENTPARTY_FAKE_CODEX_STREAM_OUT || "";
+const streamChunkCount = positiveInteger(process.env.AGENTPARTY_FAKE_CODEX_STREAM_CHUNKS, 16);
+const streamIntervalMs = positiveInteger(process.env.AGENTPARTY_FAKE_CODEX_STREAM_INTERVAL_MS, 120);
 
 if (envOutFile) {
   try {
@@ -165,6 +171,10 @@ rl.on("line", (line) => {
         send({ method: "turn/completed", params: { turn: { id: "turn-1", status: "completed" } } });
         return;
       }
+      if (inputText.includes("KIND=stream")) {
+        emitDelayedAssistantStream();
+        return;
+      }
       if (inputText.includes("KIND=diagnostics")) {
         // Reroute (no silent fallback) + a sandbox warning (with recovery hint).
         send({ method: "model/rerouted", params: { threadId: "thr-fake", turnId: "turn-1", fromModel: "gpt-5.4", toModel: "gpt-5.4-mini", reason: "highRiskCyberActivity" } });
@@ -201,6 +211,48 @@ rl.on("line", (line) => {
   }
   // Notifications (initialized, etc.) need no response.
 });
+
+function emitDelayedAssistantStream() {
+  const itemId = "stream-assistant-1";
+  for (let index = 0; index < streamChunkCount; index += 1) {
+    setTimeout(() => {
+      // Enough distinct wrapped content to make missing streaming progress
+      // unambiguous in both DOM assertions and captured visual evidence.
+      const marker = `MOCK_CLI_STREAM_${String(index).padStart(2, "0")}`;
+      const delta = `${marker} ${"streamed-cli-output ".repeat(28)}\n`;
+      send({
+        method: "item/agentMessage/delta",
+        params: { threadId: "thr-fake", turnId: "turn-1", itemId, delta },
+      });
+      recordStreamChunk({ index, delta });
+      if (index === streamChunkCount - 1) {
+        const finalItem = {
+          type: "agentMessage",
+          id: "stream-final-answer-1",
+          text: "MOCK_CLI_FINAL_RESPONSE",
+          phase: "final_answer",
+        };
+        send({ method: "item/started", params: { threadId: "thr-fake", turnId: "turn-1", item: { ...finalItem, text: "" } } });
+        send({ method: "item/completed", params: { threadId: "thr-fake", turnId: "turn-1", item: finalItem } });
+        send({ method: "turn/completed", params: { turn: { id: "turn-1", status: "completed" } } });
+      }
+    }, streamIntervalMs * (index + 1));
+  }
+}
+
+function recordStreamChunk(value) {
+  if (!streamOutFile) return;
+  try {
+    fs.appendFileSync(streamOutFile, `${JSON.stringify({ pid: process.pid, at: Date.now(), ...value })}\n`);
+  } catch {
+    // Best-effort evidence only. The E2E asserts the trace exists and fails if not.
+  }
+}
+
+function positiveInteger(raw, fallback) {
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
 
 function currentAccountId() {
   try {

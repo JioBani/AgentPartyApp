@@ -1162,14 +1162,14 @@ export function App() {
         continue;
       }
       // The owner's restored mirror was last synced from this session's live
-      // blocks. If the member is still around WITHOUT a replacement session,
-      // keep that mirror visible while refreshing the main-maintained disk
-      // copy. Clearing it here briefly replaced every block with a loading
-      // state, which looked like a whole-app flash when several panels slept.
-      // A member already rebound to a new session keeps its mirror unchanged:
-      // activation already used it.
+      // blocks. The owner is absent from `members` while another party is on
+      // screen, but its cached transcript still belongs to this renderer and
+      // must be invalidated here. Otherwise returning to that party treats the
+      // stale cache as settled and never reads the main-maintained transcript.
+      // A visible member already rebound to a replacement session is the only
+      // case that keeps its mirror unchanged: activation already used it.
       const owner = members.find((member) => memberKey(member) === ownerKey);
-      if (owner && !owner.sessionId) {
+      if (!owner?.sessionId) {
         const liveBlocks = logsBySession[id];
         if (liveBlocks?.length) {
           // A brand-new session can sleep before the normal mirror sync timer.
