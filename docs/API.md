@@ -2233,6 +2233,16 @@ server configured inline, and the server routes back through the local
 automation API to the same AppController path as the UI. Requires a live session
 (start the member first).
 
+Codex also receives a five-tool **Party Core** through the app-server's
+top-level `thread/start.dynamicTools` field: `party_send`, `party_status`,
+`party_list`, `party_interrupt`, and `party_broadcast`. These frequent controls
+are eager (`deferLoading: false`) so code mode can call them without enumerating
+the MCP catalog. The complete canonical `agentparty-app` namespace remains
+deferred for management operations such as member creation, permissions,
+runtime changes, and Message Gates. Both surfaces normalize to the same party
+tool names and AppController/API routes; the aliases do not implement a second
+behavior path.
+
 ```json
 {
   "supported": true,

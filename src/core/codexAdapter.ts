@@ -15,7 +15,7 @@ import type { TurnUsage } from "./costing";
 import { addCodexUsage, codexTokenBreakdown, normalizeCodexUsage } from "./codexUsage";
 import { imageContentResult } from "./imageFile";
 import type { PartyBridge, PartyIdentity } from "./partyBridge";
-import { buildPartyDynamicToolSpec, buildPartyPrimer, invokePartyTool, partyToolNameOf, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
+import { adaptPartyPrimerForCodex, buildCodexPartyCoreInstructions, buildCodexPartyDynamicToolSpecs, buildPartyPrimer, codexPartyCoreToolNameOf, invokePartyTool, partyToolNameOf, PARTY_CORE_TOOL_NAMES, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { CodexPolicy, SandboxMode } from "../shared/codexPolicy";
 import { codexPolicyFromPermissionMode } from "../shared/codexPolicy";
 import {
@@ -767,6 +767,10 @@ export class CodexAdapter extends EventEmitter {
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.command=${tomlString(nodeCommand)}`,
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.args=[${tomlString(serverScript)}]`,
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.enabled=true`,
+      // Codex receives these common controls as eager native-style dynamic
+      // functions. Hiding their duplicate MCP definitions makes the eager path
+      // deterministic while the remaining management catalog stays searchable.
+      "-c", `mcp_servers.${PARTY_MCP_SERVER}.disabled_tools=[${PARTY_CORE_TOOL_NAMES.map(tomlString).join(",")}]`,
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.startup_timeout_sec=10`,
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.tool_timeout_sec=30`,
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.default_tools_approval_mode="approve"`,
@@ -821,6 +825,7 @@ export class CodexAdapter extends EventEmitter {
       approvalPolicy: this.policy.approval,
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
       sandbox: this.policy.sandbox,
+      dynamicTools: this.partyDynamicTools(),
       config: this.threadConfig(),
       developerInstructions: this.partyDeveloperInstructions(),
     });
@@ -837,6 +842,7 @@ export class CodexAdapter extends EventEmitter {
       approvalPolicy: this.policy.approval,
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
       sandbox: this.policy.sandbox,
+      dynamicTools: this.partyDynamicTools(),
       config: this.threadConfig(),
       developerInstructions: this.partyDeveloperInstructions(),
     });
@@ -854,18 +860,24 @@ export class CodexAdapter extends EventEmitter {
     if (!this.options.partyIdentity) {
       return undefined;
     }
-    return this.options.partyPrimer || buildPartyPrimer(this.options.partyIdentity);
+    const primer = this.options.partyPrimer || buildPartyPrimer(this.options.partyIdentity);
+    return this.options.partyBridge
+      ? `${buildCodexPartyCoreInstructions()}\n\n${adaptPartyPrimerForCodex(primer)}`
+      : primer;
   }
 
   private threadConfig(): Record<string, unknown> | undefined {
     const config: Record<string, unknown> = {};
-    if (this.options.partyBridge && this.options.partyIdentity) {
-      config.dynamic_tools = [buildPartyDynamicToolSpec()];
-    }
     if (this.unsupportedHostSkills.length) {
       config.skills = { config: this.unsupportedHostSkills };
     }
     return Object.keys(config).length ? config : undefined;
+  }
+
+  private partyDynamicTools(): ReturnType<typeof buildCodexPartyDynamicToolSpecs> | undefined {
+    return this.options.partyBridge && this.options.partyIdentity
+      ? buildCodexPartyDynamicToolSpecs()
+      : undefined;
   }
 
   private async resolveUnsupportedHostSkills(): Promise<void> {
@@ -1186,7 +1198,7 @@ export class CodexAdapter extends EventEmitter {
   private async handleDynamicToolCall(requestId: string, params: any): Promise<void> {
     const namespace = typeof params?.namespace === "string" ? params.namespace : undefined;
     const rawTool = String(params?.tool || "");
-    const toolName = partyToolNameOf(rawTool);
+    const toolName = partyToolNameOf(rawTool) || codexPartyCoreToolNameOf(rawTool);
     const isPartyTool = namespace === PARTY_MCP_SERVER || Boolean(toolName);
     if (!isPartyTool) {
       const result = { ok: false, error: `Unknown dynamic tool '${namespace ? `${namespace}/` : ""}${rawTool}'.` };

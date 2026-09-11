@@ -83,7 +83,7 @@ try {
   adapter.sendUserTurn("KIND=partyTool call list");
   await waitFor(() => events.some((event) => event.type === "turn_complete"), "party tool turn complete");
 
-  assert(listCalls === 1, "Codex item/tool/call invoked PartyBridge.list exactly once");
+  assert(listCalls === 1, "Codex eager party_list call normalized to PartyBridge.list exactly once");
   assert(events.some((event) => event.type === "tool_call" && event.name === "mcp__agentparty-app__list" && event.status === "completed"), "tool call is surfaced in the transcript as completed");
   assert(existsSync(toolOut), "fake app-server received a dynamic tool response");
   const response = JSON.parse(readFileSync(toolOut, "utf8"));
@@ -96,7 +96,17 @@ try {
   const threadStart = outbound.find((message) => message.method === "thread/start");
   const turnStart = outbound.find((message) => message.method === "turn/start");
   const disabledSkills = threadStart?.params?.config?.skills?.config || [];
-  assert(threadStart?.params?.config?.dynamic_tools?.length === 1, "thread config preserves the AgentParty dynamic tool");
+  const dynamicTools = threadStart?.params?.dynamicTools || [];
+  const eagerTools = dynamicTools.filter((tool) => tool.type === "function");
+  const compatibilityNamespace = dynamicTools.find((tool) => tool.type === "namespace" && tool.name === "agentparty-app");
+  assert(dynamicTools.length === 6, "thread start carries five eager Party Core tools plus one compatibility namespace");
+  assert(threadStart?.params?.config?.dynamic_tools == null, "dynamic tools use the app-server protocol field instead of an ignored config key");
+  assert(
+    JSON.stringify(eagerTools.map((tool) => tool.name)) === JSON.stringify(["party_send", "party_status", "party_list", "party_interrupt", "party_broadcast"])
+      && eagerTools.every((tool) => tool.deferLoading === false),
+    "Codex Party Core controls are first-class and always loaded",
+  );
+  assert(compatibilityNamespace?.tools?.length === 18 && compatibilityNamespace.tools.every((tool) => tool.deferLoading === true), "the complete AgentParty catalog remains available on demand without filling every turn");
   assert(
     disabledSkills.length === 1
       && disabledSkills[0].enabled === false
@@ -106,8 +116,10 @@ try {
   assert(
     threadStart?.params?.developerInstructions?.includes("# AgentParty — party member session")
       && threadStart.params.developerInstructions.includes("team-qa")
-      && threadStart.params.developerInstructions.includes("main"),
-    "Codex installs the party primer once as thread-scoped developer instructions",
+      && threadStart.params.developerInstructions.includes("main")
+      && threadStart.params.developerInstructions.includes("tools.party_send")
+      && threadStart.params.developerInstructions.includes("never scan `ALL_TOOLS`"),
+    "Codex installs the eager Party Core calling convention before the shared party primer",
   );
   assert(
     turnStart?.params?.input?.[0]?.text === "KIND=partyTool call list",

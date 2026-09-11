@@ -35,7 +35,7 @@ async function load(entry, name) {
 }
 
 const { PartyApplicationService } = await load("src/main/application/partyApplicationService.ts", "party-svc.mjs");
-const { buildPartyDynamicToolSpec, buildPartyToolDefs, buildPartyPrimer, invokePartyTool, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } = await load("src/core/partyBridge.ts", "party-bridge.mjs");
+const { adaptPartyPrimerForCodex, buildCodexPartyCoreInstructions, buildCodexPartyDynamicToolSpecs, buildPartyDynamicToolSpec, buildPartyToolDefs, buildPartyPrimer, codexPartyCoreToolNameOf, invokePartyTool, PARTY_CODEX_CORE_TOOL_ALIASES, PARTY_CORE_TOOL_NAMES, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } = await load("src/core/partyBridge.ts", "party-bridge.mjs");
 const sdk = await import("@anthropic-ai/claude-agent-sdk");
 
 // --- Fake SessionManager: captures bindings, never spawns a real session ------
@@ -398,6 +398,19 @@ console.log("\nCodex dynamic tool assertions:");
 const dynamic = buildPartyDynamicToolSpec();
 assert(dynamic.type === "namespace" && dynamic.name === PARTY_MCP_SERVER, "Codex dynamic tools use the agentparty-app namespace");
 assert(JSON.stringify(dynamic.tools.map((tool) => tool.name)) === JSON.stringify(toolNames), "Codex dynamic tools expose the same canonical party tools");
+assert(dynamic.tools.every((tool) => tool.deferLoading === true), "complete Codex compatibility namespace is deferred");
+const codexDynamic = buildCodexPartyDynamicToolSpecs();
+const eagerCore = codexDynamic.filter((tool) => tool.type === "function");
+assert(eagerCore.length === PARTY_CORE_TOOL_NAMES.length, "Codex exposes only the five Party Core controls eagerly");
+assert(eagerCore.every((tool) => tool.deferLoading === false), "Codex Party Core aliases explicitly bypass deferred loading");
+assert(JSON.stringify(eagerCore.map((tool) => tool.name)) === JSON.stringify(Object.keys(PARTY_CODEX_CORE_TOOL_ALIASES)), "Codex Party Core aliases have stable short names");
+assert(codexPartyCoreToolNameOf("party_send") === "send" && codexPartyCoreToolNameOf("party_status") === "member-status", "Codex Party Core aliases normalize to canonical tool names");
+const codexCoreInstructions = buildCodexPartyCoreInstructions();
+assert(codexCoreInstructions.includes("tools.party_send") && codexCoreInstructions.includes("never scan `ALL_TOOLS`"), "Codex instructions teach the eager alias without catalog enumeration");
+const codexPrimer = adaptPartyPrimerForCodex(buildPartyPrimer({ party: "qa", member: "main" }));
+assert(codexPrimer.includes("party_send") && !codexPrimer.includes(`${PARTY_TOOL_PREFIX}send`), "Codex primer consistently uses the eager send alias");
+assert(codexPrimer.includes(`${PARTY_TOOL_PREFIX}member-create`), "Codex primer keeps long-tail tools on the deferred canonical surface");
+assert(codexPrimer.includes(`${PARTY_TOOL_PREFIX}list-models`) && !codexPrimer.includes("party_list-models"), "Codex core list replacement does not corrupt longer tool names");
 const dynamicSendSpec = dynamic.tools.find((tool) => tool.name === "send")?.inputSchema;
 assert(dynamicSendSpec?.properties?.interrupt?.type === "boolean" && dynamicSendSpec?.properties?.queue?.type === "boolean", "member send exposes separate interrupt and queue delivery flags");
 assert(Array.isArray(dynamicSendSpec?.properties?.to?.oneOf), "dynamic send schema exposes string-or-array recipients");

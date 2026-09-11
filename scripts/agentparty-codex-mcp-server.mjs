@@ -51,6 +51,7 @@ async function handleLine(line) {
           protocolVersion: msg.params?.protocolVersion || "2024-11-05",
           capabilities: { tools: {} },
           serverInfo: { name: "agentparty-app", version: "0.1.0" },
+          instructions: "AgentParty management extension. Ordinary coordination is already available through the eager Party Core functions party_send, party_status, party_list, party_interrupt, and party_broadcast. Use this server for less-common management tasks. Query list and list-models with the narrowest useful filter; do not enumerate the full catalog speculatively.",
         },
       });
       return;

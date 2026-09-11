@@ -194,8 +194,8 @@ rl.on("line", (line) => {
             threadId: "thr-fake",
             turnId: "turn-1",
             callId: "tool-call-1",
-            namespace: "agentparty-app",
-            tool: "list",
+            namespace: null,
+            tool: "party_list",
             arguments: {},
           },
         });

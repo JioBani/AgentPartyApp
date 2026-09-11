@@ -1,9 +1,10 @@
 /*
- * Live GPT-mini e2e for #9: a real Codex party member must see and call the
+ * Live Codex e2e: a real Codex party member must see and call the
  * app-hosted agentparty-app tool surface. This launches the real app, creates a
  * Codex member, asserts /api/sessions/:id/mcp exposes agentparty-app, then sends
- * one real mini-model turn requiring member-permission. This proves a member can
- * change another member's persisted permission through the actual MCP/API path.
+ * one minimal Party Core turn plus a long-tail member-permission turn. This
+ * proves the common controls are callable without catalog search while the full
+ * MCP/API path remains available for less-common management work.
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -16,7 +17,15 @@ const ws = path.join(os.tmpdir(), "agentparty-live-codex-party-tools-workspace")
 const userData = path.join(os.tmpdir(), "agentparty-live-codex-party-tools-user-data");
 const port = Number(process.env.AGENTPARTY_LIVE_PARTY_TOOLS_PORT || "") || 48943;
 const base = `http://127.0.0.1:${port}`;
-const codexJs = process.env.AGENTPARTY_CODEX_JS || "C:\\Users\\Dev\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js";
+const codexJs = process.env.AGENTPARTY_CODEX_JS || path.join(
+  process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
+  "npm",
+  "node_modules",
+  "@openai",
+  "codex",
+  "bin",
+  "codex.js",
+);
 const model = process.env.AGENTPARTY_LIVE_CODEX_MODEL || "gpt-5.4-mini";
 const memberName = "codexparty";
 const targetName = "permission-target";
@@ -57,6 +66,7 @@ async function main() {
     assert(windowId, "test window discovered");
     await post(`/api/windows/${encodeURIComponent(windowId)}/workspace`, { workspacePath: ws });
     await post("/api/navigation", { view: "workbench" });
+    await post("/api/settings", { debugEnabled: true });
 
     await post("/api/parties", { name: "live codex party tools e2e" });
     await post("/api/party/members", {
@@ -72,9 +82,12 @@ async function main() {
       role: "Codex party tool live e2e member",
       runtime: "codex",
       model,
+      effort: "low",
     });
     const started = await post(`/api/party/members/${memberName}/start`, {
       model,
+      effort: "low",
+      serviceTier: "standard",
       permissionMode: "plan",
       codexPolicy: { sandbox: "read-only", approval: "on-request", guardian: false },
     });
@@ -87,6 +100,16 @@ async function main() {
     assert(partyServer.tools?.some((tool) => tool.name === "member-permission" || tool.name === "mcp__agentparty-app__member-permission"), "Codex MCP snapshot exposes member-permission");
     assert(partyServer.tools?.some((tool) => tool.name === "member-create" || tool.name === "mcp__agentparty-app__member-create"), "Codex MCP snapshot exposes member-create");
     assert(partyServer.tools?.some((tool) => tool.name === "list-models" || tool.name === "mcp__agentparty-app__list-models"), "Codex MCP snapshot exposes list-models");
+
+    await post(`/api/party/members/${memberName}/message`, {
+      text: [
+        `Use \`functions.exec\` and call \`await tools.party_status({name: ${JSON.stringify(memberName)}})\` exactly once.`,
+        "Do not inspect `ALL_TOOLS` and do not use an MCP-named tool.",
+        "After the tool result arrives, reply with exactly LIVE_CODEX_PARTY_CORE_OK.",
+      ].join(" "),
+    });
+    await waitForEagerCoreCall(sessionId);
+    assert(!readCallLog().some((call) => call.member === memberName && call.name === "member-status"), "Party Core status bypassed the deferred MCP catalog and stdio relay");
 
     await post(`/api/party/members/${memberName}/message`, {
       text: [
@@ -169,6 +192,40 @@ async function waitForPartyTools(sessionId) {
     await delay(1000);
   }
   throw new Error(`Live Codex did not complete the party tool call within 180s. Last MCP calls: ${JSON.stringify(lastCalls).slice(0, 2000)}`);
+}
+
+async function waitForEagerCoreCall(sessionId) {
+  const started = Date.now();
+  let lastStatus = "";
+  while (Date.now() - started < 180000) {
+    const state = await getJson("/api/state");
+    const session = state.sessions.find((item) => item.id === sessionId);
+    lastStatus = session?.snapshot?.status || "missing";
+    if (session?.snapshot?.status === "error") {
+      throw new Error(session.snapshot.lastError || "Live Codex Party Core session entered error state.");
+    }
+    const logPath = session?.snapshot?.logPath;
+    if (logPath && fs.existsSync(logPath)) {
+      const frames = fs.readFileSync(logPath, "utf8")
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map((line) => JSON.parse(line));
+      const eagerCall = frames.find((frame) => frame.direction === "in"
+        && frame.payload?.method === "item/tool/call"
+        && frame.payload?.params?.tool === "party_status");
+      const enumeratedCatalog = frames.some((frame) => frame.direction === "in"
+        && String(frame.payload?.method || "").startsWith("item/")
+        && frame.payload?.params?.item?.type !== "userMessage"
+        && JSON.stringify(frame.payload || {}).includes("ALL_TOOLS"));
+      if (eagerCall && session.snapshot.status === "idle") {
+        assert(!enumeratedCatalog, "real low-effort Codex used party_status without ALL_TOOLS enumeration");
+        assert(eagerCall.payload.params?.namespace == null, "party_status is a first-class function rather than a deferred MCP namespace lookup");
+        return;
+      }
+    }
+    await delay(1000);
+  }
+  throw new Error(`Live Codex did not call eager party_status within 180s (last status: ${lastStatus}).`);
 }
 
 function readCallLog() {

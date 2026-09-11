@@ -280,6 +280,23 @@ export async function invokePartyToolFromExecutionHost(
 export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "member-runtime", "gate-set", "party-gate-set", "list", "list-locations", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
+/**
+ * The coordination controls used throughout ordinary party work. Codex gets
+ * these as small, eager, function-style aliases so a member never has to load
+ * or enumerate the full MCP catalog just to talk to its party.
+ */
+export const PARTY_CORE_TOOL_NAMES = ["send", "member-status", "list", "interrupt", "broadcast"] as const satisfies readonly PartyToolName[];
+export type PartyCoreToolName = (typeof PARTY_CORE_TOOL_NAMES)[number];
+
+export const PARTY_CODEX_CORE_TOOL_ALIASES = {
+  party_send: "send",
+  party_status: "member-status",
+  party_list: "list",
+  party_interrupt: "interrupt",
+  party_broadcast: "broadcast",
+} as const satisfies Record<string, PartyCoreToolName>;
+export type PartyCodexCoreToolAlias = keyof typeof PARTY_CODEX_CORE_TOOL_ALIASES;
+
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   send: "Send the same message to one or more members of your party. Pass `to` as one member name or an array of names. Batch results separate delivered, queued, and failed recipients. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in, or queue=true to explicitly wait behind the current turn. Legacy interrupt=false is treated as omitted so model-generated false values cannot disable the saved setting.",
   "member-create": "Create and start one or more members. Use the existing top-level fields for one member, or pass `members` as an array of member objects for a batch. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?} to choose Windows or WSL explicitly; omit it to inherit your own execution location.",
@@ -579,7 +596,16 @@ export interface PartyDynamicToolSpec {
     name: string;
     description: string;
     inputSchema: Record<string, unknown>;
+    deferLoading?: boolean;
   }>;
+}
+
+export interface PartyDynamicFunctionSpec {
+  type: "function";
+  name: PartyCodexCoreToolAlias;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  deferLoading: false;
 }
 
 export interface PartyMcpToolSpec {
@@ -626,8 +652,65 @@ export function buildPartyDynamicToolSpec(): PartyDynamicToolSpec {
       name,
       description,
       inputSchema,
+      // The five ordinary coordination controls are exposed separately below.
+      // Keeping this complete compatibility namespace deferred prevents its
+      // full 18-tool schema from occupying every Codex turn.
+      deferLoading: true,
     })),
   };
+}
+
+/**
+ * Codex-specific tool layout: a tiny always-loaded control plane plus the
+ * complete canonical namespace on demand. The aliases are transport adapters,
+ * not new capabilities; every call is normalized back to PartyToolName before
+ * it reaches the shared PartyBridge/AppController path.
+ */
+export function buildCodexPartyDynamicToolSpecs(): Array<PartyDynamicFunctionSpec | PartyDynamicToolSpec> {
+  const specs = buildPartyMcpToolSpecs();
+  const byName = new Map(specs.map((spec) => [spec.name, spec]));
+  const eager = Object.entries(PARTY_CODEX_CORE_TOOL_ALIASES).map(([alias, canonical]) => {
+    const spec = byName.get(canonical);
+    if (!spec) {
+      throw new Error(`Missing AgentParty tool spec for Codex core tool '${canonical}'.`);
+    }
+    return {
+      type: "function" as const,
+      name: alias as PartyCodexCoreToolAlias,
+      description: `AgentParty Party Core. ${spec.description}`,
+      inputSchema: spec.inputSchema,
+      deferLoading: false as const,
+    };
+  });
+  return [...eager, buildPartyDynamicToolSpec()];
+}
+
+/** Critical Codex calling convention, generated from the same alias map. */
+export function buildCodexPartyCoreInstructions(): string {
+  const aliases = Object.keys(PARTY_CODEX_CORE_TOOL_ALIASES) as PartyCodexCoreToolAlias[];
+  return [
+    "## Codex Party Core — already loaded",
+    `AgentParty's frequent controls are first-class eager tools: ${aliases.map((name) => `\`${name}\``).join(", ")}. Use them directly; never scan \`ALL_TOOLS\` to find them.`,
+    "In code mode call them through the `tools` object, for example `await tools.party_send({to: \"impl\", content: \"Check this\"})` or `await tools.party_status({name: \"impl\"})`.",
+    "For a less-common canonical tool named below, its code-mode property is `tools.mcp__agentparty_app__<tool_name_with_hyphens_changed_to_underscores>`; inspect only that exact tool if its schema is needed.",
+  ].join("\n");
+}
+
+/**
+ * The shared primer describes canonical MCP names because every harness reads
+ * it. Codex's eager Party Core replaces only the five equivalent references so
+ * the later shared text cannot steer the model back to a disabled duplicate.
+ * Long-tail names and user-edited prose remain otherwise unchanged.
+ */
+export function adaptPartyPrimerForCodex(primer: string): string {
+  return Object.entries(PARTY_CODEX_CORE_TOOL_ALIASES).reduce(
+    (text, [alias, canonical]) => text.replaceAll(`\`${PARTY_TOOL_PREFIX}${canonical}\``, `\`${alias}\``),
+    primer,
+  );
+}
+
+export function codexPartyCoreToolNameOf(tool: string): PartyCoreToolName | undefined {
+  return PARTY_CODEX_CORE_TOOL_ALIASES[tool as PartyCodexCoreToolAlias];
 }
 
 export function partyToolNameOf(tool: string): PartyToolName | undefined {

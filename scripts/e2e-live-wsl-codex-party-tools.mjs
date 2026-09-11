@@ -8,7 +8,7 @@
  * the distro's own loopback (see engineServerEntry.ts).
  *
  * Verification is two-signal:
- *   1. The in-distro MCP call log (forwarded via WSLENV) records a real `list`
+ *   1. The in-distro MCP call log (forwarded via WSLENV) records a real `list-models`
  *      call from the member — the tool was invoked over the real WSL path.
  *   2. The member's transcript contains NO "fetch failed" / -32603 and the model
  *      produced the post-tool sentinel — the tool RESULT came back good.
@@ -98,20 +98,20 @@ async function main() {
     const mcp = await waitForPartyMcp(sessionId);
     const partyServer = mcp.servers?.find((s) => s.name === "agentparty-app");
     assert(partyServer, "in-distro Codex MCP snapshot exposes agentparty-app");
-    assert(partyServer.tools?.some((t) => t.name === "list" || t.name === "mcp__agentparty-app__list"), "MCP snapshot exposes the list tool");
+    assert(partyServer.tools?.some((t) => t.name === "list-models" || t.name === "mcp__agentparty-app__list-models"), "MCP snapshot exposes the list-models tool");
 
     await post(`/api/party/members/${memberName}/message`, {
       text: [
         "This is a live AgentParty tool test.",
-        "Call the party tool `mcp__agentparty-app__list` exactly once.",
-        `If it returns a members list, reply with exactly ${sentinel}.`,
+        "Call the party tool `mcp__agentparty-app__list-models` exactly once with {}.",
+        `If it returns a model catalog, reply with exactly ${sentinel}.`,
         "If the tool errors, reply with exactly WSL_CODEX_TOOL_ERR followed by the error text.",
         "Do not edit files and do not run shell commands.",
       ].join(" "),
     });
 
     const { calls, idle } = await waitForToolAndIdle(sessionId);
-    assert(calls.some((c) => c.member === memberName && c.name === "list"), "in-distro MCP call log records a real `list` call from the WSL Codex member");
+    assert(calls.some((c) => c.member === memberName && c.name === "list-models"), "in-distro MCP call log records a real `list-models` call from the WSL Codex member");
 
     // Definitive success/failure: the tool RESULT as Codex saw it.
     const transcript = await getJson(`/api/party/members/${encodeURIComponent(memberName)}/transcript`).catch(() => ({}));
@@ -156,7 +156,7 @@ async function waitForToolAndIdle(sessionId) {
     }
     idle = session?.snapshot?.status === "idle";
     calls = readDistroCallLog();
-    const hasList = calls.some((c) => c.member === memberName && c.name === "list");
+    const hasList = calls.some((c) => c.member === memberName && c.name === "list-models");
     if (hasList && idle) {
       return { calls, idle };
     }
