@@ -87,9 +87,15 @@ import { cursorPolicyOf, requireCursorPolicy, type CursorPolicy } from "../../sh
 import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
 import {
   applyMemberGatePatch,
+  applyPartyGatePatch,
   effectiveGate,
+  isGateAxis,
+  normalizeMemberGate,
   normalizePartyGate,
+  resolveGateReviewPlan,
   type EffectiveGate,
+  type GateAxis,
+  type GateReviewPlan,
   type GateReviewer,
   type GateReviewResult,
   classifyGateFailure,
@@ -162,6 +168,15 @@ const BUSY_SESSION_STATUSES = new Set(["requesting", "responding", "interrupting
 function effectiveGateReceipt(gate: EffectiveGate): Omit<EffectiveGate, "rule"> & { ruleChars: number } {
   const { rule, ...rest } = gate;
   return { ...rest, ruleChars: rule.length };
+}
+
+function rejectionRule(plan: GateReviewPlan, verdict: GateReviewResult): string {
+  const violation = verdict.violation ?? plan.scope;
+  if (violation === "send") return plan.sender.rule;
+  if (violation === "recv") return plan.recipient.rule;
+  return [plan.sender.active ? `발신: ${plan.sender.rule}` : "", plan.recipient.active ? `수신: ${plan.recipient.rule}` : ""]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export class PartyApplicationService {
@@ -942,8 +957,8 @@ export class PartyApplicationService {
   }
 
   /**
-   * Persists a member's Message Gate override as a PATCH (axes: mode / rule /
-   * reviewer; a `null` axis clears it back to inherit, a full-inherit result
+   * Persists a member's Message Gate override as a PATCH (axis + mode / rule /
+   * reviewer; null rule/reviewer clears that field back to inherit, a full-inherit result
    * stores no override). Addressed by NAME so ANY member/HTTP/agent may edit ANY
    * member's gate — cross-editing is intentionally unrestricted per the spec.
    * Broadcasts so every gate surface updates live. See `shared/messageGate.ts`.
@@ -989,7 +1004,7 @@ export class PartyApplicationService {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const party = this.requireParty(state, partyId);
-    party.gate = normalizePartyGate(gate) || { enabled: false, rule: "" };
+    party.gate = applyPartyGatePatch(party.gate, gate);
     party.updatedAt = new Date().toISOString();
     this.persistIndex(workspace, state);
     log("info", "party", "party gate updated", { workspace, partyId: party.id, gate: party.gate });
@@ -2450,13 +2465,22 @@ export class PartyApplicationService {
       : undefined;
 
     if (sender && this.deps.reviewGate) {
-      const gate = this.effectiveGateOf(sender, state);
-      if (gate.active && !options?.force) {
+      const party = state.parties.find((item) => item.id === targetPartyId);
+      const plan = resolveGateReviewPlan(sender.gate, target.gate, party?.gate, getSettings().gateDefaults);
+      if (plan.active && !options?.force) {
         let verdict: GateReviewResult;
         try {
           verdict = await this.deps.reviewGate(
-            { rule: gate.rule, from: sender.name, to: target.name, fromRole: sender.role, toRole: target.role, content },
-            gate.reviewer,
+            {
+              ...(plan.sender.active ? { senderRules: plan.sender.rule } : {}),
+              ...(plan.recipient.active ? { recipientRules: plan.recipient.rule } : {}),
+              from: sender.name,
+              to: target.name,
+              fromRole: sender.role,
+              toRole: target.role,
+              content,
+            },
+            plan.reviewer,
           );
         } catch (error) {
           // Fail-open: deliver unreviewed, but surface the failure (never silent).
@@ -2474,13 +2498,13 @@ export class PartyApplicationService {
           this.deps.sessionManager.recordGateReview?.(workspace, {
             partyId: targetPartyId,
             member: sender.name,
-            model: gate.reviewer.model,
+            model: plan.reviewer.model,
             failure: { layer: classifyGateFailure(error), detail },
           });
-          this.emitGateBadge(sender, { gate: "failed", to: target.name, from: sender.name, reason: detail, errcode: "reviewer_error" });
-          log("warn", "party", "message gate review failed (fail-open)", { workspace, partyId: targetPartyId, from: sender.name, to: target.name, reviewer: gate.reviewer.model, error: detail });
+          this.emitGateBadge(sender, { gate: "failed", to: target.name, from: sender.name, reason: detail, errcode: "reviewer_error", scope: plan.scope, reviewer: plan.reviewer });
+          log("warn", "party", "message gate review failed (fail-open)", { workspace, partyId: targetPartyId, from: sender.name, to: target.name, scope: plan.scope, reviewer: plan.reviewer.model, error: detail });
           const delivered = this.sendMessage(to, content, from, attachments, partyId, { interrupt: options?.interrupt });
-          const notice = `Message gate reviewer '${gate.reviewer.model}' is unavailable, so the message was delivered UNREVIEWED: ${detail}`;
+          const notice = `Message gate reviewer '${plan.reviewer.model}' is unavailable, so the message was delivered UNREVIEWED: ${detail}`;
           return {
             ...delivered,
             message: `${delivered.message} ${notice}`,
@@ -2499,7 +2523,7 @@ export class PartyApplicationService {
         this.deps.sessionManager.recordGateReview?.(workspace, {
           partyId: targetPartyId,
           member: sender.name,
-          model: gate.reviewer.model,
+          model: plan.reviewer.model,
           verdict: verdict.verdict,
           usage: verdict.usage,
         });
@@ -2526,28 +2550,37 @@ export class PartyApplicationService {
           // (re)started during the review has a different one, and the stale
           // record's id would drop the rejection notice on the floor.
           const freshSender = fresh.members.find((member) => member.partyId === targetPartyId && member.name === sender.name) || sender;
-          this.emitGateBadge(freshSender, { gate: "rejected", to: freshTarget.name, from: freshSender.name, reason: verdict.reason, rule: gate.rule });
-          log("info", "party", "message gate rejected", { workspace, partyId: targetPartyId, from: sender.name, to: freshTarget.name });
+          this.emitGateBadge(freshSender, {
+            gate: "rejected",
+            to: freshTarget.name,
+            from: freshSender.name,
+            reason: verdict.reason,
+            rule: rejectionRule(plan, verdict),
+            scope: plan.scope,
+            violation: verdict.violation ?? plan.scope,
+            reviewer: plan.reviewer,
+          });
+          log("info", "party", "message gate rejected", { workspace, partyId: targetPartyId, from: sender.name, to: freshTarget.name, scope: plan.scope, violation: verdict.violation ?? plan.scope, reviewer: plan.reviewer.model });
           return { ...this.result(`Message to '${freshTarget.name}' was rejected by the message gate.`, fresh, freshTarget), partyMessage: message };
         }
         // allow → fall through to delivery.
-      } else if (gate.active && options?.force) {
-        this.emitGateBadge(sender, { gate: "forced", to: target.name, from: sender.name, reason: options.forceReason });
+      } else if (plan.active && options?.force) {
+        this.emitGateBadge(sender, { gate: "forced", to: target.name, from: sender.name, reason: options.forceReason, scope: plan.scope });
       }
     }
     return this.sendMessage(to, content, from, attachments, partyId, { interrupt: options?.interrupt });
   }
 
   /** The effective Message Gate applied to a member (member override → party → settings default). */
-  private effectiveGateOf(member: PartyMember, state: StoredPartyState): EffectiveGate {
+  private effectiveGateOf(member: PartyMember, state: StoredPartyState, axis: GateAxis = "send"): EffectiveGate {
     const party = state.parties.find((item) => item.id === member.partyId);
-    return effectiveGate(member.gate, party?.gate, getSettings().gateDefaults);
+    return effectiveGate(axis, member.gate, party?.gate, getSettings().gateDefaults);
   }
 
   /** Surfaces a Message Gate outcome as an inline badge in the SENDER's transcript (UI-only). */
   private emitGateBadge(
     sender: PartyMember,
-    gate: { gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string },
+    gate: { gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: "send" | "recv" | "both"; violation?: "send" | "recv" | "both"; reviewer?: GateReviewer },
   ): void {
     if (sender.sessionId && this.deps.sessionManager.hasSession(sender.sessionId)) {
       this.deps.sessionManager.emitGateBadge(sender.sessionId, gate);
@@ -3012,7 +3045,14 @@ export class PartyApplicationService {
   private ensureMigrated(state: StoredPartyState): StoredPartyState {
     this.healMemberModels(state);
     this.reconcileStaleSessionBindings(state);
+    // Message Gate v1 stored a single outbound axis at the root. Normalize on
+    // every read so renderer/API/runtime see one canonical shape immediately;
+    // the next ordinary mutation persists it without a risky read-time write.
+    for (const party of state.parties) {
+      if (party.gate) party.gate = normalizePartyGate(party.gate);
+    }
     for (const member of state.members) {
+      if (member.gate) member.gate = normalizeMemberGate(member.gate);
       if (normalizeHarnessId(member.runtime) === "cursor" && !member.cursorPolicy) {
         member.cursorPolicy = cursorPolicyOf(undefined, member.permissionMode);
         member.permissionMode = undefined;
@@ -3455,7 +3495,10 @@ export class PartyApplicationService {
           const result = this.setMemberGate(name, patch, party);
           notify();
           const state = this.readState();
-          const member = result.member ? this.effectiveGateOf(result.member, state) : undefined;
+          const axis: GateAxis = patch && typeof patch === "object" && isGateAxis((patch as { axis?: unknown }).axis)
+            ? (patch as { axis: GateAxis }).axis
+            : "send";
+          const member = result.member ? this.effectiveGateOf(result.member, state, axis) : undefined;
           return { ok: true, data: { ok: true, name, gate: member ? effectiveGateReceipt(member) : undefined } };
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
@@ -3463,30 +3506,18 @@ export class PartyApplicationService {
       },
       partyGateSet: async (patch) => {
         try {
-          // Merge onto the CURRENT party gate: the patch carries only the axes
-          // the agent named, and setPartyGate persists a whole gate.
-          const current = this.readState().parties?.find((item) => item.id === party)?.gate;
-          const next = {
-            enabled: typeof patch.enabled === "boolean" ? patch.enabled : current?.enabled ?? false,
-            rule: typeof patch.rule === "string" ? patch.rule : current?.rule ?? "",
-            ...(patch.reviewer === null
-              ? {}
-              : patch.reviewer
-                ? { reviewer: patch.reviewer }
-                : current?.reviewer
-                  ? { reviewer: current.reviewer }
-                  : {}),
-          };
-          const result = this.setPartyGate(party, next);
+          const axis: GateAxis = isGateAxis(patch.axis) ? patch.axis : "send";
+          const result = this.setPartyGate(party, { ...patch, axis });
           notify();
           const gate = this.readState().parties?.find((item) => item.id === party)?.gate;
+          const selected = gate?.[axis];
           return {
             ok: true,
             data: {
               ok: result.ok,
               partyId: party,
-              gate: gate
-                ? { enabled: gate.enabled, reviewer: gate.reviewer, ruleChars: gate.rule.length }
+              gate: selected
+                ? { axis, enabled: selected.enabled, reviewer: selected.reviewer, ruleChars: selected.rule.length }
                 : undefined,
             },
           };
@@ -3529,7 +3560,10 @@ export class PartyApplicationService {
               location: member.location
                 ? { ...memberLocationRequestOf(parseMemberLocation(member.location)), location: member.location }
                 : undefined,
-              gate: this.effectiveGateOf(member, state),
+              gate: {
+                send: this.effectiveGateOf(member, state, "send"),
+                recv: this.effectiveGateOf(member, state, "recv"),
+              },
             };
           });
           const storedLayout = this.getPartyLayout(party);

@@ -1,4 +1,4 @@
-import type { GateFailureLayer } from "../shared/messageGate";
+import type { GateFailureLayer, GateReviewer, GateScope, GateViolation } from "../shared/messageGate";
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
@@ -355,7 +355,7 @@ export class SessionManager extends EventEmitter {
    */
   emitGateBadge(
     sessionId: string,
-    gate: { gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string },
+    gate: { gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: GateScope; violation?: GateViolation; reviewer?: GateReviewer },
   ): void {
     const session = this.sessions.get(sessionId);
     if (!session || session.closed) {

@@ -3,6 +3,7 @@ import type { SubagentActivity, SubagentBlock, SubagentPhase } from "../shared/s
 import type { UsageProviderId, UsageWindow } from "../shared/usageLimits";
 import type { CursorPolicy } from "../shared/cursorPolicy";
 import type { TurnTokenBreakdown } from "../shared/tokenUsage";
+import type { GateReviewer, GateScope, GateViolation } from "../shared/messageGate";
 
 export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -226,7 +227,7 @@ export type ClaudeNormalizedEvent =
   // Message Gate outcome for an OUTGOING member-to-member send, rendered as an
   // inline badge in the SENDER's transcript (reject/forced/failed). UI-only — it
   // is never injected into any model's context. See the Message Gate design §8.
-  | { type: "gate"; gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; at: string }
+  | { type: "gate"; gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: GateScope; violation?: GateViolation; reviewer?: GateReviewer; at: string }
   /**
    * `environment` marks a failure the USER can fix (a harness CLI that is not
    * installed or not signed in), carrying the id of the environment check that

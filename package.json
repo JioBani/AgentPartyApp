@@ -243,7 +243,7 @@
     "test:gate-reviewer-reasoning": "node scripts/qa-gate-reviewer-reasoning.mjs",
     "test:engine-host-channel": "node scripts/qa-engine-host-channel.mjs",
     "test:gate-fail-open": "node scripts/qa-gate-fail-open-notice.mjs",
-    "test:party-gate-scope": "node scripts/qa-party-gate-scope.mjs",
+    "test:party-gate-scope": "node scripts/qa-party-gate-scope.mjs && node scripts/qa-gate-duplex-delivery.mjs",
     "test:reasoning-unify": "node scripts/qa-reasoning-unify.mjs",
     "test:openrouter-clear": "node scripts/qa-openrouter-clear.mjs",
     "test:open-tab-deliver": "node scripts/qa-open-tab-deliver.mjs",

@@ -746,22 +746,30 @@ function GateBlock({ block, view }: { block: Extract<TranscriptBlock, { kind: "g
   const [open, setOpen] = useState(false);
   const meta = GATE_META[block.gate];
   const Icon = meta.Icon;
-  const extra = block.gate === "failed" ? (block.errcode ? `오류 · ${block.errcode}` : "") : (block.rule ? `위반 규칙 · ${block.rule}` : "");
+  const axis = block.gate === "rejected" ? block.violation : block.scope;
+  const axisLabel = axis === "send" ? localized("STR-3857") : axis === "recv" ? localized("STR-3858") : axis === "both" ? localized("STR-3859") : "";
+  const details = [
+    block.gate === "failed" ? (block.errcode ? `오류 · ${block.errcode}` : "") : (block.rule ? `위반 규칙 · ${block.rule}` : ""),
+    block.reviewer ? `${block.reviewer.model} · ${block.reviewer.effort}` : "",
+  ].filter(Boolean);
   return (
     <div className={"wb-block wb-gate is-" + meta.tone}>
       <div className="wb-gate-head">
         <span className="wb-gate-icon"><Icon size={14} /></span>
         <span className="wb-gate-label">{meta.label}</span>
         <span className="wb-gate-route wb-mono">{(block.from || view.name)} → {block.to}</span>
-        <span className="wb-gate-passnote">{meta.note}</span>
-        {block.reason && (
-          <button type="button" className="wb-gate-caret" onClick={() => setOpen((v) => !v)} title={open ? localized("STR-2177") : localized("STR-2178")}>
-            <ChevronRight size={13} className={"wb-caret" + (open ? " is-open" : "")} />
-          </button>
-        )}
+        {axisLabel && <span className="wb-gate-scope wb-mono">{axisLabel}</span>}
+        <span className="wb-gate-outcome">
+          <span className="wb-gate-passnote">{meta.note}</span>
+          {block.reason && (
+            <button type="button" className="wb-gate-caret" onClick={() => setOpen((v) => !v)} title={open ? localized("STR-2177") : localized("STR-2178")}>
+              <ChevronRight size={13} className={"wb-caret" + (open ? " is-open" : "")} />
+            </button>
+          )}
+        </span>
       </div>
       {block.reason && <div className={"wb-gate-reason" + (open ? " is-open" : "")}>{block.reason}</div>}
-      {open && extra && <div className="wb-gate-meta wb-mono">{extra}</div>}
+      {open && details.length > 0 && <div className="wb-gate-meta wb-mono">{details.map((detail) => <div key={detail}>{detail}</div>)}</div>}
     </div>
   );
 }

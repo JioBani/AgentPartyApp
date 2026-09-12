@@ -4,11 +4,10 @@ import type { CursorPolicy } from "../../shared/cursorPolicy";
 import type { AutoCompactSetting } from "../../shared/autoCompact";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
-import type { MemberGateOverride, PartyGate } from "../../shared/messageGate";
+import type { MemberGateUpdate, PartyGatePatch } from "../../shared/messageGate";
 import type { MemberQueueState, QueueCommand } from "../../shared/messageQueue";
 
 /** A member-gate PATCH: any axis omitted is unchanged; `null` clears to inherit. */
-export type MemberGatePatch = MemberGateOverride;
 
 /**
  * Command surface a panel needs, addressed by member name. The App shell maps
@@ -96,11 +95,11 @@ export interface WorkbenchActions {
    * `null` axis clears it back to inherit). Persisted through the party-action
    * path (works with or without a live session); cross-editable across members.
    */
-  setMemberGate(memberName: string, patch: MemberGatePatch): void;
+  setMemberGate(memberName: string, patch: MemberGateUpdate): void;
   /** Sets the sender default; undefined clears it back to the Runtime default. */
   setMemberOutboundInterrupt(memberName: string, value: boolean | undefined): void;
   /** Sets the party-wide Message Gate default (enablement + rule). */
-  setPartyGate(partyId: string, gate: PartyGate): void;
+  setPartyGate(partyId: string, gate: PartyGatePatch): void;
   /**
    * Closes the member's live session (tears down the harness, frees its context
    * + provider usage) and marks the member `closed`. Reopening the tab and

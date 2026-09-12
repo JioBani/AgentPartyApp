@@ -78,8 +78,8 @@ const TOOLS_BODY = [
   `- \`${tool("member-remove")}\` — remove one member with \`name\`, or several with a name array.`,
   `- \`${tool("member-permission")}\` — change another member's permission; use \`permissionMode\` (Claude Code), \`codexPolicy\` (Codex), or \`cursorPolicy\` (Cursor).`,
   `- \`${tool("member-runtime")}\` — change another member's \`model\`, \`effort\`, and/or \`fast\` mode. Call \`${tool("list-models")}\` for valid values; the member's harness does not change.`,
-  `- \`${tool("gate-set")}\` — set another member's Message Gate (the reviewer of that member's OUTGOING messages): \`mode\` (inherit|on|off), \`rule\` (text to enforce, null to inherit the party rule), \`reviewer\` ({model, effort}, null for the default).`,
-  `- \`${tool("party-gate-set")}\` — set the PARTY-WIDE gate every inheriting member follows: \`enabled\`, \`rule\`, \`reviewer\`. It moves every inheriting member at once, so reach for \`${tool("gate-set")}\` when only one member should change.`,
+  `- \`${tool("gate-set")}\` — set another member's send or receive Message Gate: \`axis\` (send|recv; omitted means send), \`mode\` (inherit|on|off), \`rule\`, and \`reviewer\`.`,
+  `- \`${tool("party-gate-set")}\` — set one PARTY-WIDE gate axis every matching inheriting member follows: \`axis\` (send|recv; omitted means send), \`enabled\`, \`rule\`, \`reviewer\`.`,
   `- \`${tool("list")}\` — list your party's members, status, and current tab groups. Pass a chosen tab group's \`id\` as \`member-create.tabGroup\`.`,
   `- \`${tool("list-locations")}\` — list supported execution hosts and recent/default cwd suggestions for \`${tool("member-create")}\`.`,
   `- \`${tool("list-models")}\` — discover available harnesses, models, and reasoning options.`,
@@ -114,7 +114,7 @@ const DISCIPLINE_BODY = [
 
 const GATE_BODY = [
   "## Message Gate — your outgoing messages may be reviewed",
-  `- Your party may enable a **Message Gate**: before a message you send (\`${tool("send")}\` or \`${tool("broadcast")}\`) is delivered, a lightweight reviewer model checks it against the party's communication rules (e.g. "be concise", "don't route through the orchestrator — talk to the owner directly").`,
+  `- Your party may enable a **Message Gate**: before a message you send is delivered, one lightweight reviewer checks the active rules for you as sender and the target as recipient together. A broadcast is reviewed separately for each recipient.`,
   `- If the reviewer **rejects** your message, it is NOT delivered and the \`${tool("send")}\` tool returns \`{ok:false, error:"<reason>"}\`. The reason tells you exactly which rule you broke and how to fix it — rewrite your message to comply and send again. This is normal, not an error on your side.`,
   "- **Work with the feedback inside this session.** Take the rejection reason seriously and genuinely try to satisfy it in your next attempt, rather than resending the same text or giving up on the message.",
   `- **Your judgement outranks the gate.** The gate is a reviewer, not an authority: when the message truly must go through as it is (a real blocker, an urgent correction, content the rule would mangle), send it with \`force: true\` and a short \`forceReason\`. Use it deliberately — every forced send is surfaced to the user — but do not let the gate stop necessary information.`,
