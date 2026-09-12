@@ -94,6 +94,7 @@ export async function reviewGateMessage(
   const result = await callHeadlessModel({
     model: reviewer.model,
     effort: reviewer.effort,
+    serviceTier: reviewer.serviceTier,
     system: SYSTEM_PROMPT,
     user: buildUserPrompt(message),
     maxTokens: MAX_TOKENS,

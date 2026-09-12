@@ -128,7 +128,7 @@ export interface PartyGatePatch {
   axis?: "send" | "recv";
   mode?: "inherit" | "on" | "off";
   rule?: string | null;
-  reviewer?: { model: string; effort: string } | null;
+  reviewer?: { model: string; effort: string; serviceTier?: string } | null;
 }
 
 /**
@@ -141,7 +141,7 @@ export interface PartyGateGlobalPatch {
   axis?: "send" | "recv";
   enabled?: boolean;
   rule?: string;
-  reviewer?: { model: string; effort: string } | null;
+  reviewer?: { model: string; effort: string; serviceTier?: string } | null;
 }
 
 // The capability surface a hosted member can drive. Every method routes through
@@ -286,7 +286,7 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "member-remove": "Remove one or more members from your party. Pass `name` as one member name or an array of names.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
   "member-runtime": "Change one other member's model, reasoning effort, and/or Fast mode without changing its harness. Call list-models with the member's harness for valid model ids and effort options. Fast is a boolean: true selects that route's native Fast tier (for example priority on Codex or fast on Cursor), false selects Standard or clears an inapplicable stale tier. Existing conversation is preserved when a session restart is required. A busy target is refused instead of having its turn killed.",
-  "gate-set": "Set one axis of another member's Message Gate. axis: send|recv (omitted = send for compatibility). mode: inherit|on|off. rule: text to enforce (null = inherit the matching party axis). reviewer: {model, effort} (null = no axis-specific reviewer). Send and receive rules are combined into one review when both apply. Any member may edit any member's gate. The result confirms ruleChars without echoing the rule; use list {name} to inspect it.",
+  "gate-set": "Set one axis of another member's Message Gate. axis: send|recv (omitted = send for compatibility). mode: inherit|on|off. rule: text to enforce (null = inherit the matching party axis). reviewer: {model, effort, serviceTier?} (null = no axis-specific reviewer). Send and receive rules are combined into one review when both apply. Any member may edit any member's gate. The result confirms ruleChars without echoing the rule; use list {name} to inspect it.",
   "party-gate-set": "Set one PARTY-WIDE Message Gate axis. axis: send|recv (omitted = send for compatibility). enabled, rule, and reviewer patch only that axis; every matching inheriting member follows it. Send and receive rules are combined into one delivery-time review. Prefer gate-set when only one member should change. The result confirms ruleChars without echoing the rule.",
   list: "List compact member summaries and current tabGroups. Pass `name` to inspect one member's full model, permission, location, and Message Gate settings. Full detail for every member is intentionally unavailable because long inherited gate rules would be repeated once per member. Pass a chosen tabGroups[].id to member-create.tabGroup.",
   "list-locations": "List the execution hosts this app supports plus recent and default cwd suggestions. Use a returned host/cwd/distro tuple as member-create.location. Entries with problem are shown for diagnostics but must not be used until repaired.",
@@ -456,6 +456,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
         properties: {
           model: { type: "string", description: "Model id from list-models." },
           effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
+          serviceTier: { type: "string", description: "Concrete serving tier from list-models, for example standard or priority (Fast). Do not pass inherit." },
         },
         required: ["model", "effort"],
         additionalProperties: false,
@@ -476,6 +477,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
         properties: {
           model: { type: "string", description: "Model id from list-models." },
           effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
+          serviceTier: { type: "string", description: "Concrete serving tier from list-models, for example standard or priority (Fast). Do not pass inherit." },
         },
         required: ["model", "effort"],
         additionalProperties: false,
@@ -814,7 +816,7 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         patch.reviewer = input.reviewer === null
           ? null
           : input.reviewer && typeof input.reviewer === "object"
-            ? input.reviewer as { model: string; effort: string }
+            ? input.reviewer as { model: string; effort: string; serviceTier?: string }
             : undefined;
       }
       return bridge.gateSet(memberName, patch);
@@ -835,7 +837,7 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         patch.reviewer = input.reviewer === null
           ? null
           : input.reviewer && typeof input.reviewer === "object"
-            ? input.reviewer as { model: string; effort: string }
+            ? input.reviewer as { model: string; effort: string; serviceTier?: string }
             : undefined;
       }
       if (!Object.keys(patch).length) {
@@ -1063,6 +1065,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         reviewer: z.object({
           model: z.string().describe("Model id from list-models."),
           effort: z.string().describe("Effort level: low | medium | high | xhigh | max."),
+          serviceTier: z.string().optional().describe("Concrete serving tier from list-models, e.g. standard or priority (Fast). Do not pass inherit."),
         }).nullable().optional().describe("Custom reviewer for this axis (null = no axis-specific reviewer; the other active axis may still select one)."),
       },
       async (args: { name: string } & PartyGatePatch) => envelope(await bridge.gateSet(args.name, args)),
@@ -1077,6 +1080,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         reviewer: z.object({
           model: z.string().describe("Model id from list-models."),
           effort: z.string().describe("Effort level: low | medium | high | xhigh | max."),
+          serviceTier: z.string().optional().describe("Concrete serving tier from list-models, e.g. standard or priority (Fast). Do not pass inherit."),
         }).nullable().optional().describe("Party-wide reviewer for this axis (null = no axis-specific reviewer). A member's matching-axis reviewer still wins."),
       },
       async (args: PartyGateGlobalPatch) => envelope(await bridge.partyGateSet(args)),

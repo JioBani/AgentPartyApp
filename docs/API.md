@@ -1112,7 +1112,7 @@ gives that. Folds persist across restarts.
 Tidying the list is an explicit write to this endpoint, never a side effect of
 opening a screen.
 
-`gateDefaults` is the **Message Gate** reviewer default — `{ "model", "effort" }`
+`gateDefaults` is the **Message Gate** reviewer default — `{ "model", "effort", "serviceTier"? }`
 only (NO harness; the reviewer runs headless). Any gate-on member that has not
 set its own reviewer uses this. Recommended: a cheap/fast model, e.g.
 `{ "gateDefaults": { "model": "GPT-5.6 Terra", "effort": "low" } }` — the
@@ -2560,7 +2560,8 @@ When both axes specify a reviewer, an explicit receive reviewer wins, followed
 by an explicit send reviewer, then `gateDefaults`. An unset axis reviewer does
 not suppress an explicit reviewer on the other axis. Gate transcript events
 record `scope` (`send|recv|both`), rejection `violation`, and the actual
-`reviewer` (`model` + `effort`). Legacy events omit these optional fields.
+`reviewer` (`model` + `effort` + optional concrete `serviceTier`). Legacy events
+omit these optional fields.
 
 For a **member-originated** message, omitting `interrupt` uses the sender's
 per-member `outboundInterrupt` override, then the Agent-screen
@@ -2582,6 +2583,10 @@ models — and reasoning is never disabled, because a classifier that cannot
 reason rejects compliant messages. This behaves identically for local and WSL
 workspaces; for WSL the reviewer call runs on the desktop while the gate
 decision stays in the distro's engine.
+When the chosen model exposes a Fast serving tier, `serviceTier` is the concrete
+catalog id (`"standard"`, `"priority"`, `"fast"`, etc.) and is forwarded as
+`service_tier` on the headless request. `"inherit"` is not valid for a gate
+reviewer because it has no harness configuration to inherit.
 
 ### `POST /api/party/members`
 
@@ -2979,7 +2984,7 @@ member/agent may edit any member's gate). Backs the member gate modal and the
 agent-facing `gate-set` tool.
 
 ```json
-{ "gate": { "axis": "recv", "mode": "on", "rule": "Require a reproduction and expected result.", "reviewer": { "model": "haiku", "effort": "low" } } }
+{ "gate": { "axis": "recv", "mode": "on", "rule": "Require a reproduction and expected result.", "reviewer": { "model": "gpt-5.6-terra", "effort": "low", "serviceTier": "priority" } } }
 ```
 
 - `axis`: `"send"` | `"recv"`. Omit it to edit `send` for compatibility with
@@ -2987,9 +2992,10 @@ agent-facing `gate-set` tool.
 - `mode`: `"inherit"` (follow the party gate) | `"on"` | `"off"`.
 - `rule`: the communication rule the headless reviewer enforces. `null` = inherit
   the party rule.
-- `reviewer`: `{ model, effort }` for a custom headless reviewer (no harness —
+- `reviewer`: `{ model, effort, serviceTier? }` for a custom headless reviewer (no harness —
   it runs as a raw completion). `null` = use the settings default
-  (`gateDefaults`).
+  (`gateDefaults`). `serviceTier`, when supported, must be a concrete catalog
+  tier and never `"inherit"`.
 
 ### `POST /api/parties/:id/gate`
 
@@ -2998,7 +3004,7 @@ reviewer). Members with the matching axis in `mode: "inherit"` follow it. Backs 
 and the agent-facing `party-gate-set` tool. Body:
 
 ```json
-{ "axis": "send", "enabled": true, "rule": "Be concise. Prefer direct member-to-member messages over orchestrator round-trips.", "reviewer": { "model": "GPT-5.6 Terra", "effort": "low" } }
+{ "axis": "send", "enabled": true, "rule": "Be concise. Prefer direct member-to-member messages over orchestrator round-trips.", "reviewer": { "model": "GPT-5.6 Terra", "effort": "low", "serviceTier": "standard" } }
 ```
 
 `axis` is `"send"` or `"recv"`; omission means `send`. Only that axis is

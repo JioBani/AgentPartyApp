@@ -3,7 +3,12 @@
 export type GateAxis = "send" | "recv";
 export type GateMode = "inherit" | "on" | "off";
 
-export interface GateReviewer { model: string; effort: string }
+export interface GateReviewer {
+  model: string;
+  effort: string;
+  /** Concrete provider serving tier. Omitted means the ordinary tier. */
+  serviceTier?: string;
+}
 
 export interface PartyGateAxis {
   enabled: boolean;
@@ -131,7 +136,11 @@ export function normalizeGateReviewer(value: unknown): GateReviewer | undefined 
   const model = (value as { model?: unknown }).model;
   const effort = (value as { effort?: unknown }).effort;
   if (typeof model !== "string" || !model.trim() || typeof effort !== "string" || !effort.trim()) return undefined;
-  return { model: model.trim(), effort: effort.trim() };
+  const rawTier = (value as { serviceTier?: unknown }).serviceTier;
+  const serviceTier = typeof rawTier === "string" && rawTier.trim() && rawTier.trim() !== "inherit"
+    ? rawTier.trim()
+    : undefined;
+  return { model: model.trim(), effort: effort.trim(), ...(serviceTier ? { serviceTier } : {}) };
 }
 
 function normalizePartyGateAxis(value: unknown): PartyGateAxis | undefined {
