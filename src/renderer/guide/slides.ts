@@ -391,7 +391,7 @@ const SLIDE_SNAPSHOTS: Record<GuideSlideId, GuideSnapshot> = {
     sessions: PAIR_SESSIONS,
     transcripts: { main: MAIN_CREATED_IMPL, reviewer: REVIEWER_CHANNEL },
     panels: twoPanels,
-    gate: { enabled: true, rule: "다른 멤버의 메시지를 중계하지 말고, 전달할 내용이 있는 멤버에게 직접 메시지를 보내세요." },
+    gate: { send: { enabled: true, rule: "다른 멤버의 메시지를 중계하지 말고, 전달할 내용이 있는 멤버에게 직접 메시지를 보내세요." }, recv: { enabled: false, rule: "" } },
     extras: { qaOpenGate: { kind: "party", member: "" } },
   }),
 
@@ -401,7 +401,7 @@ const SLIDE_SNAPSHOTS: Record<GuideSlideId, GuideSnapshot> = {
     sessions: PAIR_SESSIONS,
     transcripts: { main: MAIN_CREATED_IMPL, reviewer: REVIEWER_GATED },
     panels: twoPanels,
-    gate: { enabled: true, rule: "다른 멤버의 메시지를 중계하지 말고, 전달할 내용이 있는 멤버에게 직접 메시지를 보내세요." },
+    gate: { send: { enabled: true, rule: "다른 멤버의 메시지를 중계하지 말고, 전달할 내용이 있는 멤버에게 직접 메시지를 보내세요." }, recv: { enabled: false, rule: "" } },
   }),
 
   // 22 — 입력창 옆 권한 메뉴를 연 상태.

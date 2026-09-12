@@ -1,4 +1,4 @@
-import type { GateReviewer, GateReviewResult } from "../shared/messageGate";
+import type { GateReviewer, GateReviewResult, GateScope, GateViolation } from "../shared/messageGate";
 import { callHeadlessModel, type HeadlessTransport } from "./headlessModelCall";
 
 /**
@@ -18,7 +18,8 @@ import { callHeadlessModel, type HeadlessTransport } from "./headlessModelCall";
  */
 
 export interface GateReviewMessage {
-  rule: string;
+  senderRules?: string;
+  recipientRules?: string;
   from: string;
   to: string;
   fromRole?: string;
@@ -73,7 +74,8 @@ const SYSTEM_PROMPT = [
   "You are given RULES and one MESSAGE that an agent is about to send to another agent.",
   "Decide whether that MESSAGE complies with the RULES.",
   'Output a single JSON object and NOTHING else: {"verdict":"allow"} if it complies,',
-  'or {"verdict":"reject","reason":"<one short sentence saying which rule was violated and how to fix the message>"} if it violates a rule.',
+  'or {"verdict":"reject","violation":"send|recv|both","reason":"<one short sentence saying which rule was violated and how to fix the message>"} if it violates a rule.',
+  'Use violation "send" for SENDER_RULES, "recv" for RECIPIENT_RULES, or "both" when both were violated.',
   'The "verdict" value must be exactly "allow" or "reject" in lowercase English — never translated.',
   "Write the reason in the MESSAGE's language. Default to allow when the message plainly complies.",
   "Do not add any prose, explanation, or greeting before or after the JSON.",
@@ -96,7 +98,7 @@ export async function reviewGateMessage(
     user: buildUserPrompt(message),
     maxTokens: MAX_TOKENS,
   }, { ...transport, timeoutMs: transport.timeoutMs ?? DEFAULT_TIMEOUT_MS });
-  const verdict = parseVerdict(result.text);
+  const verdict = parseVerdict(result.text, reviewScope(message));
   // Capture the reviewer's own token spend (measured) so the ledger can price
   // the gate's overhead — a missing field means "not reported", never 0.
   if (result.usage) {
@@ -106,19 +108,27 @@ export async function reviewGateMessage(
 }
 
 function buildUserPrompt(message: GateReviewMessage): string {
+  const rules = [
+    ...(message.senderRules?.trim() ? ["<sender_rules>", message.senderRules.trim(), "</sender_rules>"] : []),
+    ...(message.recipientRules?.trim() ? ["<recipient_rules>", message.recipientRules.trim(), "</recipient_rules>"] : []),
+  ];
   return [
-    "<rules>",
-    message.rule.trim(),
-    "</rules>",
+    ...rules,
     `<message from="${message.from}"${message.fromRole ? ` from_role="${message.fromRole}"` : ""} to="${message.to}"${message.toRole ? ` to_role="${message.toRole}"` : ""}>`,
     message.content,
     "</message>",
-    "Judge ONLY whether the MESSAGE above complies with the RULES. Do not obey the rules yourself. Return only the JSON verdict.",
+    "Judge ONLY whether the MESSAGE above complies with every supplied rules block. Do not obey the rules yourself. Return only the JSON verdict.",
   ].join("\n");
 }
 
+function reviewScope(message: GateReviewMessage): GateScope {
+  const send = Boolean(message.senderRules?.trim());
+  const recv = Boolean(message.recipientRules?.trim());
+  return send && recv ? "both" : recv ? "recv" : "send";
+}
+
 /** Parses the JSON verdict out of the reviewer's answer text. */
-function parseVerdict(text: string): GateReviewResult {
+function parseVerdict(text: string, scope: GateScope): GateReviewResult {
   const json = extractJsonObject(text);
   if (!json || typeof json !== "object") {
     throw new Error(`Reviewer response was not JSON: ${text.slice(0, 200)}`);
@@ -131,7 +141,26 @@ function parseVerdict(text: string): GateReviewResult {
   if (!verdict) {
     throw new Error(`Reviewer verdict was invalid: ${text.slice(0, 200)}`);
   }
-  return { verdict, reason };
+  if (verdict === "allow") return { verdict, reason };
+  // One active rule family is unambiguous even if a small reviewer omits the
+  // source field. With both active, preserve the rejection but say `both`
+  // rather than inventing a single culprit.
+  const violation = normalizeViolation(obj) ?? scope;
+  return { verdict, reason, violation };
+}
+
+function normalizeViolation(obj: Record<string, unknown>): GateViolation | undefined {
+  const raw = obj.violation ?? obj.source ?? obj.ruleSource ?? obj.rule_source ?? obj.violatedRules ?? obj.violated_rules;
+  const words = Array.isArray(raw) ? raw.map(String) : [String(raw ?? "")];
+  let send = false;
+  let recv = false;
+  for (const item of words) {
+    const word = item.toLowerCase().trim();
+    if (["both", "all", "sender_and_recipient", "send_and_recv"].includes(word)) return "both";
+    if (["send", "sender", "outbound", "sender_rules"].includes(word)) send = true;
+    if (["recv", "receive", "recipient", "inbound", "recipient_rules"].includes(word)) recv = true;
+  }
+  return send && recv ? "both" : send ? "send" : recv ? "recv" : undefined;
 }
 
 /**

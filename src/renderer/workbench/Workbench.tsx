@@ -989,8 +989,8 @@ export function Workbench(props: WorkbenchProps) {
           routes={routes}
           gateDefaults={gateDefaults}
           onSetPartyGate={(gate) => actions.setPartyGate(gateParty.id, gate)}
-          onSetMemberGate={(name, mode) => actions.setMemberGate(name, { mode })}
-          onClearMemberRule={(name) => actions.setMemberGate(name, { rule: null })}
+          onSetMemberGate={(name, axis, mode) => actions.setMemberGate(name, { axis, mode })}
+          onClearMemberRule={(name, axis) => actions.setMemberGate(name, { axis, rule: null })}
           onOpenMemberGate={(name) => { setPartyGateTarget(null); setGateTarget(name); }}
           onClose={() => setPartyGateTarget(null)}
         />

@@ -124,6 +124,8 @@ export interface PartyRuntimeRequest {
  * See `shared/messageGate.ts`.
  */
 export interface PartyGatePatch {
+  /** Omitted means the legacy/send axis. */
+  axis?: "send" | "recv";
   mode?: "inherit" | "on" | "off";
   rule?: string | null;
   reviewer?: { model: string; effort: string } | null;
@@ -135,6 +137,8 @@ export interface PartyGatePatch {
  * Omitted keys keep their current value.
  */
 export interface PartyGateGlobalPatch {
+  /** Omitted means the legacy/send axis. */
+  axis?: "send" | "recv";
   enabled?: boolean;
   rule?: string;
   reviewer?: { model: string; effort: string } | null;
@@ -282,8 +286,8 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "member-remove": "Remove one or more members from your party. Pass `name` as one member name or an array of names.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
   "member-runtime": "Change one other member's model, reasoning effort, and/or Fast mode without changing its harness. Call list-models with the member's harness for valid model ids and effort options. Fast is a boolean: true selects that route's native Fast tier (for example priority on Codex or fast on Cursor), false selects Standard or clears an inapplicable stale tier. Existing conversation is preserved when a session restart is required. A busy target is refused instead of having its turn killed.",
-  "gate-set": "Set another member's Message Gate — the delivery-time reviewer of that member's OUTGOING messages. mode: inherit|on|off. rule: the communication rule text the reviewer enforces (null to inherit the party rule). reviewer: {model, effort} for a custom headless reviewer (null to use the settings default). Any member may edit any member's gate. The result confirms ruleChars without echoing the rule; use list {name} when you need to inspect it.",
-  "party-gate-set": "Set the PARTY-WIDE Message Gate — the default every member with mode 'inherit' follows. enabled: turn the party gate on/off. rule: the communication rule text enforced party-wide. reviewer: {model, effort} for a party-wide headless reviewer (null to use the settings default). This changes the default for EVERY inheriting member at once, so prefer gate-set when only one member should be affected. A member that set mode on/off, or its own rule, keeps overriding this. The result confirms ruleChars without echoing the rule.",
+  "gate-set": "Set one axis of another member's Message Gate. axis: send|recv (omitted = send for compatibility). mode: inherit|on|off. rule: text to enforce (null = inherit the matching party axis). reviewer: {model, effort} (null = no axis-specific reviewer). Send and receive rules are combined into one review when both apply. Any member may edit any member's gate. The result confirms ruleChars without echoing the rule; use list {name} to inspect it.",
+  "party-gate-set": "Set one PARTY-WIDE Message Gate axis. axis: send|recv (omitted = send for compatibility). enabled, rule, and reviewer patch only that axis; every matching inheriting member follows it. Send and receive rules are combined into one delivery-time review. Prefer gate-set when only one member should change. The result confirms ruleChars without echoing the rule.",
   list: "List compact member summaries and current tabGroups. Pass `name` to inspect one member's full model, permission, location, and Message Gate settings. Full detail for every member is intentionally unavailable because long inherited gate rules would be repeated once per member. Pass a chosen tabGroups[].id to member-create.tabGroup.",
   "list-locations": "List the execution hosts this app supports plus recent and default cwd suggestions. Use a returned host/cwd/distro tuple as member-create.location. Entries with problem are shown for diagnostics but must not be used until repaired.",
   "list-models": "Discover available harnesses, models, and reasoning options for member-create. Called with NO arguments it returns a compact index of every model — label, which harnesses run it, and the id to pass to member-create when that id differs from the label. Pass `harness`, `provider`, and/or `query` to get the FULL detail (effort/thinking options, service tier, pricing, context window) for just the matches; that is the cheap way to answer 'what settings does this one model take'. Filters narrow, they never paginate: dropping them always widens back to everything. A filter that matches nothing is an ERROR listing what does exist, never an empty result — so an empty answer never means 'this model is unavailable'. Routes that cannot currently be used are excluded from detail rows but their count is always reported and `includeUnavailable: true` brings them back with the reason.",
@@ -443,11 +447,12 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     type: "object",
     properties: {
       name: { type: "string", description: "Target member name in your party." },
+      axis: { type: "string", enum: ["send", "recv"], description: "Gate axis to edit. Omitted means send for compatibility." },
       mode: { type: "string", enum: ["inherit", "on", "off"], description: "inherit = follow the party gate; on/off = override just enablement." },
-      rule: { type: ["string", "null"], description: "Communication rule the reviewer enforces for this member's outgoing messages. null = inherit the party rule." },
+      rule: { type: ["string", "null"], description: "Communication rule for the selected axis. null = inherit the matching party rule." },
       reviewer: {
         type: ["object", "null"],
-        description: "Custom headless reviewer for this member (null = use the settings default).",
+        description: "Custom reviewer for this axis (null = no axis-specific reviewer; the other active axis may still select one).",
         properties: {
           model: { type: "string", description: "Model id from list-models." },
           effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
@@ -462,11 +467,12 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
   "party-gate-set": {
     type: "object",
     properties: {
+      axis: { type: "string", enum: ["send", "recv"], description: "Party gate axis to edit. Omitted means send for compatibility." },
       enabled: { type: "boolean", description: "Turn the party-wide gate on or off. Every member with mode 'inherit' follows this." },
       rule: { type: "string", description: "Communication rule enforced party-wide for inheriting members." },
       reviewer: {
         type: ["object", "null"],
-        description: "Party-wide headless reviewer (null = use the settings default). A member's own reviewer still wins.",
+        description: "Party-wide reviewer for this axis (null = no axis-specific reviewer). A member's matching-axis reviewer still wins.",
         properties: {
           model: { type: "string", description: "Model id from list-models." },
           effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
@@ -793,7 +799,11 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       if (!memberName) {
         return { ok: false, error: "gate-set requires string argument: name." };
       }
+      if ("axis" in input && input.axis !== undefined && input.axis !== "send" && input.axis !== "recv") {
+        return { ok: false, error: "gate-set axis must be 'send' or 'recv'." };
+      }
       const patch: PartyGatePatch = {};
+      if (input.axis === "send" || input.axis === "recv") patch.axis = input.axis;
       if (input.mode === "inherit" || input.mode === "on" || input.mode === "off") {
         patch.mode = input.mode;
       }
@@ -810,7 +820,11 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
       return bridge.gateSet(memberName, patch);
     }
     case "party-gate-set": {
+      if ("axis" in input && input.axis !== undefined && input.axis !== "send" && input.axis !== "recv") {
+        return { ok: false, error: "party-gate-set axis must be 'send' or 'recv'." };
+      }
       const patch: PartyGateGlobalPatch = {};
+      if (input.axis === "send" || input.axis === "recv") patch.axis = input.axis;
       if (typeof input.enabled === "boolean") {
         patch.enabled = input.enabled;
       }
@@ -1043,12 +1057,13 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       partyDynamicToolDescriptions["gate-set"],
       {
         name: z.string().describe("Target member name in your party."),
+        axis: z.enum(["send", "recv"]).optional().describe("Gate axis to edit. Omitted means send for compatibility."),
         mode: z.enum(["inherit", "on", "off"]).optional().describe("inherit = follow the party gate; on/off overrides just enablement."),
         rule: z.string().nullable().optional().describe("Communication rule the reviewer enforces (null = inherit the party rule)."),
         reviewer: z.object({
           model: z.string().describe("Model id from list-models."),
           effort: z.string().describe("Effort level: low | medium | high | xhigh | max."),
-        }).nullable().optional().describe("Custom headless reviewer (null = use the settings default)."),
+        }).nullable().optional().describe("Custom reviewer for this axis (null = no axis-specific reviewer; the other active axis may still select one)."),
       },
       async (args: { name: string } & PartyGatePatch) => envelope(await bridge.gateSet(args.name, args)),
     ),
@@ -1056,12 +1071,13 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       "party-gate-set",
       partyDynamicToolDescriptions["party-gate-set"],
       {
+        axis: z.enum(["send", "recv"]).optional().describe("Party gate axis to edit. Omitted means send for compatibility."),
         enabled: z.boolean().optional().describe("Turn the party-wide gate on or off."),
         rule: z.string().optional().describe("Communication rule enforced party-wide for inheriting members."),
         reviewer: z.object({
           model: z.string().describe("Model id from list-models."),
           effort: z.string().describe("Effort level: low | medium | high | xhigh | max."),
-        }).nullable().optional().describe("Party-wide headless reviewer (null = use the settings default). A member's own reviewer still wins."),
+        }).nullable().optional().describe("Party-wide reviewer for this axis (null = no axis-specific reviewer). A member's matching-axis reviewer still wins."),
       },
       async (args: PartyGateGlobalPatch) => envelope(await bridge.partyGateSet(args)),
     ),

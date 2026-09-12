@@ -212,7 +212,7 @@ assert(listed.data.members.find((m) => m.name === "reviewer")?.harness === "clau
 assert(!("gate" in listed.data.members[0]) && !("model" in listed.data.members[0]) && !("location" in listed.data.members[0]), "list summary omits repeated member configuration and gate rules");
 const reviewerDetail = await bridge.list({ name: "reviewer" });
 assert(reviewerDetail.ok && reviewerDetail.data?.detail === "member" && reviewerDetail.data?.members?.length === 1, "list name filter returns exactly one detailed member");
-assert(reviewerDetail.data?.members?.[0]?.name === "reviewer" && reviewerDetail.data.members[0].model === "sonnet" && reviewerDetail.data.members[0].gate?.rule !== undefined, "one-member detail keeps model and effective gate settings inspectable");
+assert(reviewerDetail.data?.members?.[0]?.name === "reviewer" && reviewerDetail.data.members[0].model === "sonnet" && reviewerDetail.data.members[0].gate?.send?.rule !== undefined && reviewerDetail.data.members[0].gate?.recv?.rule !== undefined, "one-member detail keeps model and both effective gate settings inspectable");
 const missingDetail = await bridge.list({ name: "ghost" });
 assert(!missingDetail.ok && /does not exist/i.test(missingDetail.error || ""), "list name filter fails visibly for an unknown member");
 
@@ -404,6 +404,8 @@ assert(Array.isArray(dynamicSendSpec?.properties?.to?.oneOf), "dynamic send sche
 assert(dynamic.tools.find((tool) => tool.name === "member-create")?.inputSchema?.properties?.members?.type === "array", "dynamic member-create schema exposes the members batch field");
 assert(Array.isArray(dynamic.tools.find((tool) => tool.name === "member-remove")?.inputSchema?.properties?.name?.oneOf), "dynamic member-remove schema exposes string-or-array names");
 assert(dynamic.tools.find((tool) => tool.name === "member-runtime")?.inputSchema?.properties?.fast?.type === "boolean", "dynamic member-runtime schema exposes Fast as a boolean");
+assert(dynamic.tools.find((tool) => tool.name === "gate-set")?.inputSchema?.properties?.axis?.enum?.join() === "send,recv", "dynamic gate-set schema exposes the send/recv axis");
+assert(dynamic.tools.find((tool) => tool.name === "party-gate-set")?.inputSchema?.properties?.axis?.enum?.join() === "send,recv", "dynamic party-gate-set schema exposes the send/recv axis");
 assert(dynamic.tools.find((tool) => tool.name === "broadcast")?.inputSchema?.properties?.exclude?.type === "array", "dynamic broadcast schema exposes excluded members");
 assert(dynamic.tools.find((tool) => tool.name === "list")?.inputSchema?.properties?.name?.type === "string", "dynamic list schema exposes the exact-name detail filter");
 const beforeDynamic = sentTurns.length;
@@ -466,11 +468,13 @@ assert(dynamicPermission.ok && svc.list().members.find((m) => m.name === "buddy"
 // gate-set: any member may edit another member's Message Gate (cross-editable).
 const dynamicGate = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}gate-set`, { name: "buddy", mode: "on", rule: "Be concise." });
 const buddyGate = svc.list().members.find((m) => m.name === "buddy")?.gate;
-assert(dynamicGate.ok && buddyGate?.mode === "on" && buddyGate?.rule === "Be concise.", "gate-set routes through the bridge and persists the member override");
+assert(dynamicGate.ok && buddyGate?.send?.mode === "on" && buddyGate?.send?.rule === "Be concise.", "gate-set defaults to send and persists the member override");
 assert(dynamicGate.data?.gate?.ruleChars === 11 && !("rule" in dynamicGate.data.gate), "gate-set confirms rule length without echoing arbitrary rule text");
+const invalidAxisGate = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}gate-set`, { name: "buddy", axis: "sideways", rule: "must not overwrite send" });
+assert(!invalidAxisGate.ok && /axis/.test(invalidAxisGate.error || "") && svc.list().members.find((m) => m.name === "buddy")?.gate?.send?.rule === "Be concise.", "gate-set rejects an explicit invalid axis without mutating send");
 const dynamicPartyGate = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}party-gate-set`, { enabled: true, rule: "Keep handoffs direct." });
 assert(dynamicPartyGate.ok && dynamicPartyGate.data?.gate?.ruleChars === 21 && !("rule" in dynamicPartyGate.data.gate), "party-gate-set confirms rule length without echoing the party rule");
-assert(svc.list().parties.find((item) => item.id === partyId)?.gate?.rule === "Keep handoffs direct.", "party-gate-set still persists the complete rule");
+assert(svc.list().parties.find((item) => item.id === partyId)?.gate?.send?.rule === "Keep handoffs direct.", "party-gate-set defaults to send and persists the complete rule");
 
 const excludedBroadcast = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}broadcast`, {
   content: "only batch-a should receive this batch probe",

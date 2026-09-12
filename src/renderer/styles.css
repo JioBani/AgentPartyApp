@@ -9063,14 +9063,25 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-gate.is-live { background: var(--live-dim); border-color: var(--live-bd); }
 .wb-gate.is-accent { background: var(--accent-dim); border-color: var(--accent-bd); }
 .wb-gate.is-danger { background: var(--danger-dim); border-color: var(--danger-bd); }
-.wb-gate-head { display: flex; align-items: center; gap: 7px; }
+.wb-gate-head { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .wb-gate-icon { display: inline-flex; }
 .wb-gate.is-live .wb-gate-icon, .wb-gate.is-live .wb-gate-label { color: var(--live); }
 .wb-gate.is-accent .wb-gate-icon, .wb-gate.is-accent .wb-gate-label { color: var(--accent); }
 .wb-gate.is-danger .wb-gate-icon, .wb-gate.is-danger .wb-gate-label { color: var(--danger); }
-.wb-gate-label { font-size: 11px; font-weight: 700; }
-.wb-gate-route { font-size: 11px; color: var(--text-2); }
-.wb-gate-passnote { margin-left: auto; font-size: 10px; font-weight: 600; }
+.wb-gate-label { flex: none; font-size: 11px; font-weight: 700; }
+.wb-gate-route { flex: none; white-space: nowrap; font-size: 11px; color: var(--text-2); }
+.wb-gate-scope {
+  flex: none;
+  white-space: nowrap;
+  padding: 2px 6px;
+  border: var(--border-width) solid currentColor;
+  border-radius: 999px;
+  font-size: 9.5px;
+  color: var(--text-2);
+}
+.wb-gate-passnote { flex: none; margin-left: auto; white-space: nowrap; font-size: 10px; font-weight: 600; }
+.wb-gate-outcome { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.wb-gate-outcome .wb-gate-passnote { margin-left: 0; }
 .wb-gate.is-live .wb-gate-passnote { color: var(--live); }
 .wb-gate.is-accent .wb-gate-passnote { color: var(--accent); }
 .wb-gate.is-danger .wb-gate-passnote { color: var(--danger); }
@@ -9093,6 +9104,42 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   padding: 5px 8px;
   border-radius: 6px;
   background: var(--bg-2);
+}
+
+.wb-gate-axis-tabs {
+  display: flex;
+  flex: none;
+  gap: var(--space-6);
+  padding: 0 var(--space-6);
+  background: var(--bg-1);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.wb-gate-axis-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 0 9px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wb-gate-axis-tab small {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.wb-gate-axis-tab:hover { color: var(--text-1); }
+
+.wb-gate-axis-tab.is-on {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ===== Shared model catalog picker (popup, never clipped) ====== */

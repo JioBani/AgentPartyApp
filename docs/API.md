@@ -2544,13 +2544,23 @@ already-delivered message is not mistaken for a failure and resent:
 
 If the target member is bound to an active session, AgentParty injects the message directly into that session as a channel payload. If no active session is bound, the message is recorded with `delivered: false` and no provider call is made. Sending an image to a text-only model is refused with a visible `vision` diagnostic (never silently dropped).
 
-**Message Gate**: when `from` is a member (not `"user"`) and that member's gate is
-active, the message is reviewed before delivery. A rejection returns
+**Message Gate**: when `from` is a member (not `"user"`), AgentParty resolves the
+sender's active `send` rule and the target's active `recv` rule. The two rules
+are kept separate in one reviewer request (`<sender_rules>` and
+`<recipient_rules>`), so a message is reviewed at most once. A rejection returns
 `partyMessage.delivered: false` with `partyMessage.error` set to the reviewer's
 reason (rewrite and resend). Add `{ "force": true, "forceReason": "…" }` to bypass
 the gate for one message (surfaced as a "forced" badge). A reviewer error is
 fail-open: the message is delivered unreviewed with a visible notice. A human
-`from: "user"` turn is never gated.
+`from: "user"` turn is never gated. Broadcast resolves and reviews each target
+independently because every recipient may have a different receive rule; one
+rejection does not stop the other deliveries.
+
+When both axes specify a reviewer, an explicit receive reviewer wins, followed
+by an explicit send reviewer, then `gateDefaults`. An unset axis reviewer does
+not suppress an explicit reviewer on the other axis. Gate transcript events
+record `scope` (`send|recv|both`), rejection `violation`, and the actual
+`reviewer` (`model` + `effort`). Legacy events omit these optional fields.
 
 For a **member-originated** message, omitting `interrupt` uses the sender's
 per-member `outboundInterrupt` override, then the Agent-screen
@@ -2962,16 +2972,18 @@ conversation and fail while the member is busy instead of killing its turn.
 
 ### `POST /api/party/members/:name/gate`
 
-Sets a member's **Message Gate** override — the delivery-time reviewer of that
-member's OUTGOING messages to other members. This is a PATCH: any omitted axis is
-left unchanged; a `null` axis clears it back to inherit. Cross-editable (any
+Sets one axis of a member's **Message Gate** override. `send` governs messages
+the member sends; `recv` governs messages addressed to it. This is a PATCH:
+omitted values are unchanged and `null` clears rule/reviewer inheritance. Cross-editable (any
 member/agent may edit any member's gate). Backs the member gate modal and the
 agent-facing `gate-set` tool.
 
 ```json
-{ "gate": { "mode": "on", "rule": "Be concise. Talk to the owner directly, don't route through main.", "reviewer": { "model": "haiku", "effort": "low" } } }
+{ "gate": { "axis": "recv", "mode": "on", "rule": "Require a reproduction and expected result.", "reviewer": { "model": "haiku", "effort": "low" } } }
 ```
 
+- `axis`: `"send"` | `"recv"`. Omit it to edit `send` for compatibility with
+  pre-duplex clients.
 - `mode`: `"inherit"` (follow the party gate) | `"on"` | `"off"`.
 - `rule`: the communication rule the headless reviewer enforces. `null` = inherit
   the party rule.
@@ -2981,15 +2993,19 @@ agent-facing `gate-set` tool.
 
 ### `POST /api/parties/:id/gate`
 
-Sets the **party-wide** Message Gate default (enablement + rule + optional
-reviewer). Members with `mode: "inherit"` follow this. Backs the party gate modal
+Patches one **party-wide** Message Gate axis (enablement + rule + optional
+reviewer). Members with the matching axis in `mode: "inherit"` follow it. Backs the party gate modal
 and the agent-facing `party-gate-set` tool. Body:
 
 ```json
-{ "enabled": true, "rule": "Be concise. Prefer direct member-to-member messages over orchestrator round-trips.", "reviewer": { "model": "GPT-5.6 Terra", "effort": "low" } }
+{ "axis": "send", "enabled": true, "rule": "Be concise. Prefer direct member-to-member messages over orchestrator round-trips.", "reviewer": { "model": "GPT-5.6 Terra", "effort": "low" } }
 ```
 
-This replaces the whole party gate, so send every axis you want to keep.
+`axis` is `"send"` or `"recv"`; omission means `send`. Only that axis is
+patched, so editing receive settings never overwrites send settings (and vice
+versa). A stored legacy `{enabled,rule,reviewer}` party gate is read as `send`;
+`recv` starts off with an empty rule. Member legacy overrides migrate the same
+way. The next ordinary party mutation persists the canonical nested shape.
 
 `reviewer` is optional and resolves in three steps — member override → party →
 `gateDefaults`. Omit it to fall back to the app-wide default, which is set via
@@ -3347,9 +3363,10 @@ That returns `detail: "member"` and full configuration for only that member.
 An unknown name is an explicit tool error. There is intentionally no
 "full detail for every member" mode.
 
-`gate-set` and `party-gate-set` mutation results confirm the stored rule with
-`ruleChars` rather than echoing its arbitrary text. Read the full effective rule
-through `list { name }` when it is actually needed.
+`gate-set` and `party-gate-set` mutation results include the selected `axis` and
+confirm the stored rule with `ruleChars` rather than echoing arbitrary text.
+`list { name }` returns effective `gate.send` and `gate.recv` details when the
+full rules are actually needed.
 
 ### `GET /api/parties/:partyId/members/:name/mcp-tools`
 

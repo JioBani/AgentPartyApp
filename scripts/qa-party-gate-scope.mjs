@@ -1,89 +1,66 @@
-/*
- * Party-wide Message Gate: reviewer resolution + override semantics.
- *
- * Two defects this locks down:
- *  - "Overridden" meant "a rule string is stored", not "enforces different
- *    text". The party modal's mode buttons patch only `mode`, so a rule survived
- *    an Inherit click and the badge looked permanently stuck.
- *  - The party gate had no reviewer of its own, so a party could not pick a
- *    model without changing the app-wide setting.
- */
+/* Message Gate duplex model: migration, axis independence, reviewer priority. */
 import { build } from "esbuild";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { qaTempDir } from "./lib/qaTemp.mjs";
 
-const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
-const assert = (c, m) => { console.log(`  ${c ? "✓" : "✗"} ${m}`); if (!c) failures.push(m); };
+const assert = (condition, message) => { console.log(`  ${condition ? "✓" : "✗"} ${message}`); if (!condition) failures.push(message); };
+const output = await build({ entryPoints: [path.join(root, "src/shared/messageGate.ts")], bundle: true, format: "cjs", platform: "node", write: false });
+const file = path.join(qaTempDir(), "message-gate.cjs");
+writeFileSync(file, output.outputFiles[0].text);
+const { applyMemberGatePatch, applyPartyGatePatch, effectiveGate, normalizeMemberGate, normalizePartyGate, resolveGateReviewPlan } = createRequire(import.meta.url)(file);
 
-const outDir = qaTempDir();
+const DEFAULTS = { model: "default", effort: "low" };
+const SEND_REVIEWER = { model: "send-model", effort: "medium" };
+const RECV_REVIEWER = { model: "recv-model", effort: "high" };
 
-const r = await build({
-  entryPoints: [path.join(projectRoot, "src/shared/messageGate.ts")],
-  bundle: true, format: "cjs", platform: "node", write: false,
-});
-const file = path.join(outDir, "message-gate.cjs");
-writeFileSync(file, r.outputFiles[0].text);
-const { applyMemberGatePatch, effectiveGate, normalizePartyGate } = createRequire(import.meta.url)(file);
+console.log("\nlegacy migration:");
+const party = normalizePartyGate({ enabled: true, rule: "legacy send", reviewer: SEND_REVIEWER });
+const member = normalizeMemberGate({ mode: "off", rule: "legacy member" });
+assert(party.send.enabled && party.send.rule === "legacy send", "legacy party gate moves losslessly to send");
+assert(!party.recv.enabled && party.recv.rule === "", "legacy party gate creates an inactive empty recv axis");
+assert(member.send.mode === "off" && member.send.rule === "legacy member", "legacy member override moves losslessly to send");
+assert(member.recv === undefined, "legacy member has no recv override");
 
-const DEFAULTS = { model: "GPT-5.6 Terra", effort: "low" };
-const PARTY_REVIEWER = { model: "haiku", effort: "high" };
-const MEMBER_REVIEWER = { model: "GPT-5.6 Luna", effort: "medium" };
-const party = { enabled: true, rule: "전역 규칙" };
+console.log("\naxis independence and compatibility defaults:");
+let axes = applyMemberGatePatch(undefined, { mode: "on", rule: "send own" });
+axes = applyMemberGatePatch(axes, { axis: "recv", mode: "off", rule: "recv own" });
+assert(axes.send.mode === "on" && axes.send.rule === "send own", "axis omitted patches send");
+assert(axes.recv.mode === "off" && axes.recv.rule === "recv own", "recv patch does not alter send");
+const nextParty = applyPartyGatePatch(party, { axis: "recv", enabled: true, rule: "recv global" });
+assert(nextParty.send.rule === "legacy send", "party recv patch preserves send");
+assert(nextParty.recv.enabled && nextParty.recv.rule === "recv global", "party recv patch applies independently");
+assert(effectiveGate("recv", axes, nextParty, DEFAULTS).enabled === false, "member recv off beats party recv on");
 
-console.log("\nreviewer resolution (member → party → settings):");
-{
-  assert(effectiveGate(undefined, party, DEFAULTS).reviewer.model === "GPT-5.6 Terra", "no party/member reviewer → the settings default");
-  assert(
-    effectiveGate(undefined, { ...party, reviewer: PARTY_REVIEWER }, DEFAULTS).reviewer.model === "haiku",
-    "a party reviewer beats the settings default",
-  );
-  assert(
-    effectiveGate({ mode: "inherit", reviewer: MEMBER_REVIEWER }, { ...party, reviewer: PARTY_REVIEWER }, DEFAULTS).reviewer.model === "GPT-5.6 Luna",
-    "a member reviewer still beats the party reviewer",
-  );
-}
-
-console.log("\nthe party reviewer survives normalization (it is persisted):");
-{
-  const norm = normalizePartyGate({ enabled: true, rule: "r", reviewer: PARTY_REVIEWER });
-  assert(norm.reviewer?.model === "haiku", "a valid party reviewer round-trips");
-  assert(!("reviewer" in normalizePartyGate({ enabled: true, rule: "r" })), "an absent reviewer is not invented");
-  assert(!("reviewer" in normalizePartyGate({ enabled: true, rule: "r", reviewer: { model: "" } })), "a malformed reviewer is dropped, not stored");
-}
-
-console.log("\noverride badge tracks the RULE, not merely a stored string:");
-{
-  let gate = applyMemberGatePatch(undefined, { mode: "inherit", rule: "멤버 전용 규칙", reviewer: null });
-  assert(effectiveGate(gate, party, DEFAULTS).overridden === true, "a differing rule reads as overridden");
-
-  // The party modal's segmented control patches ONLY mode — the rule persists.
-  gate = applyMemberGatePatch(gate, { mode: "off" });
-  gate = applyMemberGatePatch(gate, { mode: "inherit" });
-  assert(gate?.rule === "멤버 전용 규칙", "a mode toggle does NOT silently discard the member's rule");
-  assert(effectiveGate(gate, party, DEFAULTS).overridden === true, "so it still reads as overridden — the badge was telling the truth");
-
-  // ...and this is the action the row's badge now performs.
-  gate = applyMemberGatePatch(gate, { rule: null });
-  assert(effectiveGate(gate, party, DEFAULTS).overridden === false, "clearing the rule drops the override");
-  assert(effectiveGate(gate, party, DEFAULTS).rule === "전역 규칙", "and the member falls back to the party rule");
-
-  // A stored rule identical to the party's is not an override.
-  const same = applyMemberGatePatch(undefined, { mode: "inherit", rule: "전역 규칙", reviewer: null });
-  assert(effectiveGate(same, party, DEFAULTS).overridden === false, "a rule equal to the party's does not read as an override");
-}
-
-console.log("\nmode and rule stay independent:");
-{
-  const offWithOwnRule = applyMemberGatePatch(undefined, { mode: "off", rule: "멤버 전용 규칙" });
-  const eff = effectiveGate(offWithOwnRule, party, DEFAULTS);
-  assert(eff.enabled === false, "mode off disables the member regardless of the party switch");
-  assert(eff.overridden === true, "an off member still reports its rule override");
-  assert(eff.active === false, "a disabled gate is never active");
-}
+console.log("\nsingle-review plan and reviewer priority:");
+const both = resolveGateReviewPlan(
+  { send: { mode: "on", rule: "sender", reviewer: SEND_REVIEWER } },
+  { recv: { mode: "on", rule: "recipient", reviewer: RECV_REVIEWER } },
+  { send: { enabled: false, rule: "" }, recv: { enabled: false, rule: "" } },
+  DEFAULTS,
+);
+assert(both.active && both.scope === "both", "two active axes form one combined review plan");
+assert(both.reviewer.model === "recv-model", "explicit recipient reviewer beats explicit sender reviewer");
+const senderWins = resolveGateReviewPlan(
+  { send: { mode: "on", rule: "sender", reviewer: SEND_REVIEWER } },
+  { recv: { mode: "on", rule: "recipient" } },
+  undefined,
+  DEFAULTS,
+);
+assert(senderWins.reviewer.model === "send-model", "unset recipient reviewer does not suppress explicit sender reviewer");
+const fallback = resolveGateReviewPlan(
+  { send: { mode: "on", rule: "sender" } },
+  { recv: { mode: "on", rule: "recipient" } },
+  undefined,
+  DEFAULTS,
+);
+assert(fallback.reviewer.model === "default", "settings reviewer is the final fallback");
+const inactive = resolveGateReviewPlan(undefined, undefined, undefined, DEFAULTS);
+assert(!inactive.active && inactive.scope === undefined, "two inactive axes skip review");
 
 console.log(failures.length ? `\n${failures.length} FAILED` : "\nall passed");
 process.exitCode = failures.length ? 1 : 0;

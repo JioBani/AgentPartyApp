@@ -145,7 +145,7 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
     } else if (event.type === "gate") {
       // Message Gate outcome for an outgoing send — an inline badge in the
       // SENDER's transcript (never part of any model context).
-      next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "gate", gate: event.gate, to: event.to, from: event.from, reason: event.reason, rule: event.rule, errcode: event.errcode, at: nowTime() });
+      next = appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "gate", gate: event.gate, to: event.to, from: event.from, reason: event.reason, rule: event.rule, errcode: event.errcode, scope: event.scope, violation: event.violation, reviewer: event.reviewer, at: nowTime() });
     } else if (event.type === "error") {
       next = event.environment
         ? upsertEnvironmentBlock(next, sessionId, event.environment.checkId, event.message, event.environment.raw)

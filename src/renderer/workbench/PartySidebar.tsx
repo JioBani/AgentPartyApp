@@ -860,7 +860,7 @@ export function NewPartyModal({ initialName, groups, initialGroupId, cwdPrefs, a
     submittingRef.current = true;
     setSubmitting(true);
     try {
-      await onCreate({ name: name.trim(), groupId, location, gate: gateOn ? { enabled: true, rule } : undefined, newWindow });
+      await onCreate({ name: name.trim(), groupId, location, gate: gateOn ? { send: { enabled: true, rule }, recv: { enabled: false, rule: "" } } : undefined, newWindow });
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
