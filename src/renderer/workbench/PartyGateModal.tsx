@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Undo2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Undo2, X } from "lucide-react";
 import type { MemberView } from "./types";
 import type { PartyDefinition } from "../../shared/types";
 import { MessageGateIcon } from "./MessageGateIcon";
-import { GateReviewerControl } from "./GateReviewerControl";
+import { GateReviewerInlineControl } from "./GateReviewerControl";
 import type { RouteLike } from "./routes";
 import {
   effectiveGate,
@@ -30,7 +30,7 @@ interface PartyGateModalProps {
 }
 
 const MODE_OPTIONS: Array<{ id: GateMode; label: string }> = [
-  { id: "inherit", label: "Inherit" }, { id: "on", label: "On" }, { id: "off", label: "Off" },
+  { id: "inherit", label: localized("STR-3860") }, { id: "on", label: "On" }, { id: "off", label: "Off" },
 ];
 const AXES: Array<{ id: GateAxis; label: "STR-3828" | "STR-3830"; hint: "STR-3845" | "STR-3846" }> = [
   { id: "send", label: "STR-3828", hint: "STR-3845" },
@@ -42,6 +42,7 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
   useModalEscape(onClose);
   const [axis, setAxis] = useState<GateAxis>("send");
   const [draft, setDraft] = useState<PartyGate>(() => party.gate ?? { send: emptyAxis(), recv: emptyAxis() });
+  const [listOpen, setListOpen] = useState(true);
 
   useEffect(() => {
     setDraft(party.gate ?? { send: emptyAxis(), recv: emptyAxis() });
@@ -62,7 +63,7 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
 
   return (
     <div className="wb-modal-scrim">
-      <div className="wb-modal wb-gate-modal wb-party-gate-modal" role="dialog" aria-modal="true">
+      <div className="wb-modal wb-gate-modal wb-party-gate-modal wb-gate-rule-first" role="dialog" aria-modal="true">
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             <MessageGateIcon size={16} className="wb-gate-accent" /><strong><LocalizedText id="STR-1984" /></strong>
@@ -77,31 +78,33 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
         </div>
 
         <div className="wb-modal-body wb-gate-modal-body">
-          <div className="wb-gate-block">
+          <div className={"wb-gate-block" + (current.enabled ? " wb-gate-rule-block" : "")}>
             <label className="wb-gate-toggle-row">
               <span className="wb-gate-toggle-text"><span className="wb-gate-tile"><MessageGateIcon size={17} /></span><span><strong><LocalizedText id={axis === "send" ? "STR-3847" : "STR-3848"} /></strong><small><LocalizedText id="STR-3849" /></small></span></span>
               <input type="checkbox" className="wb-switch" checked={current.enabled} onChange={(event) => commit({ enabled: event.target.checked })} />
             </label>
             {current.enabled && <>
-              <div className="wb-modal-label"><LocalizedText id={axis === "send" ? "STR-3850" : "STR-3851"} /></div>
-              <textarea className="wb-gate-textarea" rows={4} value={current.rule} placeholder={rulePlaceholder} onChange={(event) => patchLocal({ rule: event.target.value })} onBlur={() => onSetPartyGate({ axis, rule: current.rule })} />
-              <div className="wb-gate-note"><LocalizedText id="STR-3854" /> <span className="wb-mono">{(current.reviewer ?? gateDefaults).model} · {(current.reviewer ?? gateDefaults).effort}</span> <LocalizedText id={axis === "send" ? "STR-3855" : "STR-3856"} /></div>
+              <textarea className="wb-gate-textarea" value={current.rule} placeholder={rulePlaceholder} onChange={(event) => patchLocal({ rule: event.target.value })} onBlur={() => onSetPartyGate({ axis, rule: current.rule })} />
+              <GateReviewerInlineControl
+                routes={routes}
+                reviewer={current.reviewer ?? gateDefaults}
+                defaultReviewer={gateDefaults}
+                inherited={!current.reviewer}
+                onChange={(reviewer) => commit({ reviewer })}
+                onInherit={() => commit({ reviewer: null })}
+              />
             </>}
           </div>
 
-          {current.enabled && <div className="wb-gate-block">
-            <label className="wb-gate-toggle-row">
-              <span className="wb-gate-toggle-text"><strong><LocalizedText id="STR-1801" /></strong><small><LocalizedText id="STR-3841" /></small></span>
-              <input type="checkbox" className="wb-switch" checked={Boolean(current.reviewer)} onChange={(event) => commit({ reviewer: event.target.checked ? (current.reviewer ?? gateDefaults) : null })} />
-            </label>
-            {!current.reviewer
-              ? <div className="wb-gate-default-chip wb-mono"><LocalizedText id="STR-1803" /> {gateDefaults.model} · {gateDefaults.effort}</div>
-              : <GateReviewerControl routes={routes} reviewer={current.reviewer} onChange={(reviewer) => commit({ reviewer })} modelLabel={localized("STR-1804")} effortLabel="effort" />}
-          </div>}
-
-          <div className="wb-gate-block">
-            <div className="wb-gate-block-head"><strong><LocalizedText id="STR-1996" /></strong><span className="wb-gate-hint wb-mono"><LocalizedText id="STR-1997" /></span></div>
-            <div className="wb-gate-member-list">
+          <div className={"wb-gate-block wb-gate-list-block" + (listOpen ? " is-open" : "")}>
+            <button type="button" className="wb-gate-block-head wb-gate-list-toggle" aria-expanded={listOpen} onClick={() => setListOpen((value) => !value)}>
+              {listOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              <strong><LocalizedText id="STR-1996" /></strong>
+              <span className="wb-gate-hint wb-mono">{onCount} / {members.length}</span>
+              <span className="wb-flex-spacer" />
+              <span className="wb-gate-hint wb-mono"><LocalizedText id="STR-1997" /></span>
+            </button>
+            {listOpen && <div className="wb-gate-member-list">
               {members.map((view) => {
                 const eff = effectiveGate(axis, view.member.gate, draft, gateDefaults);
                 const own = view.member.gate?.[axis];
@@ -117,7 +120,7 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
                   <button type="button" className="wb-btn wb-btn-ghost wb-gate-edit-btn" onClick={() => onOpenMemberGate(view.name)}><LocalizedText id="STR-2006" /></button>
                 </div>;
               })}
-            </div>
+            </div>}
           </div>
         </div>
         <footer className="wb-modal-foot"><span className="wb-flex-spacer" /><div className="wb-modal-actions"><button type="button" className="wb-btn wb-btn-accent" onClick={onClose}><LocalizedText id="STR-2007" /></button></div></footer>

@@ -5,7 +5,10 @@ import { FloatingMenu } from "./FloatingMenu";
 export interface DropdownOption {
   id: string;
   label: string;
-  icon: JSX.Element;
+  /** Optional because compact text-only pills do not need a decorative glyph. */
+  icon?: JSX.Element;
+  /** A shorter/effective value for the closed trigger; the menu keeps `label`. */
+  triggerLabel?: string;
   hint?: string;
 }
 
@@ -47,7 +50,7 @@ export function Dropdown({ value, options, onChange, title, compact, drop = "dow
             setOpen(false);
           }}
         >
-          <span className="wb-dd-ic">{option.icon}</span>
+          {option.icon && <span className="wb-dd-ic">{option.icon}</span>}
           <span className="wb-dd-text">
             <span className="wb-dd-item-label">{option.label}</span>
             {option.hint && <span className="wb-dd-item-hint">{option.hint}</span>}
@@ -66,8 +69,8 @@ export function Dropdown({ value, options, onChange, title, compact, drop = "dow
         title={title ? `${title}: ${current?.label}` : current?.label}
         onClick={() => setOpen(!open)}
       >
-        <span className="wb-dd-ic">{current?.icon}</span>
-        {!compact && <span className="wb-dd-label">{current?.label}</span>}
+        {current?.icon && <span className="wb-dd-ic">{current.icon}</span>}
+        {!compact && <span className="wb-dd-label">{current?.triggerLabel || current?.label}</span>}
         <ChevronDown size={11} className="wb-pill-caret" />
       </button>
       {menu}

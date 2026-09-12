@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { ModelCatalogModal } from "./ModelCatalogModal";
 import { Segmented } from "./Segmented";
+import { Dropdown } from "./Dropdown";
 import type { RouteLike } from "./routes";
 import type { GateReviewer } from "../../shared/messageGate";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
@@ -90,5 +91,76 @@ export function GateReviewerControl({
         />
       )}
     </>
+  );
+}
+
+const DEFAULT_REVIEWER_ID = "__gate_default__";
+
+/**
+ * The compact gate-modal picker. Model inheritance is a model-menu choice,
+ * rather than a separate switch, so the whole reviewer control remains one
+ * row while still exposing the effective model and effort.
+ */
+export function GateReviewerInlineControl({
+  routes,
+  reviewer,
+  defaultReviewer,
+  inherited,
+  onChange,
+  onInherit,
+}: {
+  routes: RouteLike[];
+  reviewer: GateReviewer;
+  defaultReviewer: GateReviewer;
+  inherited: boolean;
+  onChange: (reviewer: GateReviewer) => void;
+  onInherit: () => void;
+}) {
+  const models = useMemo(() => headlessReviewerRoutes(routes), [routes]);
+  const effective = inherited ? defaultReviewer : reviewer;
+  const selected = models.find((route) => route.model === effective.model);
+  const effortOptions = selected?.capabilities?.effort?.supported
+    ? (selected.capabilities.effort.options || [])
+    : [];
+  const modelOptions = [
+    {
+      id: DEFAULT_REVIEWER_ID,
+      label: localized("STR-3865"),
+      triggerLabel: selected?.label || effective.model,
+      hint: `${defaultReviewer.model} · ${defaultReviewer.effort}`,
+    },
+    ...models.map((route) => ({ id: route.model, label: route.label || route.model })),
+  ];
+  const displayedEfforts = effortOptions.length > 0
+    ? effortOptions.map((option) => ({ id: option.id, label: option.label }))
+    : [{ id: effective.effort, label: effective.effort }];
+
+  return (
+    <div className="wb-gate-reviewer-row">
+      <strong><LocalizedText id="STR-3866" /></strong>
+      <Dropdown
+        value={inherited ? DEFAULT_REVIEWER_ID : effective.model}
+        options={modelOptions}
+        title={localized("STR-1669")}
+        onChange={(model) => {
+          if (model === DEFAULT_REVIEWER_ID) {
+            onInherit();
+            return;
+          }
+          const route = models.find((candidate) => candidate.model === model);
+          const supported = route?.capabilities?.effort?.supported ? (route.capabilities.effort.options || []) : [];
+          const effort = supported.some((option) => option.id === effective.effort)
+            ? effective.effort
+            : supported[0]?.id || effective.effort;
+          onChange({ model, effort });
+        }}
+      />
+      <Dropdown
+        value={effective.effort}
+        options={displayedEfforts}
+        title={localized("STR-1670")}
+        onChange={(effort) => onChange({ ...effective, effort })}
+      />
+    </div>
   );
 }
