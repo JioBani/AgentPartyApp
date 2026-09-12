@@ -169,10 +169,11 @@ export function ModelCatalogModal({
   const provTouched = useRef(false);
   const [favoriteError, setFavoriteError] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const catalogSelectedKey = usingDefault ? "" : selectedKey;
 
   const catalog = useMemo(
-    () => buildCatalogView({ entries: displayEntries, query, favorites, provOpen, selectedKey }),
-    [displayEntries, query, favorites, provOpen, selectedKey],
+    () => buildCatalogView({ entries: displayEntries, query, favorites, provOpen, selectedKey: catalogSelectedKey }),
+    [displayEntries, query, favorites, provOpen, catalogSelectedKey],
   );
 
   /**
@@ -547,7 +548,7 @@ export function ModelCatalogModal({
                     // pointer, and for anything driving `.wb-model-row`.
                     return (
                       <div
-                        className={"wb-model-row" + (key === selectedKey ? " is-selected" : "") + (unavailable ? " is-unavailable" : "")}
+                        className={"wb-model-row" + (!usingDefault && key === selectedKey ? " is-selected" : "") + (unavailable ? " is-unavailable" : "")}
                         key={key}
                         data-model={entry.route.model}
                         onClick={() => { if (!unavailable) { selectModel(key); } }}
@@ -590,7 +591,7 @@ export function ModelCatalogModal({
                         >
                           <Star size={14} />
                         </button>
-                        {key === selectedKey && <Check size={14} className="wb-model-check" />}
+                        {!usingDefault && key === selectedKey && <Check size={14} className="wb-model-check" />}
                       </div>
                     );
                   })}
@@ -681,7 +682,7 @@ export function ModelCatalogModal({
                 {config.effort && effortCap?.supported && effortCap.options.length > 0 && (
                   <div className="wb-detail-section">
                     <div className="wb-detail-section-head"><strong>Effort</strong> <span><LocalizedText id="STR-1888" /></span></div>
-                    <div className="wb-segmented">
+                    <div className={"wb-segmented" + (usingDefault ? " is-disabled" : "")}>
                       {effortCap.options.map((option) => (
                         <button
                           type="button"
