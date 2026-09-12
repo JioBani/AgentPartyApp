@@ -119,6 +119,12 @@ export function GateReviewerInlineControl({
   const models = useMemo(() => headlessReviewerRoutes(routes), [routes]);
   const effective = inherited ? defaultReviewer : reviewer;
   const selected = models.find((route) => route.model === effective.model);
+  const defaultSelected = models.find((route) => route.model === defaultReviewer.model);
+  const defaultEffortOptions = defaultSelected?.capabilities?.effort?.supported
+    ? (defaultSelected.capabilities.effort.options || [])
+    : [];
+  const defaultEffortLabel = defaultEffortOptions.find((option) => option.id === defaultReviewer.effort)?.label
+    || defaultReviewer.effort;
   const effortOptions = selected?.capabilities?.effort?.supported
     ? (selected.capabilities.effort.options || [])
     : [];
@@ -127,7 +133,7 @@ export function GateReviewerInlineControl({
       id: DEFAULT_REVIEWER_ID,
       label: localized("STR-3865"),
       triggerLabel: selected?.label || effective.model,
-      hint: `${defaultReviewer.model} · ${defaultReviewer.effort}`,
+      hint: `${defaultSelected?.label || defaultReviewer.model} · ${defaultEffortLabel}`,
     },
     ...models.map((route) => ({ id: route.model, label: route.label || route.model })),
   ];
