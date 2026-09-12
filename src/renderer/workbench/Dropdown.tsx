@@ -23,6 +23,7 @@ interface DropdownProps {
   drop?: "down" | "up";
   /** Preferred edge to anchor to. Flipped automatically when it would overflow. */
   align?: "left" | "right";
+  disabled?: boolean;
 }
 
 /**
@@ -33,7 +34,7 @@ interface DropdownProps {
  * of this leaf component ensures simple Claude menus and richer Codex/Cursor
  * permission panels obey the same clipping and viewport rules.
  */
-export function Dropdown({ value, options, onChange, title, compact, drop = "down", align = "left" }: DropdownProps) {
+export function Dropdown({ value, options, onChange, title, compact, drop = "down", align = "left", disabled = false }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const current = options.find((option) => option.id === value) || options[0];
@@ -67,6 +68,7 @@ export function Dropdown({ value, options, onChange, title, compact, drop = "dow
         type="button"
         className={"wb-pill wb-dd-trigger" + (compact ? " is-compact" : "")}
         title={title ? `${title}: ${current?.label}` : current?.label}
+        disabled={disabled}
         onClick={() => setOpen(!open)}
       >
         {current?.icon && <span className="wb-dd-ic">{current.icon}</span>}

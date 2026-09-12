@@ -46,6 +46,14 @@ export interface ModelCatalogValue {
   autoCompact?: AutoCompactSetting;
   /** Undefined means inherit the Runtime default. */
   outboundInterrupt?: boolean;
+  /** True when the caller's inherited/default model choice is selected. */
+  useDefault?: boolean;
+}
+
+export interface ModelCatalogDefaultChoice {
+  label: string;
+  hint: string;
+  selected: boolean;
 }
 
 interface ModelCatalogModalProps {
@@ -64,6 +72,8 @@ interface ModelCatalogModalProps {
   /** Context window (tokens) for the auto-compact editor's ratio. */
   contextWindow?: number;
   applyLabel?: string;
+  /** A fixed inheritance choice shown above the scrollable model catalog. */
+  defaultChoice?: ModelCatalogDefaultChoice;
   onApply: (next: ModelCatalogValue) => void;
   onClose: () => void;
   /** Dim the backdrop. Default false — a clean floating popup (no dim). */
@@ -122,6 +132,7 @@ export function ModelCatalogModal({
   currentHarness = "claude-code",
   contextWindow,
   applyLabel = "Apply",
+  defaultChoice,
   onApply,
   onClose,
   dim = false,
@@ -141,7 +152,13 @@ export function ModelCatalogModal({
   }, [displayEntries, value.model]);
 
   const [selectedKey, setSelectedKey] = useState(currentKey);
+  const [usingDefault, setUsingDefault] = useState(Boolean(defaultChoice?.selected));
   const selected = displayEntries.find((entry) => routeKey(entry.route) === selectedKey) || displayEntries[0];
+
+  function selectModel(key: string) {
+    setSelectedKey(key);
+    setUsingDefault(false);
+  }
 
   // --- Catalog list: search + provider collapse + favourites ---------------
   const favorites = useFavoriteModels();
@@ -258,6 +275,7 @@ export function ModelCatalogModal({
 
   useEffect(() => {
     setSelectedKey(currentKey);
+    setUsingDefault(Boolean(defaultChoice?.selected));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentKey]);
 
@@ -324,9 +342,10 @@ export function ModelCatalogModal({
   const showBudget = Boolean(thinkingCap?.budget) && thinkingOn;
 
   const dirty =
-    selectedKey !== currentKey ||
+    (defaultChoice ? usingDefault !== defaultChoice.selected : false) ||
+    (!usingDefault && selectedKey !== currentKey) ||
     (config.harness && harness !== (value.harness || currentHarness)) ||
-    (config.effort && effortCap?.supported && effort !== baselineEffort(selectedKey)) ||
+    (!usingDefault && config.effort && effortCap?.supported && effort !== baselineEffort(selectedKey)) ||
     (config.serviceTier && serviceTierCap?.supported && serviceTier !== (value.serviceTier || serviceTierCap.defaultValue || "")) ||
     (config.thinking && thinkingCap?.supported && thinkingMode !== baselineThinking(selectedKey)) ||
     (config.debug && debug !== Boolean(value.debug)) ||
@@ -345,6 +364,7 @@ export function ModelCatalogModal({
       debug: config.debug ? debug : undefined,
       autoCompact: config.autoCompact ? compact : undefined,
       outboundInterrupt: config.outboundInterrupt ? outboundInterrupt : undefined,
+      useDefault: defaultChoice ? usingDefault : undefined,
     });
     onClose();
   }
@@ -457,6 +477,24 @@ export function ModelCatalogModal({
 
             {favoriteError && <p className="wb-model-fav-error" role="alert">{favoriteError}</p>}
 
+            {defaultChoice && (
+              <div className="wb-model-default-choice">
+                <button
+                  type="button"
+                  className={"wb-model-default-pick" + (usingDefault ? " is-selected" : "")}
+                  data-model-default="true"
+                  onClick={() => setUsingDefault(true)}
+                >
+                  <SlidersHorizontal size={12} aria-hidden="true" />
+                  <span className="wb-model-name">
+                    <span>{defaultChoice.label}</span>
+                    <small className="wb-model-origin wb-mono">{defaultChoice.hint}</small>
+                  </span>
+                  {usingDefault && <Check size={14} className="wb-model-check" />}
+                </button>
+              </div>
+            )}
+
             <div className="wb-model-scroll" aria-live="polite">
               {catalog.groups.length === 0 && (
                 <div className="wb-model-empty">
@@ -512,7 +550,7 @@ export function ModelCatalogModal({
                         className={"wb-model-row" + (key === selectedKey ? " is-selected" : "") + (unavailable ? " is-unavailable" : "")}
                         key={key}
                         data-model={entry.route.model}
-                        onClick={() => { if (!unavailable) { setSelectedKey(key); } }}
+                        onClick={() => { if (!unavailable) { selectModel(key); } }}
                       >
                         <button
                           type="button"
@@ -522,7 +560,7 @@ export function ModelCatalogModal({
                           // sentence or two of provider detail — useful when you
                           // go looking for it, noise on every row of the list.
                           title={unavailable ? entry.route.unavailableReason : entry.route.description}
-                          onClick={() => setSelectedKey(key)}
+                          onClick={() => selectModel(key)}
                         >
                           <ModelIcon route={entry.route} size={12} />
                           <span className="wb-model-name">
@@ -645,7 +683,13 @@ export function ModelCatalogModal({
                     <div className="wb-detail-section-head"><strong>Effort</strong> <span><LocalizedText id="STR-1888" /></span></div>
                     <div className="wb-segmented">
                       {effortCap.options.map((option) => (
-                        <button type="button" key={option.id} className={"wb-segment" + (option.id === effort ? " is-active" : "")} onClick={() => setEffort(option.id)}>
+                        <button
+                          type="button"
+                          key={option.id}
+                          className={"wb-segment" + (option.id === effort ? " is-active" : "")}
+                          disabled={usingDefault}
+                          onClick={() => setEffort(option.id)}
+                        >
                           {option.label}
                         </button>
                       ))}

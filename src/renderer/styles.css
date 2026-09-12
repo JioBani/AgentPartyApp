@@ -5764,6 +5764,35 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   border-color: var(--accent-bd);
 }
 
+.wb-model-default-choice {
+  flex: none;
+  padding: 0 0 var(--space-3);
+  margin-bottom: var(--space-3);
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+
+.wb-model-default-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  padding: 9px var(--space-4) 9px 13px;
+  border: var(--border-width) solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+}
+
+.wb-model-default-pick:hover { background: var(--bg-2); }
+.wb-model-default-pick.is-selected {
+  background: var(--accent-dim);
+  border-color: var(--accent-bd);
+}
+.wb-model-default-pick > svg:first-child { flex: none; color: var(--text-3); }
+.wb-model-default-pick .wb-model-check { flex: none; color: var(--accent); }
+
 /* A model this harness cannot run. It used to spell out the provider's full
    explanation on the row, which buried the one thing you need while scanning —
    that you cannot pick it. Now the row simply reads as switched off, with a
