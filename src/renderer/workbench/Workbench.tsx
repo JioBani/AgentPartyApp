@@ -315,6 +315,7 @@ export function Workbench(props: WorkbenchProps) {
   const [statusTarget, setStatusTarget] = useState<string | null>(null);
   const [gateTarget, setGateTarget] = useState<string | null>(null);
   const [partyGateTarget, setPartyGateTarget] = useState<string | null>(null);
+  const [gateBackPartyId, setGateBackPartyId] = useState<string | null>(null);
   const [compactTarget, setCompactTarget] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [subUi, setSubUi] = useState<SubagentUiState>(loadSubagentUi);
@@ -381,8 +382,10 @@ export function Workbench(props: WorkbenchProps) {
       return;
     }
     if (gateOpenRequest.kind === "party") {
+      setGateBackPartyId(null);
       setPartyGateTarget(gateOpenRequest.member || activePartyId || null);
     } else if (gateOpenRequest.member) {
+      setGateBackPartyId(null);
       setGateTarget(gateOpenRequest.member);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -978,7 +981,12 @@ export function Workbench(props: WorkbenchProps) {
           partyGate={activeParty?.gate}
           gateDefaults={gateDefaults}
           onApply={(patch) => actions.setMemberGate(gateView.name, patch)}
-          onClose={() => setGateTarget(null)}
+          onBack={gateBackPartyId ? () => {
+            setGateTarget(null);
+            setPartyGateTarget(gateBackPartyId);
+            setGateBackPartyId(null);
+          } : undefined}
+          onClose={() => { setGateTarget(null); setGateBackPartyId(null); }}
         />
       )}
 
@@ -991,7 +999,11 @@ export function Workbench(props: WorkbenchProps) {
           onSetPartyGate={(gate) => actions.setPartyGate(gateParty.id, gate)}
           onSetMemberGate={(name, axis, mode) => actions.setMemberGate(name, { axis, mode })}
           onClearMemberRule={(name, axis) => actions.setMemberGate(name, { axis, rule: null })}
-          onOpenMemberGate={(name) => { setPartyGateTarget(null); setGateTarget(name); }}
+          onOpenMemberGate={(name) => {
+            setGateBackPartyId(gateParty.id);
+            setPartyGateTarget(null);
+            setGateTarget(name);
+          }}
           onClose={() => setPartyGateTarget(null)}
         />
       )}

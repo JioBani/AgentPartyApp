@@ -8725,10 +8725,6 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   border-color: var(--border-strong);
   color: var(--text-1);
 }
-.wb-gate-caption { font-size: 11.5px; color: var(--text-3); }
-.wb-gate-caption b { color: var(--text-1); }
-.wb-gate-caption b.wb-gate-accent { color: var(--accent); }
-
 .wb-gate-block {
   display: flex;
   flex-direction: column;
@@ -8771,6 +8767,11 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   font-family: var(--font-sans);
 }
 .wb-gate-textarea:focus { outline: none; border-color: var(--accent-bd); }
+.wb-gate-textarea:disabled {
+  background: var(--bg-3);
+  color: var(--text-2);
+  cursor: default;
+}
 
 .wb-gate-warn {
   font-size: 11.5px;
@@ -8805,14 +8806,6 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   color: var(--accent);
   flex: 0 0 auto;
 }
-.wb-gate-default-chip {
-  padding: 8px 11px;
-  border: 1px dashed var(--border-strong);
-  border-radius: 8px;
-  font-size: 11.5px;
-  color: var(--text-3);
-}
-
 .wb-gate-reviewer { display: flex; flex-direction: column; gap: 10px; }
 .wb-gate-picker-wrap { position: relative; }
 .wb-gate-picker-btn {
@@ -8884,6 +8877,84 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-gate-clear-override:hover { text-decoration: underline; }
 .wb-gate-member-reviewer { color: var(--text-3); }
 .wb-gate-edit-btn { height: 26px; padding: 0 12px; flex: 0 0 auto; }
+
+/* Rule-first Message Gate layout: the modal owns a real height and gives the
+   remaining space to the communication rule instead of keeping it at 4 rows. */
+.wb-gate-rule-first { height: min(680px, 88vh); }
+.wb-party-gate-modal.wb-gate-rule-first { height: min(760px, 88vh); }
+
+.wb-gate-rule-first .wb-gate-modal-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.wb-gate-rule-first .wb-gate-rule-block {
+  flex: 1;
+  min-height: 0;
+}
+
+.wb-gate-rule-first .wb-gate-rule-block .wb-gate-textarea {
+  flex: 1;
+  min-height: 160px;
+}
+
+.wb-gate-mode-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.wb-gate-mode-row .wb-gate-mode { flex: 1; }
+
+.wb-gate-reviewer-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 8px 12px;
+  background: var(--bg-1);
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-card);
+}
+
+.wb-gate-reviewer-row strong {
+  flex: none;
+  font-size: 12.5px;
+  color: var(--text-1);
+}
+
+.wb-gate-block > .wb-gate-reviewer-row {
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+.wb-gate-rule-first .wb-modal-title > .wb-icon-btn:first-child { margin-right: 2px; }
+
+.wb-gate-list-block { flex: none; }
+.wb-gate-list-block.is-open {
+  flex: 1;
+  min-height: 120px;
+}
+
+.wb-gate-list-block.is-open .wb-gate-member-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.wb-gate-list-toggle {
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wb-gate-list-toggle svg { flex: none; color: var(--text-3); }
 
 .wb-gate-name-input {
   width: 100%;
