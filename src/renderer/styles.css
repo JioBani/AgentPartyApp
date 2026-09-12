@@ -6222,6 +6222,22 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   box-shadow: 0 1px 3px var(--accent-bd);
 }
 
+.wb-modal-catalog .wb-segmented.is-disabled {
+  background: var(--bg-3);
+  border-color: var(--border-subtle);
+}
+
+.wb-modal-catalog .wb-segmented.is-disabled .wb-segment:disabled {
+  cursor: default;
+  color: var(--text-3);
+}
+
+.wb-modal-catalog .wb-segmented.is-disabled .wb-segment.is-active:disabled {
+  background: var(--bg-4);
+  color: var(--text-2);
+  box-shadow: none;
+}
+
 /* "Custom" — a STATE the axes are currently in, not a preset you can pick.
    Rendered as a span (no click target) and styled apart from the selectable
    segments on purpose: it must read as a readout, so it takes only the space its
