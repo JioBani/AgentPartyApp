@@ -63,6 +63,9 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
   const draft = drafts[axis];
   const partyAxis = partyGate?.[axis] ?? { enabled: false, rule: "" };
   const overridden = draft.ruleSet;
+  // "Party default" is the locked-field display contract while mode inherits.
+  // Preserve any independent member rule in the draft/store for lossless edits.
+  const displayedRule = draft.mode === "inherit" ? partyAxis.rule : draft.text;
   const effectivelyOn = draft.mode === "on" || (draft.mode === "inherit" && partyAxis.enabled);
   const emptyWhileOn = effectivelyOn && draft.text.trim().length === 0;
   const rulePlaceholder = axis === "send" ? localized("STR-3836") : localized("STR-3837");
@@ -142,7 +145,7 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
               <span className="wb-flex-spacer" />
               {overridden && <button type="button" className="wb-gate-reset" onClick={() => patch({ ruleSet: false, text: partyAxis.rule })}><Undo2 size={12} /> <LocalizedText id="STR-3862" /></button>}
             </div>
-            <textarea className="wb-gate-textarea" value={draft.text} disabled={draft.mode === "inherit"} placeholder={rulePlaceholder} onChange={(event) => patch({ text: event.target.value, ruleSet: true })} />
+            <textarea className="wb-gate-textarea" value={displayedRule} disabled={draft.mode === "inherit"} placeholder={rulePlaceholder} onChange={(event) => patch({ text: event.target.value, ruleSet: true })} />
             {emptyWhileOn && <div className="wb-gate-warn"><LocalizedText id="STR-1798" /> <b><LocalizedText id="STR-1799" /></b>. <LocalizedText id="STR-3838" /></div>}
             {!effectivelyOn && <div className="wb-gate-note"><LocalizedText id={axis === "send" ? "STR-3839" : "STR-3840"} /></div>}
           </div>
