@@ -610,20 +610,34 @@ export function PartySidebar(props: PartySidebarProps) {
 
           <section className="wb-sidebar-section wb-members-section">
             <div className="wb-member-create-head">
-          <button
-            type="button"
-            className={"wb-group-add wb-member-add" + (creating ? " is-open" : "")}
-            title={creating ? localized("STR-2064") : localized("STR-3783")}
-            aria-label={creating ? localized("STR-2064") : localized("STR-3783")}
-            aria-expanded={creating}
-            aria-busy={memberSubmitting}
-            disabled={memberSubmitting}
-            onClick={() => setCreating((value) => !value)}
-          >
-            {creating ? <X size={13} /> : <Plus size={13} />}
-            <LocalizedText id={creating ? "STR-2064" : "STR-3783"} />
-          </button>
-        </div>
+              <button
+                type="button"
+                className={"wb-group-add wb-member-add" + (creating ? " is-open" : "")}
+                title={creating ? localized("STR-2064") : localized("STR-3783")}
+                aria-label={creating ? localized("STR-2064") : localized("STR-3783")}
+                aria-expanded={creating}
+                aria-busy={memberSubmitting}
+                disabled={memberSubmitting}
+                onClick={() => setCreating((value) => !value)}
+              >
+                {creating ? <X size={13} /> : <Plus size={13} />}
+                <span className="wb-member-add-label"><LocalizedText id={creating ? "STR-2064" : "STR-3783"} /></span>
+              </button>
+              <button
+                type="button"
+                className="wb-group-add wb-member-add wb-member-gate-add"
+                title={localized("STR-2071")}
+                aria-label={localized("STR-2071")}
+                disabled={!activePartyId}
+                onClick={() => {
+                  if (!activePartyId) return;
+                  setCreating(false);
+                  onOpenPartyGate(activePartyId);
+                }}
+              >
+                <MessageGateIcon size={13} className="wb-gate-accent" />
+              </button>
+            </div>
 
         {creating && (
           <MemberWizard
