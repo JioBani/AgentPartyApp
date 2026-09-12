@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Undo2 } from "lucide-react";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { ModelCatalogModal } from "./ModelCatalogModal";
 import { Segmented } from "./Segmented";
@@ -29,7 +29,21 @@ export function headlessReviewerRoutes(routes: RouteLike[]): RouteLike[] {
       (routeAvailable && !existingAvailable) ||
       (routeAvailable === existingAvailable && (route.harnessId || "claude-code") === "claude-code")
     ) {
-      byModel.set(key, route);
+      const tier = route.capabilities?.serviceTier;
+      const concreteTiers = tier?.supported
+        ? (tier.options || []).filter((option) => option.id !== "inherit")
+        : [];
+      byModel.set(key, concreteTiers.length > 0 ? {
+        ...route,
+        capabilities: {
+          ...route.capabilities,
+          serviceTier: {
+            ...tier!,
+            defaultValue: concreteTiers.find((option) => option.id === "standard")?.id || concreteTiers[0].id,
+            options: concreteTiers,
+          },
+        },
+      } : route);
     }
   }
   return Array.from(byModel.values());
@@ -91,10 +105,14 @@ export function GateReviewerControl({
           icon={<MessageGateIcon size={16} />}
           subtitle={<span className="wb-mono wb-modal-sub"><LocalizedText id="STR-1672" /></span>}
           routes={models}
-          value={{ model: reviewer.model, effort: reviewer.effort }}
-          config={{ effort: true }}
+          value={{ model: reviewer.model, effort: reviewer.effort, serviceTier: reviewer.serviceTier }}
+          config={{ effort: true, serviceTier: true }}
           applyLabel="선택"
-          onApply={(next) => onChange({ model: next.model, effort: next.effort || reviewer.effort })}
+          onApply={(next) => onChange({
+            model: next.model,
+            effort: next.effort || reviewer.effort,
+            ...(next.serviceTier ? { serviceTier: next.serviceTier } : {}),
+          })}
           onClose={() => setCatalogOpen(false)}
         />
       )}
@@ -103,9 +121,9 @@ export function GateReviewerControl({
 }
 
 /**
- * The compact gate-modal picker. Model inheritance is a model-menu choice,
- * rather than a separate switch, so the whole reviewer control remains one
- * row while still exposing the effective model and effort.
+ * The compact gate-modal picker. An inherited reviewer is one readout because
+ * its model, effort, and serving tier are one borrowed value. A custom reviewer
+ * exposes each concrete field plus an explicit reset alongside it.
  */
 export function GateReviewerInlineControl({
   routes,
@@ -126,18 +144,22 @@ export function GateReviewerInlineControl({
   const models = useMemo(() => headlessReviewerRoutes(routes), [routes]);
   const effective = inherited ? defaultReviewer : reviewer;
   const selected = findRoute(effective.model, models);
-  const defaultSelected = findRoute(defaultReviewer.model, models);
-  const defaultEffortOptions = defaultSelected?.capabilities?.effort?.supported
-    ? (defaultSelected.capabilities.effort.options || [])
-    : [];
-  const defaultEffortLabel = defaultEffortOptions.find((option) => option.id === defaultReviewer.effort)?.label
-    || defaultReviewer.effort;
   const effortOptions = selected?.capabilities?.effort?.supported
     ? (selected.capabilities.effort.options || [])
+    : [];
+  const tierOptions = selected?.capabilities?.serviceTier?.supported
+    ? (selected.capabilities.serviceTier.options || [])
     : [];
   const displayedEfforts = effortOptions.length > 0
     ? effortOptions.map((option) => ({ id: option.id, label: option.label }))
     : [{ id: effective.effort, label: effective.effort }];
+  const effortLabel = displayedEfforts.find((option) => option.id === effective.effort)?.label || effective.effort;
+  const concreteTier = effective.serviceTier
+    || tierOptions.find((option) => option.id === "standard")?.id
+    || tierOptions[0]?.id;
+  const displayedTiers = tierOptions.map((option) => ({ id: option.id, label: option.label }));
+  const tierLabel = displayedTiers.find((option) => option.id === concreteTier)?.label || concreteTier;
+  const fast = Boolean(tierLabel && tierLabel.toLowerCase() === "fast");
 
   return (
     <>
@@ -149,36 +171,47 @@ export function GateReviewerInlineControl({
           title={`${localized("STR-1669")}: ${selected?.label || effective.model}`}
           onClick={() => setCatalogOpen(true)}
         >
-          <span className="wb-dd-label">{selected?.label || effective.model}</span>
+          <span className="wb-dd-label">
+            {inherited && <><LocalizedText id="STR-3867" /> · </>}
+            {selected?.label || effective.model}
+            {inherited && <> · {effortLabel}{fast ? " · Fast" : ""}</>}
+          </span>
           <ChevronDown size={11} className="wb-pill-caret" />
         </button>
-        <Dropdown
-          value={effective.effort}
-          options={displayedEfforts}
-          title={localized("STR-1670")}
-          disabled={inherited}
-          onChange={(effort) => onChange({ ...effective, effort })}
-        />
+        {!inherited && <>
+          <Dropdown
+            value={effective.effort}
+            options={displayedEfforts}
+            title={localized("STR-1670")}
+            onChange={(effort) => onChange({ ...effective, effort })}
+          />
+          {displayedTiers.length > 0 && concreteTier && (
+            <Dropdown
+              value={concreteTier}
+              options={displayedTiers}
+              title="Fast"
+              onChange={(serviceTier) => onChange({ ...effective, serviceTier })}
+            />
+          )}
+          <button type="button" className="wb-gate-reset" onClick={onInherit}>
+            <Undo2 size={12} /> <LocalizedText id="STR-3868" />
+          </button>
+        </>}
       </div>
       {catalogOpen && (
         <ModelCatalogModal
           title={localized("STR-1671")}
           icon={<MessageGateIcon size={16} />}
           routes={models}
-          value={{ model: effective.model, effort: effective.effort, useDefault: inherited }}
-          config={{ effort: true }}
-          defaultChoice={{
-            label: localized("STR-3865"),
-            hint: `${defaultSelected?.label || defaultReviewer.model} · ${defaultEffortLabel}`,
-            selected: inherited,
-          }}
+          value={{ model: effective.model, effort: effective.effort, serviceTier: concreteTier }}
+          config={{ effort: true, serviceTier: true }}
           applyLabel="선택"
           onApply={(next) => {
-            if (next.useDefault) {
-              onInherit();
-              return;
-            }
-            onChange({ model: next.model, effort: next.effort || effective.effort });
+            onChange({
+              model: next.model,
+              effort: next.effort || effective.effort,
+              ...(next.serviceTier ? { serviceTier: next.serviceTier } : {}),
+            });
           }}
           onClose={() => setCatalogOpen(false)}
         />

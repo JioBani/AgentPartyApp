@@ -748,7 +748,9 @@ function GateBlock({ block, view }: { block: Extract<TranscriptBlock, { kind: "g
   const Icon = meta.Icon;
   const details = [
     block.gate === "failed" ? (block.errcode ? `오류 · ${block.errcode}` : "") : (block.rule ? `위반 규칙 · ${block.rule}` : ""),
-    block.reviewer ? `${block.reviewer.model} · ${block.reviewer.effort}` : "",
+    block.reviewer
+      ? `${block.reviewer.model} · ${block.reviewer.effort}${block.reviewer.serviceTier && block.reviewer.serviceTier !== "standard" ? " · Fast" : ""}`
+      : "",
   ].filter(Boolean);
   return (
     <div className={"wb-block wb-gate is-" + meta.tone}>

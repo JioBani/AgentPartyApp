@@ -59,9 +59,9 @@ const transport = {
   subscriptionProxy: { baseUrl: `${base}/v1`, apiKey: "k" },
 };
 
-async function sent(model, effort) {
+async function sent(model, effort, serviceTier) {
   seen.length = 0;
-  const result = await reviewGateMessage(MESSAGE, { model, effort }, transport);
+  const result = await reviewGateMessage(MESSAGE, { model, effort, ...(serviceTier ? { serviceTier } : {}) }, transport);
   if (result.verdict !== "allow") throw new Error(`unexpected verdict ${result.verdict}`);
   return seen[0].body;
 }
@@ -107,6 +107,8 @@ console.log("\nGPT reviewer (embedded router) — `effort`, never `thinking`:");
   assert(max.effort === "max", "Luna effort=max is forwarded to the router");
   const bogus = await sent("GPT-5.6 Luna", "bogus");
   assert(!("effort" in bogus), "an effort outside the model's catalog options is dropped, not forwarded");
+  const fast = await sent("GPT-5.6 Luna", "low", "priority");
+  assert(fast.service_tier === "priority", "a concrete Fast tier is forwarded on the headless router request");
 }
 
 console.log("\nshared request shape:");

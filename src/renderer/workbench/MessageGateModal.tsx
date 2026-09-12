@@ -78,7 +78,11 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
       || value.ruleSet !== (typeof storedValue?.rule === "string")
       || (value.ruleSet && value.text !== (storedValue?.rule ?? ""))
       || value.reviewerSet !== Boolean(storedValue?.reviewer)
-      || (value.reviewerSet && (value.reviewer.model !== storedValue?.reviewer?.model || value.reviewer.effort !== storedValue?.reviewer?.effort));
+      || (value.reviewerSet && (
+        value.reviewer.model !== storedValue?.reviewer?.model
+        || value.reviewer.effort !== storedValue?.reviewer?.effort
+        || value.reviewer.serviceTier !== storedValue?.reviewer?.serviceTier
+      ));
   }
 
   const dirty = changed("send") || changed("recv");
@@ -136,12 +140,9 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
             <div className="wb-gate-block-head">
               <strong><LocalizedText id="STR-1793" /></strong>
               <span className="wb-flex-spacer" />
-              {overridden
-                ? <button type="button" className="wb-gate-reset" onClick={() => patch({ ruleSet: false, text: partyAxis.rule })}><Undo2 size={12} /> <LocalizedText id="STR-3862" /></button>
-                : <button type="button" className="wb-gate-reset" onClick={() => patch({ ruleSet: true, text: partyAxis.rule })}><Pencil size={11} /> <LocalizedText id="STR-3861" /></button>}
+              {overridden && <button type="button" className="wb-gate-reset" onClick={() => patch({ ruleSet: false, text: partyAxis.rule })}><Undo2 size={12} /> <LocalizedText id="STR-3862" /></button>}
             </div>
-            <textarea className="wb-gate-textarea" value={draft.text} disabled={!overridden} placeholder={rulePlaceholder} onChange={(event) => patch({ text: event.target.value })} />
-            {!overridden && <div className="wb-gate-note"><LocalizedText id="STR-3863" /></div>}
+            <textarea className="wb-gate-textarea" value={draft.text} disabled={draft.mode === "inherit"} placeholder={rulePlaceholder} onChange={(event) => patch({ text: event.target.value, ruleSet: true })} />
             {emptyWhileOn && <div className="wb-gate-warn"><LocalizedText id="STR-1798" /> <b><LocalizedText id="STR-1799" /></b>. <LocalizedText id="STR-3838" /></div>}
             {!effectivelyOn && <div className="wb-gate-note"><LocalizedText id={axis === "send" ? "STR-3839" : "STR-3840"} /></div>}
           </div>

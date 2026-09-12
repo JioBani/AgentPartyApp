@@ -25,6 +25,10 @@ assert(party.send.enabled && party.send.rule === "legacy send", "legacy party ga
 assert(!party.recv.enabled && party.recv.rule === "", "legacy party gate creates an inactive empty recv axis");
 assert(member.send.mode === "off" && member.send.rule === "legacy member", "legacy member override moves losslessly to send");
 assert(member.recv === undefined, "legacy member has no recv override");
+const fastParty = normalizePartyGate({ enabled: true, rule: "fast", reviewer: { ...SEND_REVIEWER, serviceTier: "priority" } });
+assert(fastParty.send.reviewer.serviceTier === "priority", "a concrete reviewer Fast tier survives normalization");
+const inheritedTier = normalizePartyGate({ enabled: true, rule: "plain", reviewer: { ...SEND_REVIEWER, serviceTier: "inherit" } });
+assert(inheritedTier.send.reviewer.serviceTier === undefined, "headless reviewer never stores the harness-only inherit tier");
 
 console.log("\naxis independence and compatibility defaults:");
 let axes = applyMemberGatePatch(undefined, { mode: "on", rule: "send own" });

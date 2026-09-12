@@ -36,6 +36,8 @@ export interface HeadlessRequest {
   model: string;
   /** Reasoning effort; scaled onto whichever reasoning knob the wire accepts. */
   effort: string;
+  /** Concrete provider serving tier (for example Codex Fast/priority). */
+  serviceTier?: string;
   system: string;
   user: string;
   /** Answer budget. Reasoning headroom is added on top — a cap is not a spend. */
@@ -123,6 +125,7 @@ export async function callHeadlessModel(request: HeadlessRequest, transport: Hea
         system: request.system,
         messages: [{ role: "user", content: request.user }],
         stream: false,
+        ...(viaRouter && request.serviceTier ? { service_tier: request.serviceTier } : {}),
         ...reasoning.body,
       }),
       signal: controller.signal,
