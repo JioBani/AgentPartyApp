@@ -746,8 +746,6 @@ function GateBlock({ block, view }: { block: Extract<TranscriptBlock, { kind: "g
   const [open, setOpen] = useState(false);
   const meta = GATE_META[block.gate];
   const Icon = meta.Icon;
-  const axis = block.gate === "rejected" ? block.violation : block.scope;
-  const axisLabel = axis === "send" ? localized("STR-3857") : axis === "recv" ? localized("STR-3858") : axis === "both" ? localized("STR-3859") : "";
   const details = [
     block.gate === "failed" ? (block.errcode ? `오류 · ${block.errcode}` : "") : (block.rule ? `위반 규칙 · ${block.rule}` : ""),
     block.reviewer ? `${block.reviewer.model} · ${block.reviewer.effort}` : "",
@@ -758,7 +756,6 @@ function GateBlock({ block, view }: { block: Extract<TranscriptBlock, { kind: "g
         <span className="wb-gate-icon"><Icon size={14} /></span>
         <span className="wb-gate-label">{meta.label}</span>
         <span className="wb-gate-route wb-mono">{(block.from || view.name)} → {block.to}</span>
-        {axisLabel && <span className="wb-gate-scope wb-mono">{axisLabel}</span>}
         <span className="wb-gate-outcome">
           <span className="wb-gate-passnote">{meta.note}</span>
           {block.reason && (
