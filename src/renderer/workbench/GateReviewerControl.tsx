@@ -4,7 +4,7 @@ import { MessageGateIcon } from "./MessageGateIcon";
 import { ModelCatalogModal } from "./ModelCatalogModal";
 import { Segmented } from "./Segmented";
 import { Dropdown } from "./Dropdown";
-import type { RouteLike } from "./routes";
+import { findRoute, type RouteLike } from "./routes";
 import type { GateReviewer } from "../../shared/messageGate";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 
@@ -12,16 +12,24 @@ import { LocalizedText, localized } from "../i18n/I18nProvider";
  * The models a gate reviewer can run on.
  *
  * The reviewer is HEADLESS — it is a raw completion with no harness — so the
- * same model reachable through two harnesses is one choice, not two. Preferring
- * the claude-code route on a tie is arbitrary but stable, which is what keeps
- * the list from reshuffling between renders.
+ * same model reachable through two harnesses is one choice, not two. Prefer an
+ * available route over a locked alias, then the claude-code route on a true tie;
+ * this keeps the list useful and stable without exposing headless-irrelevant
+ * harness duplicates.
  */
 export function headlessReviewerRoutes(routes: RouteLike[]): RouteLike[] {
   const byModel = new Map<string, RouteLike>();
   for (const route of routes) {
-    const existing = byModel.get(route.model);
-    if (!existing || (route.harnessId || "claude-code") === "claude-code") {
-      byModel.set(route.model, route);
+    const key = route.model.trim().toLowerCase().replace(/[\s_-]+/g, "-");
+    const existing = byModel.get(key);
+    const routeAvailable = route.enabled !== false;
+    const existingAvailable = existing?.enabled !== false;
+    if (
+      !existing ||
+      (routeAvailable && !existingAvailable) ||
+      (routeAvailable === existingAvailable && (route.harnessId || "claude-code") === "claude-code")
+    ) {
+      byModel.set(key, route);
     }
   }
   return Array.from(byModel.values());
@@ -55,7 +63,7 @@ export function GateReviewerControl({
 }) {
   const [catalogOpen, setCatalogOpen] = useState(false);
   const models = useMemo(() => headlessReviewerRoutes(routes), [routes]);
-  const selected = models.find((route) => route.model === reviewer.model);
+  const selected = findRoute(reviewer.model, models);
   const effortOptions = selected?.capabilities?.effort?.supported ? (selected.capabilities.effort.options || []) : [];
 
   return (
@@ -94,8 +102,6 @@ export function GateReviewerControl({
   );
 }
 
-const DEFAULT_REVIEWER_ID = "__gate_default__";
-
 /**
  * The compact gate-modal picker. Model inheritance is a model-menu choice,
  * rather than a separate switch, so the whole reviewer control remains one
@@ -116,10 +122,11 @@ export function GateReviewerInlineControl({
   onChange: (reviewer: GateReviewer) => void;
   onInherit: () => void;
 }) {
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const models = useMemo(() => headlessReviewerRoutes(routes), [routes]);
   const effective = inherited ? defaultReviewer : reviewer;
-  const selected = models.find((route) => route.model === effective.model);
-  const defaultSelected = models.find((route) => route.model === defaultReviewer.model);
+  const selected = findRoute(effective.model, models);
+  const defaultSelected = findRoute(defaultReviewer.model, models);
   const defaultEffortOptions = defaultSelected?.capabilities?.effort?.supported
     ? (defaultSelected.capabilities.effort.options || [])
     : [];
@@ -128,45 +135,54 @@ export function GateReviewerInlineControl({
   const effortOptions = selected?.capabilities?.effort?.supported
     ? (selected.capabilities.effort.options || [])
     : [];
-  const modelOptions = [
-    {
-      id: DEFAULT_REVIEWER_ID,
-      label: localized("STR-3865"),
-      triggerLabel: selected?.label || effective.model,
-      hint: `${defaultSelected?.label || defaultReviewer.model} · ${defaultEffortLabel}`,
-    },
-    ...models.map((route) => ({ id: route.model, label: route.label || route.model })),
-  ];
   const displayedEfforts = effortOptions.length > 0
     ? effortOptions.map((option) => ({ id: option.id, label: option.label }))
     : [{ id: effective.effort, label: effective.effort }];
 
   return (
-    <div className="wb-gate-reviewer-row">
-      <strong><LocalizedText id="STR-3866" /></strong>
-      <Dropdown
-        value={inherited ? DEFAULT_REVIEWER_ID : effective.model}
-        options={modelOptions}
-        title={localized("STR-1669")}
-        onChange={(model) => {
-          if (model === DEFAULT_REVIEWER_ID) {
-            onInherit();
-            return;
-          }
-          const route = models.find((candidate) => candidate.model === model);
-          const supported = route?.capabilities?.effort?.supported ? (route.capabilities.effort.options || []) : [];
-          const effort = supported.some((option) => option.id === effective.effort)
-            ? effective.effort
-            : supported[0]?.id || effective.effort;
-          onChange({ model, effort });
-        }}
-      />
-      <Dropdown
-        value={effective.effort}
-        options={displayedEfforts}
-        title={localized("STR-1670")}
-        onChange={(effort) => onChange({ ...effective, effort })}
-      />
-    </div>
+    <>
+      <div className="wb-gate-reviewer-row">
+        <strong><LocalizedText id="STR-3866" /></strong>
+        <button
+          type="button"
+          className="wb-pill wb-dd-trigger"
+          title={`${localized("STR-1669")}: ${selected?.label || effective.model}`}
+          onClick={() => setCatalogOpen(true)}
+        >
+          <span className="wb-dd-label">{selected?.label || effective.model}</span>
+          <ChevronDown size={11} className="wb-pill-caret" />
+        </button>
+        <Dropdown
+          value={effective.effort}
+          options={displayedEfforts}
+          title={localized("STR-1670")}
+          disabled={inherited}
+          onChange={(effort) => onChange({ ...effective, effort })}
+        />
+      </div>
+      {catalogOpen && (
+        <ModelCatalogModal
+          title={localized("STR-1671")}
+          icon={<MessageGateIcon size={16} />}
+          routes={models}
+          value={{ model: effective.model, effort: effective.effort, useDefault: inherited }}
+          config={{ effort: true }}
+          defaultChoice={{
+            label: localized("STR-3865"),
+            hint: `${defaultSelected?.label || defaultReviewer.model} · ${defaultEffortLabel}`,
+            selected: inherited,
+          }}
+          applyLabel="선택"
+          onApply={(next) => {
+            if (next.useDefault) {
+              onInherit();
+              return;
+            }
+            onChange({ model: next.model, effort: next.effort || effective.effort });
+          }}
+          onClose={() => setCatalogOpen(false)}
+        />
+      )}
+    </>
   );
 }
