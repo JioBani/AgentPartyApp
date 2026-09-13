@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { Check, ChevronDown, FolderOpen, Monitor, Terminal, TriangleAlert } from "lucide-react";
+import { Check, ChevronDown, FolderOpen, Monitor, Server, Terminal, TriangleAlert } from "lucide-react";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation, RecentCwd } from "../../shared/memberLocation";
+import { SshLocationSection, type SshBrowsing } from "./SshLocationSection";
 import { RECENT_CWD_LIMIT, memberLocationsEqual, preferencesFor } from "../../shared/memberLocation";
 import { relativeDay } from "../../shared/relativeTime";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
@@ -20,12 +21,12 @@ import { LocalizedText, localized } from "../i18n/I18nProvider";
  * under "파티 그룹 · 멤버 실행 위치(cwd)".
  */
 
-/** Windows is a monitor, WSL is a shell prompt — the same pair everywhere. */
+/** Windows is a monitor, WSL is a shell prompt, SSH is a remote machine — the same set everywhere. */
 export function EnvIcon({ env, size = 13 }: { env: ExecutionEnv; size?: number }) {
-  return env === "wsl" ? <Terminal size={size} /> : <Monitor size={size} />;
+  return env === "wsl" ? <Terminal size={size} /> : env === "ssh" ? <Server size={size} /> : <Monitor size={size} />;
 }
 
-export const ENV_LABEL: Record<ExecutionEnv, string> = { windows: "Windows", wsl: "WSL" };
+export const ENV_LABEL: Record<ExecutionEnv, string> = { windows: "Windows", wsl: "WSL", ssh: "SSH" };
 
 /**
  * The WSL side's data, as one prop.
@@ -76,6 +77,8 @@ export interface CwdPickerProps {
   onBrowse: () => void;
   /** Everything the WSL side needs; omitted where WSL is not offered. */
   wsl?: WslBrowsing;
+  /** Everything the SSH side needs; the SSH tab exists only when this is given. */
+  ssh?: SshBrowsing;
   /**
    * The "save as this environment's default cwd" switch. Omitted where the
    * design does not offer it (the new-party dialog), rather than rendered
@@ -86,7 +89,8 @@ export interface CwdPickerProps {
   hint?: ReactNode;
 }
 
-export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, wsl, saveAsDefault, hint }: CwdPickerProps) {
+export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, wsl, ssh, saveAsDefault, hint }: CwdPickerProps) {
+  const envs: ExecutionEnv[] = ssh ? ["windows", "wsl", "ssh"] : ["windows", "wsl"];
   const env: ExecutionEnv = value?.env ?? "windows";
   const { fallback, recent } = preferencesFor(prefs, env);
   // The store also enforces this cap, but the picker is a public presentation
@@ -116,7 +120,7 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
   return (
     <>
       <div className="wb-env-seg" role="group" aria-label={localized("STR-3651")}>
-        {(["windows", "wsl"] as ExecutionEnv[]).map((candidate) => (
+        {envs.map((candidate) => (
           <button
             key={candidate}
             type="button"
@@ -160,6 +164,10 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
         </div>
       )}
 
+      {env === "ssh" && ssh ? (
+        <SshLocationSection value={value} recent={recent} now={now} ssh={ssh} onChange={onChange} />
+      ) : (
+      <>
       <div className="wb-cwd-field">
         <EnvIcon env={env} />
         {value?.distro && <span className="wb-cwd-distro">{value.distro}</span>}
@@ -230,6 +238,9 @@ export function CwdPicker({ value, prefs, now, onChange, onChangeEnv, onBrowse, 
           />
           <span><LocalizedText id="STR-3658" /> {ENV_LABEL[env]} <LocalizedText id="STR-3657" /></span>
         </label>
+      )}
+
+      </>
       )}
 
       {hint && <p className="wb-wizard-hint">{hint}</p>}

@@ -112,6 +112,8 @@ export interface WorkbenchActions {
    * explains why their member will not start.
    */
   openEnvironmentSettings(): void;
+  /** Opens 설정 → SSH 서버 — the one place an SSH login failure is repaired. */
+  openSshSettings(): void;
   applyRuntime(memberName: string, runtime: { route?: RouteLike; effort?: string; serviceTier?: string; thinkingMode?: string; thinkingBudget?: number; debug: boolean }): void | Promise<void>;
   setEffort(memberName: string, effort: string): void;
   setThinking(memberName: string, mode: string, budget?: number): void;

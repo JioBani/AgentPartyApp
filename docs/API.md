@@ -3578,7 +3578,7 @@ specific tab instead of leaving the caller to click the strip:
 
 ```text
 agent: general, defaults, primer, gate, discord
-settings: general, environment, workspace, mobile, versions, diagnostics, automation
+settings: general, environment, workspace, ssh, mobile, versions, diagnostics, automation
 ```
 
 `settings/mobile` is feature-gated. When Mobile Link is disabled in the running

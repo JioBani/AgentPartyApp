@@ -8,6 +8,9 @@ import { providerLabel } from "./modelProvider";
 import { EnvIcon, ENV_LABEL } from "./CwdPicker";
 import { groupMembersByLocation, splitPathTail, type MemberCwdGroup, type MemberEnvGroup } from "./memberGroups";
 import { LocalizedText, localized, useI18n } from "../i18n/I18nProvider";
+import type { SshServerView } from "../../shared/sshServers";
+import { SshStatus } from "./SshStatus";
+import { SSH_MEMBER_CHIP, SshServerNotice, isSshNoticeState, type SshNoticeAction, type SshNoticeState } from "./SshConnectionNotices";
 
 /**
  * The member list as a tree of execution environments and working directories.
@@ -51,15 +54,40 @@ export interface MemberCwdTreeProps {
   onToggleGroup: (groupId: string) => void;
   onOpenMember: (name: string) => void;
   onMemberContextMenu: (name: string, event: React.MouseEvent) => void;
+  /** Registered SSH servers; absent where the app has no SSH feature. */
+  sshServers?: SshServerView[];
+  onSshNoticeAction?: (action: SshNoticeAction, server: string) => void;
+}
+
+/**
+ * The member-facing SSH state of a server name: a notice state, "server-missing"
+ * when the name is no longer registered, or undefined when there is nothing to say.
+ */
+export function sshMemberState(server: string | undefined, servers: SshServerView[] | undefined): SshNoticeState | "server-missing" | undefined {
+  if (!server || !servers) return undefined;
+  const found = servers.find((entry) => entry.name === server);
+  if (!found) return "server-missing";
+  return isSshNoticeState(found.connection) ? found.connection : undefined;
 }
 
 export function MemberCwdTree({
-  views, openMembers, closedGroupIds, menuMemberName, onToggleGroup, onOpenMember, onMemberContextMenu,
+  views, openMembers, closedGroupIds, menuMemberName, onToggleGroup, onOpenMember, onMemberContextMenu, sshServers, onSshNoticeAction,
 }: MemberCwdTreeProps) {
   const tree = groupMembersByLocation(views);
-  const shared = { openMembers, closedGroupIds, menuMemberName, onToggleGroup, onOpenMember, onMemberContextMenu };
+  const shared = { openMembers, closedGroupIds, menuMemberName, onToggleGroup, onOpenMember, onMemberContextMenu, sshServers };
+  // §12-3: a broken server is said ONCE, at the top, with how many members it
+  // affects — never repeated per member.
+  const notices = tree.envs.flatMap((env) => {
+    const state = env.kind === "ssh" ? sshMemberState(env.server, sshServers) : undefined;
+    return env.server && state && state !== "server-missing" ? [{ server: env.server, state, count: env.count }] : [];
+  });
   return (
     <div className={"wb-member-list" + (tree.flat ? " is-flat" : "")}>
+      {notices.length > 0 && onSshNoticeAction && (
+        <div className="wb-ssh-notices">
+          {notices.map((notice) => <SshServerNotice key={notice.server} server={notice.server} state={notice.state} memberCount={notice.count} onAction={onSshNoticeAction} />)}
+        </div>
+      )}
       {views.length === 0 && <div className="wb-empty"><LocalizedText id="STR-2065" /></div>}
       {/* One native environment: every row runs there, so a header naming it
           would be a heading over the whole list saying what the whole list
@@ -76,7 +104,7 @@ export function MemberCwdTree({
  * members whose location could not be read.
  */
 function EnvSection({
-  env, openMembers, closedGroupIds, menuMemberName, onToggleGroup, onOpenMember, onMemberContextMenu,
+  env, openMembers, closedGroupIds, menuMemberName, onToggleGroup, onOpenMember, onMemberContextMenu, sshServers,
 }: { env: MemberEnvGroup<MemberView> } & Omit<MemberCwdTreeProps, "views">) {
   const { t } = useI18n();
   const open = !closedGroupIds.has(env.id);
@@ -88,11 +116,14 @@ function EnvSection({
   // The distro IS the label. Repeating "WSL" in front of it spends the drawer's
   // scarcest resource on a word the section's own mark and tooltip already
   // carry, and it is the distro name that tells Ubuntu from Debian.
+  // An SSH section is named by its server, like a WSL section by its distro.
   const label = env.kind === "wsl"
     ? (env.distro || t("member.env.unnamedDistro"))
+    : env.kind === "ssh" ? (env.server || "SSH")
     : env.kind === "unknown" ? localized("STR-3785") : ENV_LABEL[env.kind];
   const title = env.kind === "wsl"
     ? t("member.env.wslTitle", { distro: env.distro || t("member.env.unnamedDistro") })
+    : env.kind === "ssh" ? `SSH · ${env.server || ""}`
     : localized("STR-3784");
   const bodyId = `wb-env-${env.id.replace(/[^a-zA-Z0-9]+/g, "-")}`;
   return (
@@ -100,6 +131,7 @@ function EnvSection({
       className={"wb-env-group" + (open ? " is-open" : "")}
       data-host={env.kind}
       data-distro={env.distro || undefined}
+      data-server={env.server || undefined}
       role="group"
       aria-label={label}
     >
@@ -131,6 +163,7 @@ function EnvSection({
             onToggleGroup={onToggleGroup}
             onOpenMember={onOpenMember}
             onMemberContextMenu={onMemberContextMenu}
+            sshServers={sshServers}
           />
         ))}
       </div>
@@ -139,7 +172,7 @@ function EnvSection({
 }
 
 function CwdSection({
-  group, openMembers, closedGroupIds, menuMemberName, onToggleGroup, onOpenMember, onMemberContextMenu,
+  group, openMembers, closedGroupIds, menuMemberName, onToggleGroup, onOpenMember, onMemberContextMenu, sshServers,
 }: { group: MemberCwdGroup<MemberView> } & Omit<MemberCwdTreeProps, "views">) {
   const open = !closedGroupIds.has(group.id);
   const { head, tail } = splitPathTail(group.cwd);
@@ -183,6 +216,7 @@ function CwdSection({
             menu={menuMemberName === view.name}
             onOpenMember={onOpenMember}
             onMemberContextMenu={onMemberContextMenu}
+            sshState={group.location?.env === "ssh" ? sshMemberState(group.location.server, sshServers) : undefined}
           />
         ))}
       </div>
@@ -191,8 +225,9 @@ function CwdSection({
 }
 
 function MemberRow({
-  view, open, menu, onOpenMember, onMemberContextMenu,
+  view, open, menu, onOpenMember, onMemberContextMenu, sshState,
 }: {
+  sshState?: SshNoticeState | "server-missing";
   view: MemberView;
   open: boolean;
   menu: boolean;
@@ -204,7 +239,7 @@ function MemberRow({
     <div
       role="button"
       tabIndex={0}
-      className={"wb-member-row" + (open ? " is-open" : "") + (menu ? " is-menu" : "")}
+      className={"wb-member-row" + (open ? " is-open" : "") + (menu ? " is-menu" : "") + (sshState ? " has-ssh-state" : "")}
       style={memberColorVars(view.name)}
       onClick={() => onOpenMember(view.name)}
       onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenMember(view.name); } }}
@@ -229,6 +264,8 @@ function MemberRow({
       {/* The name is the one thing a narrow drawer must not silently clip past
           recognition, so the full name is always on the tooltip. */}
       <span className="wb-member-name" title={view.name}>{view.name}</span>
+      {/* Short chip only; the server notice above says which server and why. */}
+      {sshState && <SshStatus tone={SSH_MEMBER_CHIP[sshState].tone} label={SSH_MEMBER_CHIP[sshState].label} />}
       {view.pendingApproval && <span className="wb-member-badge"><LocalizedText id="STR-2066" /></span>}
       {view.unread > 0 && <span className="wb-mono wb-member-unread">{view.unread}</span>}
       {/* A running turn is motion, not the grey word "working" that read as a

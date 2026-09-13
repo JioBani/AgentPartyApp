@@ -11,6 +11,7 @@ import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } fro
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 import { claudeAlwaysRule, extractToolFilePath, ruleAddsInformation } from "../../shared/approvalRequest";
 import { harnessLabel, harnessShort } from "./harnessLabel";
+import { SshAgentStartError } from "./SshConnectionNotices";
 import { EnvironmentBlock } from "./EnvironmentBlock";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
 import { collectDisplayImages, hasDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
@@ -410,6 +411,10 @@ const Block = memo(function TranscriptBlock({ block, view, density, actions, det
         </div>
       ) : null;
     case "error":
+      // A remote start failure names its server and agent (§13-4); the text stays the agent's own.
+      if (block.remote) {
+        return <div className="wb-block"><SshAgentStartError server={block.remote.server} agent={harnessLabel(block.remote.agent)} message={block.text} /></div>;
+      }
       return (
         <div className="wb-block wb-error">
           <span className="wb-mono">{block.text}</span>

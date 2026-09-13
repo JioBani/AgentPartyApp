@@ -914,6 +914,7 @@ export function Workbench(props: WorkbenchProps) {
         onCreateMember={handleCreateMember}
         onOpenMember={handleOpenMember}
         onRestartMember={(member) => actions.restart(member)}
+        onOpenSshSettings={() => actions.openSshSettings()}
         onRemoveMember={onRemoveMember}
         onSetMemberKeepAwake={onSetMemberKeepAwake}
         onSleepMember={onSleepMember}

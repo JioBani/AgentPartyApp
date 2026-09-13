@@ -26,6 +26,7 @@ const PERMISSION_HINTS: Record<HarnessId, string> = {
 };
 import { cursorPolicyOf, type CursorPolicy } from "../../shared/cursorPolicy";
 import { HarnessIcon } from "./HarnessIcon";
+import { useSshBrowsing } from "../app/useSshBrowsing";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface MemberWizardProps {
@@ -145,6 +146,7 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
   const [location, setLocation] = useState<MemberExecutionLocation | undefined>(() =>
     initialLocation ? { ...initialLocation } : suggestedCwd(cwdPrefs, "windows", appWorkspaceRoot));
   const [saveAsDefault, setSaveAsDefault] = useState(false);
+  const { ssh, modals: sshModals, pathCheck: sshPathCheck } = useSshBrowsing(location, setLocation);
   /** Steps already reached, so the rail can jump back to one without re-walking. */
   const [maxStep, setMaxStep] = useState(startStep);
 
@@ -236,7 +238,10 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
    */
   const locationProblem = location ? checkLocationShape(location) : undefined;
   const distroProblem = selectableWslDistroError(location, wsl);
-  const hasLocation = Boolean(location?.cwd) && !locationProblem && !distroProblem;
+  // An SSH path is only usable once the server said so; anything else is still
+  // being checked or is shown as the reason under the field.
+  const sshPathProblem = location?.env === "ssh" && !(sshPathCheck && sshPathCheck !== "checking" && sshPathCheck.ok);
+  const hasLocation = Boolean(location?.cwd) && !locationProblem && !distroProblem && !sshPathProblem;
   const canSubmit = canCreate && hasLocation;
   // Name gates the first step, location the second; the permission step is
   // pre-seeded from the saved defaults and cannot be left unusable.
@@ -515,10 +520,12 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
                 onChangeEnv={changeEnv}
                 onBrowse={() => { void browse(); }}
                 wsl={wsl}
-                saveAsDefault={{ checked: saveAsDefault, onToggle: setSaveAsDefault }}
+                ssh={ssh}
+                saveAsDefault={location?.env === "ssh" ? undefined : { checked: saveAsDefault, onToggle: setSaveAsDefault }}
                 hint={localized("STR-3664")}
               />
-              {(locationProblem || distroProblem) && <p className="wb-wizard-error">{locationProblem?.message || distroProblem}</p>}
+              {/* SSH states its path problem on the check line under the field. */}
+              {location?.env !== "ssh" && (locationProblem || distroProblem) && <p className="wb-wizard-error">{locationProblem?.message || distroProblem}</p>}
             </section>
             )}
 
@@ -593,6 +600,8 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
             onClose={() => setPickerOpen(false)}
           />
         )}
+        {/* §12-2: adding a server opens over the wizard, which keeps what was typed. */}
+        {sshModals}
       </div>
     </div>
   );

@@ -106,8 +106,9 @@ export function WorkspaceCwdSettings(props: WorkspaceCwdSettingsProps) {
         {members.map((row) => (
           <div key={`${row.partyName}/${row.member}`} className="set-cwd-row">
             <span className="set-cwd-kind"><EnvIcon env={row.location.env} />{ENV_LABEL[row.location.env]}</span>
-            {row.location.distro && <span className="wb-cwd-distro">{row.location.distro}</span>}
-            <span className="wb-mono set-cwd-path">{row.member} · {row.location.cwd}</span>
+            {/* SSH rows follow the WSL row: the server name takes the distro chip. */}
+            {(row.location.distro || row.location.server) && <span className="wb-cwd-distro" title={row.location.server}>{row.location.distro || row.location.server}</span>}
+            <span className="wb-mono set-cwd-path" title={`${row.member} · ${row.location.cwd}`}>{row.member} · {row.location.cwd}</span>
             <span className="set-cwd-meta">{row.partyName}</span>
             <div className="set-cwd-actions">
               <button type="button" className="set-btn-soft" onClick={() => onCloneMember(row)}><LocalizedText id="STR-3644" /></button>

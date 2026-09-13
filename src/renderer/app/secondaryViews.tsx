@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FileText, FlaskConical, FolderOpen, FoldVertical, HardDrive, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, SquareTerminal, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FileText, FlaskConical, FolderOpen, FoldVertical, HardDrive, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Server, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, SquareTerminal, Trash2, X } from "lucide-react";
 import { formatDiagnosticsReport, type DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentCheck, EnvironmentReport, EnvironmentStatus } from "../../shared/environment";
 import { EnvironmentProbeSteps, EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "../workbench/EnvironmentRemedies";
@@ -28,6 +28,7 @@ import type { PartyPrimerSectionId } from "../../shared/partyPrimer";
 import { Segmented } from "../workbench/Segmented";
 import { SubtreeVisibility } from "../workbench/SubtreeVisibility";
 import { WorkspaceCwdSettings } from "./WorkspaceCwdSettings";
+import { SshServersTab } from "./SshServersTab";
 import type { CwdPreferences, ExecutionEnv, MemberLocationRow, RecentCwd } from "../../shared/memberLocation";
 import { DEFAULT_CODEX_POLICY, type CodexPolicy } from "../../shared/codexPolicy";
 import { AUTO_COMPACT_CEIL, AUTO_COMPACT_FLOOR, AUTO_COMPACT_GAUGE_MAX, AUTO_COMPACT_GAUGE_MIN, AUTO_COMPACT_STEP, clampAutoCompactAt, type AutoCompactSetting } from "../../shared/autoCompact";
@@ -1807,6 +1808,7 @@ const SETTINGS_TABS: Array<{ id: SettingsTabId; label: MessageKey; icon: ReactNo
   { id: "general", label: "runtime.tab.general", icon: <Settings2 size={14} /> },
   { id: "environment", label: "runtime.tab.environment", icon: <ShieldCheck size={14} /> },
   { id: "workspace", label: "runtime.tab.workspace", icon: <HardDrive size={14} /> },
+  { id: "ssh", label: "runtime.tab.ssh", icon: <Server size={14} /> },
   { id: "mobile", label: "runtime.tab.mobile", icon: <Smartphone size={14} /> },
   { id: "versions", label: "runtime.tab.versions", icon: <PackageCheck size={14} /> },
   { id: "diagnostics", label: "runtime.tab.diagnostics", icon: <ClipboardList size={14} /> },
@@ -1911,6 +1913,10 @@ export function SettingsView({ automationApi, logs, router, settings, onToggleDe
 
         <div className="set-tab-panel" hidden={tab !== "workspace"}><SubtreeVisibility visible={tab === "workspace"}>
           <WorkspaceCwdSettings prefs={cwdPrefs} defaultUsage={cwdDefaultUsage} members={memberLocations} now={now} onPickDefault={onPickDefaultCwd} onClearDefault={onClearDefaultCwd} onPromoteRecent={onPromoteRecentCwd} onRemoveRecent={onRemoveRecentCwd} onRecheckRecent={onRecheckRecentCwd} onCloneMember={onCloneMember} />
+        </SubtreeVisibility></div>
+
+        <div className="set-tab-panel" hidden={tab !== "ssh"}><SubtreeVisibility visible={tab === "ssh"}>
+          <SshServersTab now={now} />
         </SubtreeVisibility></div>
 
         {mobileEnabled && <div className="set-tab-panel" hidden={tab !== "mobile"}><SubtreeVisibility visible={tab === "mobile"}><MobileLinkCard active={tab === "mobile"} /></SubtreeVisibility></div>}

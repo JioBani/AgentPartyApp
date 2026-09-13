@@ -1868,6 +1868,10 @@ export function App() {
       // asking for a tab you are already on must still move the screen there.
       setSettingsTabRequest((current) => ({ tab: "environment", seq: current.seq + 1 }));
     },
+    openSshSettings() {
+      setCurrentView("settings");
+      setSettingsTabRequest((current) => ({ tab: "ssh", seq: current.seq + 1 }));
+    },
     async sendMessage(name, text, attachments, options) {
       // Optimistic echo when the member already has a live session (instant feel);
       // for a not-yet-started member the echo is appended once the shared send
