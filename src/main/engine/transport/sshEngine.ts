@@ -37,7 +37,9 @@ export function spawnSshEngine(options: SshEngineOptions): SshEngineHandle {
       runtime = await ensureNode(connection, options.server, root);
       await ensureSdk(connection, options.server, serverDir, runtime.pathExport);
     } finally {
-      await connection.exec(`rmdir ${shellQuote(lock)} 2>/dev/null || true`).catch(() => undefined);
+      await connection.exec(`rmdir ${shellQuote(lock)} 2>/dev/null || true`).catch((error) => {
+        log("warn", "ssh-engine", "provision lock cleanup failed", { server: options.server, error: messageOf(error) });
+      });
     }
     const command = [
       `cd ${shellQuote(serverDir)}`,
@@ -50,7 +52,11 @@ export function spawnSshEngine(options: SshEngineOptions): SshEngineHandle {
     await waitForReady(stream, options.server);
     log("info", "ssh-engine", "engine server ready", { server: options.server, workspace: options.workspacePosix });
     return { input: stream, output: stream };
-  })();
+  })().catch((error) => {
+    const detail = messageOf(error);
+    if (detail.startsWith(`${options.server} `)) throw error;
+    throw new Error(`${options.server} 에서 SSH 멤버를 시작하지 못했습니다: ${detail}`);
+  });
   transport.catch(() => undefined);
   return {
     transport,
@@ -72,9 +78,15 @@ async function uploadAtomically(
     const moved = await connection.exec(`chmod 600 ${shellQuote(temporary)} && mv -f ${shellQuote(temporary)} ${shellQuote(remotePath)}`);
     if (moved.code !== 0) throw new Error(moved.stderr || `could not replace ${remotePath}`);
   } catch (error) {
-    await connection.exec(`rm -f ${shellQuote(temporary)}`).catch(() => undefined);
+    await connection.exec(`rm -f ${shellQuote(temporary)}`).catch((cleanupError) => {
+      log("warn", "ssh-engine", "temporary upload cleanup failed", { remotePath: temporary, error: messageOf(cleanupError) });
+    });
     throw error;
   }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function acquireProvisionLock(
