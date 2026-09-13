@@ -152,7 +152,7 @@ export function GateReviewerInlineControl({
   const concreteTier = effective.serviceTier
     || tierOptions.find((option) => option.id === "standard")?.id
     || tierOptions[0]?.id;
-  const displayedTiers = tierOptions.map((option) => ({ id: option.id, label: option.label }));
+  const displayedTiers = tierOptions.map((option) => ({ id: option.id, label: option.label, hint: option.description }));
 
   return (
     <>
