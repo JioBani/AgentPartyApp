@@ -203,7 +203,7 @@ export class SshServerService extends EventEmitter {
         keyRemoval = "removed";
       } catch (error) {
         keyRemoval = "failed";
-        detail = `${name} 에서 자동 로그인 키를 삭제하지 못했습니다: ${messageOf(error)}`;
+        detail = messageOf(error).trim() || undefined;
       }
     }
     this.deps.transport.disconnect(name);
@@ -339,11 +339,11 @@ export class SshServerService extends EventEmitter {
           );
           await removeAuthorizedKey(passwordConnection, registeredPublicKey);
         } catch (cleanupError) {
-          cleanupDetail = ` 등록한 키도 삭제하지 못했습니다: ${messageOf(cleanupError)}`;
+          cleanupDetail = messageOf(cleanupError).trim();
         }
       }
       const active = steps.find((step) => step.status === "checking");
-      const detail = `${attempt.draft.name} 에서 자동 로그인 설정에 실패했습니다: ${messageOf(error)}${cleanupDetail}`;
+      const detail = [messageOf(error).trim(), cleanupDetail].filter(Boolean).join(" / ");
       if (active) { active.status = "fail"; active.detail = detail; }
       attempt.state = { ...attempt.state, phase: "auto-login-failed", autoLoginSteps: steps, error: { kind: active?.id === "verify" ? "key-verify-failed" : active?.id === "register" ? "key-install-failed" : "auth-failed", detail } };
       this.push(attempt);
@@ -454,12 +454,13 @@ export class SshServerService extends EventEmitter {
       const inspected = this.inspectKeyFile(attempt.draft.auth.keyPath);
       if (!("error" in inspected)) keyFingerprint = inspected.fingerprint;
     }
+    const detail = attemptFailureDetail(kind, error);
     attempt.state = {
       ...attempt.state,
       phase: "failed",
       error: {
         kind,
-        detail: attemptFailureDetail(attempt.draft.name, kind, error),
+        ...(detail ? { detail } : {}),
         ...(keyFingerprint ? { keyFingerprint } : {}),
       },
       ...(kind === "fingerprint-changed"
@@ -532,14 +533,11 @@ function problemOf(error: unknown): SshRemotePathProblem {
 }
 function messageOf(error: unknown) { return error instanceof Error ? error.message : String(error); }
 
-function attemptFailureDetail(server: string, kind: import("../../shared/sshServers").SshAttemptErrorKind, error: unknown): string {
-  if (kind === "auth-failed") return `${server} 에 로그인할 수 없습니다`;
-  if (kind === "key-rejected") return `${server} 에서 키 파일을 거부했습니다`;
-  if (kind === "password-not-allowed") return `${server} 에서 비밀번호 로그인을 사용할 수 없습니다`;
-  if (kind === "fingerprint-changed") return `${server} 지문이 바뀌었습니다`;
-  if (kind === "unsupported-os") return `${server} 는 Linux 또는 macOS 서버가 아닙니다`;
-  const raw = messageOf(error).trim();
-  return raw ? `${server} 에 연결할 수 없습니다: ${raw}` : `${server} 에 연결할 수 없습니다`;
+function attemptFailureDetail(kind: import("../../shared/sshServers").SshAttemptErrorKind, error: unknown): string | undefined {
+  // `kind` owns the localized UI title. Detail is only the underlying SSH or
+  // remote-command text, so the renderer never repeats the same sentence.
+  if (kind === "password-not-allowed" || kind === "fingerprint-changed") return undefined;
+  return messageOf(error).trim() || undefined;
 }
 
 function forgetDraftSecrets(draft: SshServerDraft): void {
