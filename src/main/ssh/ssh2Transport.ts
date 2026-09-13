@@ -59,13 +59,13 @@ export class Ssh2Transport extends SshTransport {
         if (this.pending.get(serverName) === client) this.pending.delete(serverName);
         client.end();
         if (this.cancelledPending.delete(client)) {
-          reject(new SshTransportError("unreachable", `${serverName} connection cancelled`));
+          reject(new SshTransportError("unreachable", `${serverName} 연결을 취소했습니다`));
           return;
         }
         const classified = actualFingerprint && actualFingerprint !== expectedFingerprint
-          ? new SshTransportError("fingerprint-changed", "SSH server fingerprint changed.", actualFingerprint)
+          ? new SshTransportError("fingerprint-changed", `${serverName} 지문이 바뀌었습니다`, actualFingerprint)
           : passwordNotAllowed
-            ? new SshTransportError("password-not-allowed", "The SSH server does not allow password authentication for this account.")
+            ? new SshTransportError("password-not-allowed", `${serverName} 에서 비밀번호 로그인을 사용할 수 없습니다`)
           : classify(error, credential.kind);
         this.emit("state", {
           server: serverName,
@@ -95,7 +95,7 @@ export class Ssh2Transport extends SshTransport {
         this.emit("state", { server: serverName, connection: "connected" });
         resolve(wrapper);
       });
-      const closedBeforeReady = () => fail(new Error("SSH connection closed before login completed."));
+      const closedBeforeReady = () => fail(new Error(`${serverName} 로그인 전에 연결이 끊겼습니다`));
       client.once("error", fail);
       client.once("close", closedBeforeReady);
       const config = {
