@@ -4586,3 +4586,111 @@ Invoke-RestMethod "$base/api/settings" -Method Post -ContentType application/jso
 $session = Invoke-RestMethod "$base/api/sessions" -Method Post -ContentType application/json -Body '{"workspacePath":"C:\\Project\\AgentPartyApp"}'
 Invoke-RestMethod "$base/api/sessions/$($session.id)/send" -Method Post -ContentType application/json -Body '{"text":"Reply with exactly PONG."}'
 ```
+
+## SSH servers and member locations
+
+SSH member locations use `ssh+<percent-encoded-server-name>:/absolute/posix/path`.
+The server name, rather than its network address, is the member's immutable
+execution-host identity. Only Codex (`codex`) and Claude Code (`claude-code`)
+members are supported on SSH in this release. A deleted server leaves those
+members intact; location checks return `server-missing` until a server with that
+name is registered again.
+
+The server capability routes are:
+
+| HTTP | Remote method | Result |
+| --- | --- | --- |
+| `GET /api/ssh/servers` | `ssh.list` | Sanitized server views; never credentials |
+| `POST /api/ssh/attempts` | `ssh.connectDraft` | `{attemptId}` or field errors |
+| `GET /api/ssh/attempts/:id` | `ssh.attempt` | Current sanitized progress/error state |
+| `POST /api/ssh/attempts/:id/trust-fingerprint` | `ssh.trustFingerprint` | Continue the first connection |
+| `POST /api/ssh/attempts/:id/cancel` | `ssh.cancelAttempt` | Cancel and discard the draft |
+| `POST /api/ssh/attempts/:id/auto-login` | `ssh.setupAutoLogin` | Register and verify the app key |
+| `POST /api/ssh/attempts/:id/password` | `ssh.continueWithPassword` | Save after declining auto-login |
+| `POST /api/ssh/attempts/:id/save-password` | `ssh.savePasswordLogin` | Retain password after auto-login failure |
+| `POST /api/ssh/attempts/:id/retest` | `ssh.retest` | Retry the draft attempt |
+| `POST /api/ssh/key-file/pick` | `ssh.pickKeyFile` | Desktop key-file picker (`remote: false`) |
+| `POST /api/ssh/key-file/inspect` | `ssh.inspectKeyFile` | Key kind, fingerprint and lock state |
+| `POST /api/ssh/servers/:name/test` | `ssh.testServer` | Start connection/install checks |
+| `POST /api/ssh/servers/:name/reconnect` | `ssh.reconnect` | Manually reconnect and test |
+| `POST /api/ssh/servers/:name/trust-fingerprint` | `ssh.trustNewFingerprint` | Replace a changed stored fingerprint, then test |
+| `DELETE /api/ssh/servers/:name` | `ssh.deleteServer` | Delete; optional `removeAutoLoginKey` |
+| `POST /api/ssh/public-key/copy` | `ssh.copyPublicKey` | Copy app public key (`remote: false`) |
+| `POST /api/ssh/path/check` | `ssh.checkRemotePath` | `{ok:true}` or a specific path/connection problem |
+
+### `GET /api/ssh/servers`
+
+Returns the sanitized SSH server views. Credentials are never returned.
+
+### `POST /api/ssh/attempts`
+
+Starts validation and connection of an SSH server draft and returns `{attemptId}`.
+
+### `GET /api/ssh/attempts/:id`
+
+Returns the current sanitized connection-attempt state for automation polling.
+
+### `POST /api/ssh/attempts/:id/trust-fingerprint`
+
+Accepts the fingerprint shown by a first connection and continues login.
+
+### `POST /api/ssh/attempts/:id/cancel`
+
+Cancels the attempt, discards its credentials, and rolls back a pending automatic-login key.
+
+### `POST /api/ssh/attempts/:id/auto-login`
+
+Registers the app-owned public key, verifies key login, and then discards the password.
+
+### `POST /api/ssh/attempts/:id/password`
+
+Declines automatic login and saves the password-backed server.
+
+### `POST /api/ssh/attempts/:id/save-password`
+
+Keeps password login after automatic-login setup failed.
+
+### `POST /api/ssh/attempts/:id/retest`
+
+Retries a failed draft attempt.
+
+### `POST /api/ssh/key-file/pick`
+
+Opens the desktop key-file picker. This method is not remotely callable.
+
+### `POST /api/ssh/key-file/inspect`
+
+Returns a key file's kind, fingerprint, comment, and encrypted/locked state without key material.
+
+### `POST /api/ssh/servers/:name/test`
+
+Starts SSH login and remote agent-installation checks.
+
+### `POST /api/ssh/servers/:name/reconnect`
+
+Closes the cached connection and starts a fresh connection test.
+
+### `POST /api/ssh/servers/:name/trust-fingerprint`
+
+Reads and saves the endpoint's current fingerprint, then reconnects with that exact fingerprint pinned.
+
+### `DELETE /api/ssh/servers/:name`
+
+Deletes the server. Pass `removeAutoLoginKey: true` to request remote key removal first.
+
+### `POST /api/ssh/public-key/copy`
+
+Copies the app-owned automatic-login public key. This method is not remotely callable.
+
+### `POST /api/ssh/path/check`
+
+Checks an absolute POSIX directory on a registered server and returns a specific path or connection problem.
+
+`POST /api/ssh/attempts` accepts `{name,host,port,user,originalName?,auth}`,
+where `auth` is either `{kind:"password",password?}` or
+`{kind:"key",keyPath,passphrase?}`. Passwords, private keys and passphrases are
+write-only. They are OS-encrypted in the desktop store and are absent from every
+API response. The renderer additionally receives `ssh:attempt` progress and
+`ssh:servers` snapshot events. Connection tests report login success plus only
+the installed state of `agent:codex`, `agent:claude-code`, `agent:cursor`, and
+`agent:grok`; AgentParty does not manage remote CLI login state.

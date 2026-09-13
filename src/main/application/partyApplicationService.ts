@@ -612,6 +612,27 @@ export class PartyApplicationService {
     return { backfilled };
   }
 
+  /** Renames the server alias embedded in every immutable SSH member location. */
+  renameSshServerLocations(from: string, to: string): { updated: number } {
+    if (!from || !to) throw new Error("SSH server rename requires both aliases.");
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const touched = new Set<string>();
+    let updated = 0;
+    for (const member of state.members) {
+      if (!member.location) continue;
+      const location = parseMemberLocation(member.location);
+      if (location.env !== "ssh" || location.server !== from) continue;
+      member.location = serializeMemberLocation({ ...location, server: to });
+      member.updatedAt = new Date().toISOString();
+      touched.add(this.partyIdOf(member));
+      updated += 1;
+    }
+    for (const partyId of touched) this.repository.writeParty(workspace, partyId, this.membersOf(state, partyId), this.messagesOf(state, partyId));
+    if (updated) this.invalidate();
+    return { updated };
+  }
+
   createParty(input: CreatePartyInput): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
@@ -674,6 +695,7 @@ export class PartyApplicationService {
     // would instead read as "the user chose nowhere".
     const member = buildPartyMember({ ...input, partyId: party.id, location: input.location || workspace }, getSettings());
     this.assertNotBetaLocked(normalizeHarnessId(member.runtime), member.model);
+    this.assertSshHarnessSupported(member, normalizeHarnessId(member.runtime));
     if (state.members.some((item) => item.partyId === party.id && item.name === member.name)) {
       throw new Error(`Party member '${member.name}' already exists in '${party.name}'.`);
     }
@@ -1084,6 +1106,7 @@ export class PartyApplicationService {
       });
       return { ...this.result(`Member '${member.name}' session is already running.`, state, member), session: existing };
     }
+    this.assertSshHarnessSupported(member, normalizeHarnessId(input.selectedHarnessId || member.runtime));
     // Where this process may run it, decided BEFORE anything is written: a
     // member the desktop cannot start must leave no half-started state behind.
     //
@@ -1140,6 +1163,7 @@ export class PartyApplicationService {
     const changesHarness = Boolean(requestedHarness && requestedHarness !== currentHarness);
     const nextHarness = requestedHarness || currentHarness;
     this.assertNotBetaLocked(nextHarness, input.model || member.model);
+    this.assertSshHarnessSupported(member, nextHarness);
     if (changesHarness && this.memberHasStartedTurn(member)) {
       throw new Error(`Cannot change harness for '${member.name}' after its first turn has started.`);
     }
@@ -2945,6 +2969,15 @@ export class PartyApplicationService {
     }
   }
 
+  private assertSshHarnessSupported(member: PartyMember, harnessId: HarnessId): void {
+    if (!member.location || parseMemberLocation(member.location).env !== "ssh") return;
+    if (harnessId === "codex" || harnessId === "claude-code") return;
+    const server = parseMemberLocation(member.location).server || "unknown";
+    throw new Error(
+      `SSH server '${server}' cannot start ${harnessId}. SSH members support Codex and Claude Code in this release.`,
+    );
+  }
+
   /** Live turn count wins; persisted transcript keeps the lock after restart. */
   private memberHasStartedTurn(member: PartyMember): boolean {
     const snapshot = this.sessionViewOf(member.sessionId)?.snapshot;
@@ -2975,6 +3008,9 @@ export class PartyApplicationService {
       return {};
     }
     const location = parseMemberLocation(member.location);
+    if (location.env === "ssh") {
+      return { cwd: location.cwd, crossHostTarget: member.location };
+    }
     if (location.env === "wsl" && !isHostDistro(location.distro)) {
       // The party remains owned by this engine. SessionManager supplies a
       // transport-backed HarnessSession whose native process runs in the distro

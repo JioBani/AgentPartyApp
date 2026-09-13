@@ -12,7 +12,7 @@ import { parseWorkspaceLocation, serializeWorkspaceLocation, type WorkspaceLocat
  * become a rename across twenty call sites.
  */
 export type { WorkspaceHost, WorkspaceLocation } from "./workspaceUri";
-export { parseWorkspaceLocation, serializeWorkspaceLocation, isWslLocation } from "./workspaceUri";
+export { parseWorkspaceLocation, serializeWorkspaceLocation, isWslLocation, isSshLocation } from "./workspaceUri";
 
 
 /**
@@ -30,6 +30,9 @@ export { parseWorkspaceLocation, serializeWorkspaceLocation, isWslLocation } fro
  * that import is exactly what the renderer must not pull in.
  */
 export function workspaceLocationKey(loc: WorkspaceLocation): string {
+  if (loc.host.kind === "ssh") {
+    return `ssh+${encodeURIComponent(loc.host.server)}:${path.posix.normalize(loc.path || "/")}`;
+  }
   if (loc.host.kind === "wsl") {
     // WSL resolves distro names case-insensitively (`Ubuntu` and `ubuntu` start
     // the same distro), while its POSIX paths remain case-sensitive. Folding
@@ -106,6 +109,9 @@ export function workspaceArgFromArgv(argv: string[]): { location?: string; warni
   const location = parseWorkspaceLocation(value);
   if (location.host.kind === "wsl" && (!location.host.distro || !path.posix.isAbsolute(location.path))) {
     return { warning: `ignoring invalid WSL --workspace value (absolute path required): ${value}` };
+  }
+  if (location.host.kind === "ssh" && (!location.host.server || !path.posix.isAbsolute(location.path))) {
+    return { warning: `ignoring invalid SSH --workspace value (server and absolute path required): ${value}` };
   }
   if (location.host.kind === "local" && !path.win32.isAbsolute(location.path) && !path.posix.isAbsolute(location.path)) {
     return { warning: `ignoring non-absolute --workspace value: ${value}` };

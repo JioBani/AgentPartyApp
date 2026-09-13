@@ -149,7 +149,7 @@ export function applyEvents(current: Record<string, TranscriptBlock[]>, sessionI
     } else if (event.type === "error") {
       next = event.environment
         ? upsertEnvironmentBlock(next, sessionId, event.environment.checkId, event.message, event.environment.raw)
-        : appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "error", text: event.message, at: nowTime() });
+        : appendBlock(next, sessionId, { id: crypto.randomUUID(), kind: "error", text: event.message, remote: event.remote, at: nowTime() });
     }
   }
   // Persistence already trims to the retention window at write time, but the

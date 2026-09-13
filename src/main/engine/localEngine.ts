@@ -73,6 +73,10 @@ export class LocalEngine implements EngineConnection {
     return this.party.backfillMemberLocations();
   }
 
+  async renameSshServerLocations(from: string, to: string) {
+    return this.party.renameSshServerLocations(from, to);
+  }
+
   async createParty(input: CreatePartyInput) {
     return this.party.createParty(input);
   }

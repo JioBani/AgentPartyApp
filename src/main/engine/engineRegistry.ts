@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { isWslLocation, parseWorkspaceLocation, workspaceKey, type WorkspaceLocation } from "../../shared/workspaceLocation";
+import { isSshLocation, isWslLocation, parseWorkspaceLocation, workspaceKey, type WorkspaceLocation } from "../../shared/workspaceLocation";
 import type { SessionManager } from "../sessionManager";
 import type { WorkspaceManager } from "../workspaceManager";
 import type { EngineConnection } from "./engineConnection";
@@ -111,6 +111,18 @@ export class EngineRegistry {
     this.engines.delete(key);
   }
 
+  /** Drop every cached engine hosted by one SSH server after its connection or
+   * credentials change. The next request provisions a fresh authenticated
+   * channel instead of reusing a dead RemoteEngineClient. */
+  disposeSshServer(server: string): void {
+    for (const [key, engine] of this.engines) {
+      const location = parseWorkspaceLocation(engine.workspacePath);
+      if (location.host.kind !== "ssh" || location.host.server !== server) continue;
+      disposeEngine(engine);
+      this.engines.delete(key);
+    }
+  }
+
   disposeAll(): void {
     for (const engine of this.engines.values()) {
       disposeEngine(engine);
@@ -123,11 +135,11 @@ export class EngineRegistry {
     // Shares one predicate with everything that asks "does THIS process serve
     // that workspace" (main's session-list broadcast). Two spellings of the same
     // rule drifting apart is how a workspace ends up with two producers.
-    if (isWslLocation(location)) {
+    if (isWslLocation(location) || isSshLocation(location)) {
       if (!this.deps.createRemoteEngine) {
         // Surfaced explicitly — never silently downgraded to a local Windows run.
         throw new Error(
-          `WSL workspace '${workspacePath}' requires the remote engine, which is not configured in this process.`,
+          `Remote workspace '${workspacePath}' requires the remote engine, which is not configured in this process.`,
         );
       }
       return this.deps.createRemoteEngine(location, workspacePath);
@@ -151,6 +163,13 @@ function assertUsableWorkspaceLocation(workspacePath: string): void {
   if (location.host.kind === "wsl") {
     if (!location.host.distro || !path.posix.isAbsolute(location.path)) {
       throw new Error(`WSL workspace '${workspacePath}' must name a distro and an absolute POSIX path.`);
+    }
+    return;
+  }
+
+  if (location.host.kind === "ssh") {
+    if (!location.host.server || !path.posix.isAbsolute(location.path)) {
+      throw new Error(`SSH workspace '${workspacePath}' must name a server and an absolute POSIX path.`);
     }
     return;
   }

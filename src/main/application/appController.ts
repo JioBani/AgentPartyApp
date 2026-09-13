@@ -99,6 +99,8 @@ import {
   type ThemePreference,
 } from "../../shared/appTheme";
 import { applyNativeCliAuthProgress, nativeCliAuthProgressCheck } from "../../shared/nativeCliAuth";
+import type { SshServerDraft } from "../../shared/sshServers";
+import type { SshDraftValidationError, SshServerService } from "../ssh/sshServerService";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -178,6 +180,11 @@ export interface AppControllerDeps {
    * RPC by the desktop that owns the window.
    */
   approvals?: ApprovalIndex;
+  /** Desktop-owned SSH credentials and connections; absent in headless workers. */
+  sshServers?: SshServerService;
+  /** Native key picker and clipboard stay injected so AppController remains Electron-free. */
+  pickSshKeyFile?: (windowId?: string) => Promise<string | undefined>;
+  writeClipboardText?: (text: string) => void;
   /** Opens an interactive CLI in the desktop user's default terminal. Desktop-only. */
   launchCliContinuation?: (input: { target: CliContinuationDetails; location: ReturnType<typeof parseWorkspaceLocation> }) => Promise<number>;
   /**
@@ -367,6 +374,7 @@ export class AppController {
       uri: serializeWorkspaceLocation(location),
       kind: location.host.kind,
       distro: location.host.kind === "wsl" ? location.host.distro : undefined,
+      server: location.host.kind === "ssh" ? location.host.server : undefined,
       path: location.path,
     };
   }
@@ -2142,6 +2150,12 @@ export class AppController {
    * its own wording for the same three failures.
    */
   async checkCwd(location: MemberExecutionLocation): Promise<{ ok: true; usable: boolean; problem?: CwdProblem; location: MemberExecutionLocation }> {
+    if (location.env === "ssh") {
+      const result = await this.requireSshServers().checkRemotePath(location.server || "", location.cwd);
+      return result.ok
+        ? { ok: true, usable: true, location }
+        : { ok: true, usable: false, problem: cwdProblem(result.problem), location };
+    }
     const result = await checkCwd(location);
     return { ok: true, usable: !result.problem, problem: result.problem, location: result.location };
   }
@@ -2222,6 +2236,42 @@ export class AppController {
       }));
     return { ok: true, members };
   }
+
+  // --- SSH servers --------------------------------------------------------
+  async listSshServers() { return this.requireSshServers().listServers(); }
+  sshAttemptState(attemptId: string) { return this.requireSshServers().attemptState(attemptId); }
+
+  sshConnectDraft(draft: SshServerDraft): { attemptId: string } | { fieldErrors: import("../../shared/sshServers").SshFieldError[] } {
+    try {
+      return this.requireSshServers().connectDraft(draft);
+    } catch (error) {
+      if (error && typeof error === "object" && Array.isArray((error as SshDraftValidationError).fieldErrors)) {
+        return { fieldErrors: (error as SshDraftValidationError).fieldErrors };
+      }
+      throw error;
+    }
+  }
+
+  sshTrustFingerprint(attemptId: string) { this.requireSshServers().trustFingerprint(attemptId); }
+  sshCancelAttempt(attemptId: string) { this.requireSshServers().cancelAttempt(attemptId); }
+  sshSetupAutoLogin(attemptId: string) { this.requireSshServers().setupAutoLogin(attemptId); }
+  sshContinueWithPassword(attemptId: string) { this.requireSshServers().continueWithPassword(attemptId); }
+  sshSavePasswordLogin(attemptId: string) { this.requireSshServers().savePasswordLogin(attemptId); }
+  sshRetest(attemptId: string) { this.requireSshServers().retest(attemptId); }
+  async sshPickKeyFile(windowId?: string): Promise<string | null> {
+    if (!this.deps.pickSshKeyFile) throw new Error("SSH key selection is unavailable in this process.");
+    return (await this.deps.pickSshKeyFile(windowId)) || null;
+  }
+  sshInspectKeyFile(file: string) { return this.requireSshServers().inspectKeyFile(file); }
+  sshTestServer(name: string) { return this.requireSshServers().testServer(name); }
+  sshReconnect(name: string) { return this.requireSshServers().reconnect(name); }
+  sshTrustNewFingerprint(name: string) { return this.requireSshServers().trustNewFingerprint(name); }
+  sshDeleteServer(name: string, options: { removeAutoLoginKey: boolean }) { return this.requireSshServers().deleteServer(name, options.removeAutoLoginKey); }
+  sshCopyPublicKey(): void {
+    if (!this.deps.writeClipboardText) throw new Error("Clipboard access is unavailable in this process.");
+    this.deps.writeClipboardText(this.requireSshServers().publicKey());
+  }
+  sshCheckRemotePath(server: string, cwd: string) { return this.requireSshServers().checkRemotePath(server, cwd); }
 
   async createParty(workspacePath: string, input: CreatePartyInput, windowId?: string): Promise<ReturnType<PartyApplicationService["createParty"]>> {
     // `main` needs a cwd it can actually run in. Checked BEFORE the party is
@@ -2356,7 +2406,16 @@ export class AppController {
     if (typeof serialized !== "string") {
       throw new Error("실행 위치 형식이 잘못되었습니다 — 직렬화된 경로 문자열이 필요합니다.");
     }
-    const check = await checkCwd(parseMemberLocation(serialized));
+    const location = parseMemberLocation(serialized);
+    if (location.env === "ssh") {
+      const remote = await this.requireSshServers().checkRemotePath(location.server || "", location.cwd);
+      if (!remote.ok) {
+        const problem = cwdProblem(remote.problem);
+        throw new Error(`실행 위치를 사용할 수 없습니다 — ${problem.message}: ${serialized}`);
+      }
+      return { location, serialized };
+    }
+    const check = await checkCwd(location);
     if (check.problem) {
       throw new Error(`실행 위치를 사용할 수 없습니다 — ${check.problem.message}: ${check.serialized}`);
     }
@@ -2511,8 +2570,9 @@ export class AppController {
       partyId,
       tool,
       executionLocation: member.location,
-      executionHost: location.host.kind === "wsl" ? "wsl" as const : "windows" as const,
+      executionHost: location.host.kind,
       ...(location.host.kind === "wsl" ? { distro: location.host.distro } : {}),
+      ...(location.host.kind === "ssh" ? { server: location.host.server } : {}),
     };
   }
 
@@ -2534,8 +2594,9 @@ export class AppController {
       member: member.name,
       partyId,
       executionLocation: member.location,
-      executionHost: location.host.kind === "wsl" ? "wsl" as const : "windows" as const,
+      executionHost: location.host.kind,
       ...(location.host.kind === "wsl" ? { distro: location.host.distro } : {}),
+      ...(location.host.kind === "ssh" ? { server: location.host.server } : {}),
     };
   }
 
@@ -2854,6 +2915,9 @@ export class AppController {
       return { ok: true, supported: false, member: name, reason: inspected.reason, launched: false };
     }
     const location = parseWorkspaceLocation(member.location);
+    if (location.host.kind === "ssh") {
+      return { ok: true, supported: false, member: name, reason: "SSH 멤버는 1단계에서 원격 경로 복사만 지원합니다.", launched: false };
+    }
     const locationCheck = await checkCwd(parseMemberLocation(member.location));
     const shell = location.host.kind === "wsl" ? "bash" : "powershell";
     const argv = cliContinuationArgv(inspected.target, location.host);
@@ -3204,6 +3268,12 @@ export class AppController {
     const sourceLocation = options?.sourceLocation
       ? this.requireAbsoluteSourceLocation(options.sourceLocation)
       : undefined;
+    if (sourceLocation) {
+      const source = parseWorkspaceLocation(sourceLocation);
+      if (source.host.kind === "ssh") {
+        throw new Error(`${source.host.server} 의 원격 파일은 이 PC에서 열 수 없습니다. 경로를 복사하세요.`);
+      }
+    }
     const resolutionOwner = sourceLocation ? "the member's execution location" : "the window's workspace";
     let resolved = this.resolveLocalPath(windowId, raw, sourceLocation);
     try {
@@ -3286,6 +3356,10 @@ export class AppController {
     if (location.host.kind === "wsl") {
       if (!location.host.distro || !path.posix.isAbsolute(location.path)) {
         throw new Error(`Invalid sourceLocation '${value}': an absolute WSL path is required.`);
+      }
+    } else if (location.host.kind === "ssh") {
+      if (!location.host.server || !path.posix.isAbsolute(location.path)) {
+        throw new Error(`Invalid sourceLocation '${value}': an SSH server and absolute path are required.`);
       }
     } else if (!path.win32.isAbsolute(location.path) && !path.posix.isAbsolute(location.path)) {
       throw new Error(`Invalid sourceLocation '${value}': an absolute local path is required.`);
@@ -4039,6 +4113,13 @@ export class AppController {
     if (!this.isQaEnabled()) {
       throw new Error("QA endpoints are disabled. Launch with AGENTPARTY_QA=1 (or E2E mode).");
     }
+  }
+
+  private requireSshServers(): SshServerService {
+    if (!this.deps.sshServers) {
+      throw new Error("SSH server management is unavailable in this process.");
+    }
+    return this.deps.sshServers;
   }
 
   private async captureNonEmptyPage(win: BrowserWindow): Promise<{ image: NativeImage; buffer: Buffer }> {

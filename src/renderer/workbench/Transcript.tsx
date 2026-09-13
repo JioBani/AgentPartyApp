@@ -599,7 +599,7 @@ const SESSION_SPAWN_META: Record<SessionSpawnState, { title: string; tone: strin
   failed: { title: "세션 시작 실패", tone: "danger", note: "" },
 };
 
-const SESSION_SPAWN_HOSTS: Record<string, string> = { windows: "Windows", wsl: "WSL" };
+const SESSION_SPAWN_HOSTS: Record<string, string> = { windows: "Windows", wsl: "WSL", ssh: "SSH" };
 
 /**
  * A member's session START.

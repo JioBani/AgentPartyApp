@@ -13,6 +13,7 @@ import type { GuideScreenInfo } from "../shared/guide";
 import type { GuideHostApi } from "../shared/guideHost";
 import type { TranscriptBlock } from "../shared/transcript";
 import type { TranscriptSnapshot } from "../shared/sessionEventStream";
+import type { SshConnectAttempt, SshDeleteResult, SshFieldError, SshKeyInspection, SshRemotePathCheck, SshServerDraft, SshServerView } from "../shared/sshServers";
 
 const appearanceBoot = parseAppearanceBootArgs(process.argv)
   || ipcRenderer.sendSync("appearance:boot");
@@ -59,6 +60,32 @@ const api = {
   listWslDistros: () => ipcRenderer.invoke("cwd:distros"),
   browseCwd: (env: string, distro?: string) => ipcRenderer.invoke("cwd:browse", env, distro),
   listMemberLocations: () => ipcRenderer.invoke("cwd:memberLocations"),
+  listSshServers: (): Promise<SshServerView[]> => ipcRenderer.invoke("ssh:list"),
+  sshConnectDraft: (draft: SshServerDraft): Promise<{ attemptId: string } | { fieldErrors: SshFieldError[] }> => ipcRenderer.invoke("ssh:connectDraft", draft),
+  sshTrustFingerprint: (attemptId: string): Promise<void> => ipcRenderer.invoke("ssh:trustFingerprint", attemptId),
+  sshCancelAttempt: (attemptId: string): Promise<void> => ipcRenderer.invoke("ssh:cancelAttempt", attemptId),
+  sshSetupAutoLogin: (attemptId: string): Promise<void> => ipcRenderer.invoke("ssh:setupAutoLogin", attemptId),
+  sshContinueWithPassword: (attemptId: string): Promise<void> => ipcRenderer.invoke("ssh:continueWithPassword", attemptId),
+  sshSavePasswordLogin: (attemptId: string): Promise<void> => ipcRenderer.invoke("ssh:savePasswordLogin", attemptId),
+  sshRetest: (attemptId: string): Promise<void> => ipcRenderer.invoke("ssh:retest", attemptId),
+  sshPickKeyFile: (): Promise<string | null> => ipcRenderer.invoke("ssh:pickKeyFile"),
+  sshInspectKeyFile: (file: string): Promise<SshKeyInspection> => ipcRenderer.invoke("ssh:inspectKeyFile", file),
+  sshTestServer: (name: string): Promise<void> => ipcRenderer.invoke("ssh:testServer", name),
+  sshReconnect: (name: string): Promise<void> => ipcRenderer.invoke("ssh:reconnect", name),
+  sshTrustNewFingerprint: (name: string): Promise<void> => ipcRenderer.invoke("ssh:trustNewFingerprint", name),
+  sshDeleteServer: (name: string, options: { removeAutoLoginKey: boolean }): Promise<SshDeleteResult> => ipcRenderer.invoke("ssh:deleteServer", name, options),
+  sshCopyPublicKey: (): Promise<void> => ipcRenderer.invoke("ssh:copyPublicKey"),
+  sshCheckRemotePath: (server: string, cwd: string): Promise<SshRemotePathCheck> => ipcRenderer.invoke("ssh:checkRemotePath", server, cwd),
+  onSshServers: (callback: (servers: SshServerView[]) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, servers: SshServerView[]) => callback(servers);
+    ipcRenderer.on("ssh:servers", listener);
+    return () => ipcRenderer.off("ssh:servers", listener);
+  },
+  onSshAttempt: (callback: (attempt: SshConnectAttempt) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, attempt: SshConnectAttempt) => callback(attempt);
+    ipcRenderer.on("ssh:attempt", listener);
+    return () => ipcRenderer.off("ssh:attempt", listener);
+  },
   listAuth: () => ipcRenderer.invoke("auth:list"),
   setDeepseekKey: (value: string) => ipcRenderer.invoke("auth:setDeepseekKey", value),
   clearDeepseekKey: () => ipcRenderer.invoke("auth:clearDeepseekKey"),

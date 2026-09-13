@@ -140,6 +140,7 @@ export interface EngineConnection {
   listAllParties(): Promise<ReturnType<PartyApplicationService["listAll"]>>;
   /** Backfills legacy members on the host that owns their workspace store. */
   backfillMemberLocations(): Promise<ReturnType<PartyApplicationService["backfillMemberLocations"]>>;
+  renameSshServerLocations(from: string, to: string): Promise<ReturnType<PartyApplicationService["renameSshServerLocations"]>>;
   createParty(input: CreatePartyInput): Promise<ReturnType<PartyApplicationService["createParty"]>>;
   selectParty(partyId: string): Promise<ReturnType<PartyApplicationService["selectParty"]>>;
   removeParty(partyId: string): Promise<ReturnType<PartyApplicationService["removeParty"]>>;

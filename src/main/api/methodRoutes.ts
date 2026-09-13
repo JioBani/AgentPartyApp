@@ -11,6 +11,7 @@ import { modelRoutes } from "./routes/modelRoutes";
 import { partyRoutes } from "./routes/partyRoutes";
 import { perfRoutes } from "./routes/perfRoutes";
 import { workspaceLocationRoutes } from "./routes/workspaceLocationRoutes";
+import { sshRoutes } from "./routes/sshRoutes";
 import { sessionRoutes } from "./routes/sessionRoutes";
 import { windowRoutes } from "./routes/windowRoutes";
 
@@ -42,6 +43,7 @@ const routes: MethodRoute[] = [
   ...sessionRoutes,
   ...partyRoutes,
   ...workspaceLocationRoutes,
+  ...sshRoutes,
   ...windowRoutes,
 ];
 

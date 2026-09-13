@@ -690,8 +690,9 @@ export interface WindowInfo {
 export interface WorkspaceDisplay {
   /** Serialized location: a raw path for local, `wsl+<distro>:/path` for WSL. */
   uri: string;
-  kind: "local" | "wsl";
+  kind: "local" | "wsl" | "ssh";
   distro?: string;
+  server?: string;
   /** Host-native path (a Linux path for WSL). */
   path: string;
 }
