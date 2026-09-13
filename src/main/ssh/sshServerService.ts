@@ -36,7 +36,7 @@ class SshAttemptFailure extends Error {
 
 export class SshDraftValidationError extends Error {
   constructor(readonly fieldErrors: SshFieldError[]) {
-    super("SSH server draft validation failed.");
+    super("SSH 서버 입력값을 확인하세요");
   }
 }
 
@@ -124,7 +124,7 @@ export class SshServerService extends EventEmitter {
 
   trustFingerprint(attemptId: string): void {
     const attempt = this.requireAttempt(attemptId);
-    if (attempt.state.phase !== "fingerprint" || !attempt.fingerprint) throw new Error(`SSH attempt '${attemptId}' is not waiting for fingerprint approval.`);
+    if (attempt.state.phase !== "fingerprint" || !attempt.fingerprint) throw new Error("지문 승인을 기다리는 연결이 아닙니다");
     attempt.state = { ...attempt.state, phase: "connecting", steps: [{ id: "connect", status: "ok" }, { id: "login", status: "checking" }] };
     this.push(attempt);
     void this.login(attempt);
@@ -172,7 +172,7 @@ export class SshServerService extends EventEmitter {
   retest(attemptId: string): void {
     const attempt = this.requireAttempt(attemptId);
     if (attempt.state.phase !== "failed" && attempt.state.phase !== "auto-login-failed") {
-      throw new Error(`SSH attempt '${attemptId}' cannot be retested during '${attempt.state.phase}'.`);
+      throw new Error("현재 단계에서는 연결을 다시 시험할 수 없습니다");
     }
     attempt.state = { ...attempt.state, phase: "connecting", error: undefined, steps: [{ id: "connect", status: "checking" }, { id: "login", status: "pending" }] };
     this.push(attempt);
@@ -284,7 +284,7 @@ export class SshServerService extends EventEmitter {
       const os = await connection.exec("uname -s");
       if (attempt.cancelled) return;
       if (os.code !== 0 || !/^(Linux|Darwin)\s*$/i.test(os.stdout)) {
-        throw new SshAttemptFailure("unsupported-os", `Unsupported remote operating system: ${os.stdout.trim() || os.stderr.trim()}`);
+        throw new SshAttemptFailure("unsupported-os", os.stdout.trim() || os.stderr.trim() || "지원하지 않는 운영체제");
       }
       attempt.state = { ...attempt.state, phase: attempt.draft.auth.kind === "password" ? "offer-auto-login" : "testing", steps: [{ id: "connect", status: "ok" }, { id: "login", status: "ok" }] };
       this.push(attempt);
@@ -321,7 +321,7 @@ export class SshServerService extends EventEmitter {
       const keyConnection = await this.deps.transport.connect(attempt.draft.name, targetOf(attempt.draft), { kind: "key", privateKey: pair.privateKey }, attempt.fingerprint!);
       if (attempt.cancelled) return;
       const verify = await keyConnection.exec("true");
-      if (verify.code !== 0) throw new Error(verify.stderr || "automatic login verification failed");
+      if (verify.code !== 0) throw new Error(verify.stderr || "키로 다시 로그인하지 못했습니다");
       steps[2].status = "ok"; steps[3].status = "checking"; this.push(attempt);
       await this.testAndSave(attempt, keyConnection, "auto", pair);
       steps[3].status = "ok"; this.push(attempt);
@@ -416,11 +416,11 @@ export class SshServerService extends EventEmitter {
       this.deps.transport.disconnect(server);
     }
   }
-  private requireServer(name: string) { const server = this.deps.store.get(name); if (!server) throw new Error(`SSH server '${name}' is not registered.`); return server; }
-  private requireAttempt(id: string) { const value = this.attempts.get(id); if (!value) throw new Error(`SSH connection attempt '${id}' was not found.`); return value; }
+  private requireServer(name: string) { const server = this.deps.store.get(name); if (!server) throw new Error(`${name} 서버가 없습니다`); return server; }
+  private requireAttempt(id: string) { const value = this.attempts.get(id); if (!value) throw new Error("연결 시도를 찾을 수 없습니다"); return value; }
   private requirePhase(attempt: PendingAttempt, phase: SshConnectAttempt["phase"]) {
     if (attempt.state.phase !== phase) {
-      throw new Error(`SSH attempt '${attempt.state.attemptId}' expected '${phase}', but is '${attempt.state.phase}'.`);
+      throw new Error("현재 연결 단계에서는 이 동작을 할 수 없습니다");
     }
   }
   private push(attempt: PendingAttempt) { this.emit("attempt", structuredClone(attempt.state)); }
@@ -482,12 +482,12 @@ async function runChecks(connection: Awaited<ReturnType<SshTransport["connect"]>
 async function appendAuthorizedKey(connection: Awaited<ReturnType<SshTransport["connect"]>>, publicKey: string) {
   const marker = publicKey.trim();
   const command = `umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; grep -Fqx ${shellQuote(marker)} ~/.ssh/authorized_keys || printf '%s\\n' ${shellQuote(marker)} >> ~/.ssh/authorized_keys`;
-  const result = await connection.exec(command); if (result.code !== 0) throw new Error(result.stderr || "could not register automatic-login key");
+  const result = await connection.exec(command); if (result.code !== 0) throw new Error(result.stderr || "자동 로그인 키를 등록하지 못했습니다");
 }
 
 async function removeAuthorizedKey(connection: Awaited<ReturnType<SshTransport["connect"]>>, publicKey: string) {
   const result = await connection.exec(`test ! -f ~/.ssh/authorized_keys || { grep -Fvx ${shellQuote(publicKey.trim())} ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.agentparty.tmp; mv ~/.ssh/authorized_keys.agentparty.tmp ~/.ssh/authorized_keys; }`);
-  if (result.code !== 0) throw new Error(result.stderr || "could not remove automatic-login key");
+  if (result.code !== 0) throw new Error(result.stderr || "자동 로그인 키를 삭제하지 못했습니다");
 }
 
 function generateAutoLoginKey(): { privateKey: string; publicKey: string } {
@@ -509,7 +509,7 @@ function targetOf(value: { host: string; port: number; user: string }): SshTarge
 function credentialOfDraft(draft: SshServerDraft, old?: StoredSshServer): SshCredential {
   if (draft.auth.kind === "password") {
     const password = draft.auth.password || (old?.auth === "password" ? old.secret.password : undefined);
-    if (!password) throw new Error(`SSH server '${draft.name}' requires a password.`);
+    if (!password) throw new Error(`${draft.name} 의 비밀번호를 입력하세요`);
     return { kind: "password", password };
   }
   return { kind: "key", privateKey: fs.readFileSync(draft.auth.keyPath, "utf8"), ...(draft.auth.passphrase ? { passphrase: draft.auth.passphrase } : {}) };
@@ -519,8 +519,8 @@ function secretOfDraft(draft: SshServerDraft, old?: StoredSshServer): StoredSshS
   return { privateKey: fs.readFileSync(draft.auth.keyPath, "utf8"), ...(draft.auth.passphrase ? { passphrase: draft.auth.passphrase } : {}) };
 }
 function credentialOfStored(server: StoredSshServer): SshCredential {
-  if (server.auth === "password") { if (!server.secret.password) throw new Error(`Stored password for SSH server '${server.name}' is missing.`); return { kind: "password", password: server.secret.password }; }
-  if (!server.secret.privateKey) throw new Error(`Stored private key for SSH server '${server.name}' is missing.`);
+  if (server.auth === "password") { if (!server.secret.password) throw new Error(`${server.name} 의 저장된 비밀번호가 없습니다`); return { kind: "password", password: server.secret.password }; }
+  if (!server.secret.privateKey) throw new Error(`${server.name} 의 저장된 키가 없습니다`);
   return { kind: "key", privateKey: server.secret.privateKey, ...(server.secret.passphrase ? { passphrase: server.secret.passphrase } : {}) };
 }
 function draftFromStored(server: StoredSshServer): SshServerDraft {

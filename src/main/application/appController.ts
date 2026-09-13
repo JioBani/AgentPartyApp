@@ -2259,7 +2259,7 @@ export class AppController {
   sshSavePasswordLogin(attemptId: string) { this.requireSshServers().savePasswordLogin(attemptId); }
   sshRetest(attemptId: string) { this.requireSshServers().retest(attemptId); }
   async sshPickKeyFile(windowId?: string): Promise<string | null> {
-    if (!this.deps.pickSshKeyFile) throw new Error("SSH key selection is unavailable in this process.");
+    if (!this.deps.pickSshKeyFile) throw new Error("이 프로세스에서는 SSH 키 파일을 선택할 수 없습니다");
     return (await this.deps.pickSshKeyFile(windowId)) || null;
   }
   sshInspectKeyFile(file: string) { return this.requireSshServers().inspectKeyFile(file); }
@@ -2268,7 +2268,7 @@ export class AppController {
   sshTrustNewFingerprint(name: string) { return this.requireSshServers().trustNewFingerprint(name); }
   sshDeleteServer(name: string, options: { removeAutoLoginKey: boolean }) { return this.requireSshServers().deleteServer(name, options.removeAutoLoginKey); }
   sshCopyPublicKey(): void {
-    if (!this.deps.writeClipboardText) throw new Error("Clipboard access is unavailable in this process.");
+    if (!this.deps.writeClipboardText) throw new Error("이 프로세스에서는 SSH 공개 키를 복사할 수 없습니다");
     this.deps.writeClipboardText(this.requireSshServers().publicKey());
   }
   sshCheckRemotePath(server: string, cwd: string) { return this.requireSshServers().checkRemotePath(server, cwd); }
@@ -4117,7 +4117,7 @@ export class AppController {
 
   private requireSshServers(): SshServerService {
     if (!this.deps.sshServers) {
-      throw new Error("SSH server management is unavailable in this process.");
+      throw new Error("이 프로세스에서는 SSH 서버를 관리할 수 없습니다");
     }
     return this.deps.sshServers;
   }

@@ -48,12 +48,12 @@ export class SshServerStore {
 
   save(server: StoredSshServer, originalName?: string): void {
     if (!this.cipher.isEncryptionAvailable()) {
-      throw new Error(`SSH server '${server.name}' cannot be saved because operating-system credential encryption is unavailable.`);
+      throw new Error(`${server.name} 의 인증 정보를 저장할 수 없습니다. Windows 암호화를 사용할 수 없습니다`);
     }
     const state = this.read();
     const identity = originalName || server.name;
     const duplicate = state.servers.find((entry) => entry.name === server.name && entry.name !== identity);
-    if (duplicate) throw new Error(`SSH server '${server.name}' already exists.`);
+    if (duplicate) throw new Error(`${server.name} 서버가 이미 있습니다`);
     const next: DiskServer = {
       ...server,
       secret: this.cipher.encryptString(JSON.stringify(server.secret)).toString("base64"),
@@ -81,7 +81,7 @@ export class SshServerStore {
       };
     }
     if (!this.cipher.isEncryptionAvailable()) {
-      throw new Error("The automatic-login key cannot be created because operating-system credential encryption is unavailable.");
+      throw new Error("자동 로그인 키를 만들 수 없습니다. Windows 암호화를 사용할 수 없습니다");
     }
     const identity = create();
     state.autoLoginIdentity = {
@@ -96,7 +96,7 @@ export class SshServerStore {
     try {
       return JSON.parse(this.cipher.decryptString(Buffer.from(encoded, "base64")));
     } catch (error) {
-      throw new Error(`Stored credentials for SSH server '${name}' could not be decrypted: ${messageOf(error)}`);
+      throw new Error(`${name} 의 저장된 인증 정보를 읽을 수 없습니다: ${messageOf(error)}`);
     }
   }
 
@@ -109,7 +109,7 @@ export class SshServerStore {
       return { version: 1, servers: parsed.servers, ...(parsed.autoLoginIdentity ? { autoLoginIdentity: parsed.autoLoginIdentity } : {}) };
     } catch (error: any) {
       if (error?.code === "ENOENT") return { version: 1, servers: [] };
-      throw new Error(`SSH server settings could not be read from '${this.file}': ${messageOf(error)}`);
+      throw new Error(`SSH 서버 설정을 읽을 수 없습니다: ${messageOf(error)}`);
     }
   }
 

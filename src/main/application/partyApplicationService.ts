@@ -2973,9 +2973,7 @@ export class PartyApplicationService {
     if (!member.location || parseMemberLocation(member.location).env !== "ssh") return;
     if (harnessId === "codex" || harnessId === "claude-code") return;
     const server = parseMemberLocation(member.location).server || "unknown";
-    throw new Error(
-      `SSH server '${server}' cannot start ${harnessId}. SSH members support Codex and Claude Code in this release.`,
-    );
+    throw new Error(`${server} 에서는 ${harnessId} 멤버를 만들 수 없습니다. SSH 멤버는 Codex와 Claude Code만 지원합니다`);
   }
 
   /** Live turn count wins; persisted transcript keeps the lock after restart. */
