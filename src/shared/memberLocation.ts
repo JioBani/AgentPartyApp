@@ -17,7 +17,7 @@
 import { parseWorkspaceLocation, serializeWorkspaceLocation, type WorkspaceLocation } from "./workspaceUri";
 
 /** The two environments a member can run in. Windows-first: this is a Windows app. */
-export type ExecutionEnv = "windows" | "wsl";
+export type ExecutionEnv = "windows" | "wsl" | "ssh";
 
 /**
  * Public host selector used by automation and member-facing tools.
@@ -28,7 +28,7 @@ export type ExecutionEnv = "windows" | "wsl";
  * host kinds and their metadata here so UI, HTTP and MCP never grow separate
  * platform lists.
  */
-export const MEMBER_EXECUTION_HOSTS = ["windows", "wsl"] as const;
+export const MEMBER_EXECUTION_HOSTS = ["windows", "wsl", "ssh"] as const;
 export type MemberExecutionHost = (typeof MEMBER_EXECUTION_HOSTS)[number];
 
 export interface MemberExecutionLocationRequest {
@@ -37,6 +37,8 @@ export interface MemberExecutionLocationRequest {
   cwd: string;
   /** Required for WSL; absent for a native host. */
   distro?: string;
+  /** Required for SSH; the registered alias, never the network address. */
+  server?: string;
 }
 
 export interface SupportedMemberExecutionHost {
@@ -49,6 +51,7 @@ export interface SupportedMemberExecutionHost {
 export const SUPPORTED_MEMBER_EXECUTION_HOSTS: readonly SupportedMemberExecutionHost[] = [
   { host: "windows", label: "Windows", distroRequired: false, pathStyle: "win32" },
   { host: "wsl", label: "WSL", distroRequired: true, pathStyle: "posix" },
+  { host: "ssh", label: "SSH", distroRequired: false, pathStyle: "posix" },
 ];
 
 /** The most recent cwds we keep per environment (README §6). */
@@ -65,6 +68,7 @@ export interface MemberExecutionLocation {
   /** Host-native absolute path: win32 for windows, posix for wsl. */
   cwd: string;
   distro?: string;
+  server?: string;
 }
 
 /**
@@ -76,7 +80,7 @@ export interface MemberExecutionLocation {
  * problem. Never used to substitute a different cwd — only to display.
  */
 export interface CwdProblem {
-  kind: "missing" | "denied" | "distro-missing" | "distro-unavailable" | "not-absolute";
+  kind: "missing" | "denied" | "distro-missing" | "distro-unavailable" | "not-absolute" | "unreachable" | "auth-failed" | "fingerprint-changed" | "server-missing";
   message: string;
 }
 
@@ -93,6 +97,10 @@ export const CWD_PROBLEM_MESSAGE: Record<CwdProblem["kind"], string> = {
   "distro-missing": "배포판이 설치되어 있지 않음",
   "distro-unavailable": "배포판을 시작할 수 없음",
   "not-absolute": "절대 경로가 아님",
+  "unreachable": "서버에 연결할 수 없음",
+  "auth-failed": "서버에 로그인할 수 없음",
+  "fingerprint-changed": "서버 지문이 변경됨",
+  "server-missing": "서버 없음",
 };
 
 export function cwdProblem(kind: CwdProblem["kind"]): CwdProblem {
@@ -147,15 +155,18 @@ export interface CwdPreferences {
   wslDefault?: MemberExecutionLocation;
   windowsRecent: RecentCwd[];
   wslRecent: RecentCwd[];
+  sshRecent: RecentCwd[];
 }
 
 export const EMPTY_CWD_PREFERENCES: CwdPreferences = {
   windowsRecent: [],
   wslRecent: [],
+  sshRecent: [],
 };
 
 /** Reads the half of the preferences that belongs to one environment. */
 export function preferencesFor(prefs: CwdPreferences, env: ExecutionEnv): { fallback?: MemberExecutionLocation; recent: RecentCwd[] } {
+  if (env === "ssh") return { recent: prefs.sshRecent };
   return env === "wsl"
     ? { fallback: prefs.wslDefault, recent: prefs.wslRecent }
     : { fallback: prefs.windowsDefault, recent: prefs.windowsRecent };
@@ -196,6 +207,9 @@ export function serializeMemberLocation(loc: MemberExecutionLocation): string {
 }
 
 export function toWorkspaceLocation(loc: MemberExecutionLocation): WorkspaceLocation {
+  if (loc.env === "ssh" && loc.server) {
+    return { host: { kind: "ssh", server: loc.server }, path: loc.cwd };
+  }
   return loc.env === "wsl" && loc.distro
     ? { host: { kind: "wsl", distro: loc.distro }, path: loc.cwd }
     : { host: { kind: "local" }, path: loc.cwd };
@@ -210,6 +224,9 @@ export function toWorkspaceLocation(loc: MemberExecutionLocation): WorkspaceLoca
  */
 export function parseMemberLocation(value: string): MemberExecutionLocation {
   const loc = parseWorkspaceLocation(value);
+  if (loc.host.kind === "ssh") {
+    return { env: "ssh", cwd: loc.path, server: loc.host.server };
+  }
   return loc.host.kind === "wsl"
     ? { env: "wsl", cwd: loc.path, distro: loc.host.distro }
     : { env: "windows", cwd: loc.path };
@@ -235,6 +252,15 @@ export function memberLocationFromRequest(value: unknown): MemberExecutionLocati
     }
     return { env: "wsl", cwd, distro: input.distro.trim() };
   }
+  if (host === "ssh") {
+    if (typeof input.server !== "string" || !input.server.trim()) {
+      throw new Error("location.server is required when location.host is 'ssh'.");
+    }
+    if (input.distro !== undefined && input.distro !== null && String(input.distro).trim()) {
+      throw new Error("location.distro is only valid when location.host is 'wsl'.");
+    }
+    return { env: "ssh", cwd, server: input.server.trim() };
+  }
   if (input.distro !== undefined && input.distro !== null && String(input.distro).trim()) {
     throw new Error("location.distro is only valid when location.host is 'wsl'.");
   }
@@ -243,6 +269,9 @@ export function memberLocationFromRequest(value: unknown): MemberExecutionLocati
 
 /** Public automation shape for one internal execution location. */
 export function memberLocationRequestOf(location: MemberExecutionLocation): MemberExecutionLocationRequest {
+  if (location.env === "ssh") {
+    return { host: "ssh", cwd: location.cwd, server: location.server };
+  }
   return location.env === "wsl"
     ? { host: "wsl", cwd: location.cwd, distro: location.distro }
     : { host: "windows", cwd: location.cwd };
@@ -267,6 +296,7 @@ export function memberExecutionLocationCatalog(prefs: CwdPreferences): MemberExe
   // host only when that exact location was not already a recent success.
   for (const entry of prefs.windowsRecent) append(entry.location, "recent", entry.usedAt, entry.problem);
   for (const entry of prefs.wslRecent) append(entry.location, "recent", entry.usedAt, entry.problem);
+  for (const entry of prefs.sshRecent) append(entry.location, "recent", entry.usedAt, entry.problem);
   if (prefs.windowsDefault) append(prefs.windowsDefault, "default");
   if (prefs.wslDefault) append(prefs.wslDefault, "default");
   return { supportedHosts: SUPPORTED_MEMBER_EXECUTION_HOSTS, locations: rows };
@@ -281,6 +311,9 @@ export function memberExecutionLocationCatalog(prefs: CwdPreferences): MemberExe
  * path picked with and without one does not occupy two of the ten slots.
  */
 export function memberLocationKey(loc: MemberExecutionLocation): string {
+  if (loc.env === "ssh") {
+    return `ssh+${encodeURIComponent(loc.server ?? "")}:${trimTrailing(loc.cwd, "/") || "/"}`;
+  }
   if (loc.env === "wsl") {
     // Distro names follow WSL's case-insensitive identity; the path inside the
     // distro does not. Without this, one cwd occupied two recent-list slots
@@ -304,7 +337,7 @@ export function memberLocationsEqual(a: MemberExecutionLocation, b: MemberExecut
  */
 export function withRecentCwd(prefs: CwdPreferences, loc: MemberExecutionLocation, usedAt: string): CwdPreferences {
   const key = memberLocationKey(loc);
-  const field = loc.env === "wsl" ? "wslRecent" : "windowsRecent";
+  const field = loc.env === "wsl" ? "wslRecent" : loc.env === "ssh" ? "sshRecent" : "windowsRecent";
   const kept = prefs[field].filter((entry) => memberLocationKey(entry.location) !== key);
   return { ...prefs, [field]: [{ location: loc, usedAt }, ...kept].slice(0, RECENT_CWD_LIMIT) };
 }
@@ -318,6 +351,10 @@ export function withRecentCwd(prefs: CwdPreferences, loc: MemberExecutionLocatio
  */
 export function checkLocationShape(loc: MemberExecutionLocation): CwdProblem | undefined {
   const cwd = loc.cwd.trim();
+  if (loc.env === "ssh") {
+    if (!loc.server) return cwdProblem("server-missing");
+    return cwd.startsWith("/") ? undefined : { kind: "not-absolute", message: "SSH 경로는 / 로 시작하는 절대 경로여야 합니다" };
+  }
   if (loc.env === "wsl") {
     if (!loc.distro) {
       return { kind: "distro-missing", message: "WSL 배포판을 선택하세요" };
