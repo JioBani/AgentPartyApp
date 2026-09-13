@@ -120,11 +120,7 @@ export function GateReviewerControl({
   );
 }
 
-/**
- * The compact gate-modal picker. An inherited reviewer is one readout because
- * its model, effort, and serving tier are one borrowed value. A custom reviewer
- * exposes each concrete field plus an explicit reset alongside it.
- */
+/** The compact gate-modal picker keeps one stable control layout in every state. */
 export function GateReviewerInlineControl({
   routes,
   reviewer,
@@ -153,13 +149,10 @@ export function GateReviewerInlineControl({
   const displayedEfforts = effortOptions.length > 0
     ? effortOptions.map((option) => ({ id: option.id, label: option.label }))
     : [{ id: effective.effort, label: effective.effort }];
-  const effortLabel = displayedEfforts.find((option) => option.id === effective.effort)?.label || effective.effort;
   const concreteTier = effective.serviceTier
     || tierOptions.find((option) => option.id === "standard")?.id
     || tierOptions[0]?.id;
   const displayedTiers = tierOptions.map((option) => ({ id: option.id, label: option.label }));
-  const tierLabel = displayedTiers.find((option) => option.id === concreteTier)?.label || concreteTier;
-  const fast = Boolean(tierLabel && tierLabel.toLowerCase() === "fast");
 
   return (
     <>
@@ -171,32 +164,36 @@ export function GateReviewerInlineControl({
           title={`${localized("STR-1669")}: ${selected?.label || effective.model}`}
           onClick={() => setCatalogOpen(true)}
         >
-          <span className="wb-dd-label">
-            {inherited && <><LocalizedText id="STR-3867" /> · </>}
-            {selected?.label || effective.model}
-            {inherited && <> · {effortLabel}{fast ? " · Fast" : ""}</>}
-          </span>
+          <span className="wb-dd-label">{selected?.label || effective.model}</span>
           <ChevronDown size={11} className="wb-pill-caret" />
         </button>
-        {!inherited && <>
+        <Dropdown
+          value={effective.effort}
+          options={displayedEfforts}
+          title={localized("STR-1670")}
+          onChange={(effort) => onChange({
+            model: effective.model,
+            effort,
+            ...(concreteTier ? { serviceTier: concreteTier } : {}),
+          })}
+        />
+        {displayedTiers.length > 0 && concreteTier && (
           <Dropdown
-            value={effective.effort}
-            options={displayedEfforts}
-            title={localized("STR-1670")}
-            onChange={(effort) => onChange({ ...effective, effort })}
+            value={concreteTier}
+            options={displayedTiers}
+            title="Fast"
+            onChange={(serviceTier) => onChange({
+              model: effective.model,
+              effort: effective.effort,
+              serviceTier,
+            })}
           />
-          {displayedTiers.length > 0 && concreteTier && (
-            <Dropdown
-              value={concreteTier}
-              options={displayedTiers}
-              title="Fast"
-              onChange={(serviceTier) => onChange({ ...effective, serviceTier })}
-            />
-          )}
+        )}
+        {!inherited && (
           <button type="button" className="wb-gate-reset" onClick={onInherit}>
             <Undo2 size={12} /> <LocalizedText id="STR-3868" />
           </button>
-        </>}
+        )}
       </div>
       {catalogOpen && (
         <ModelCatalogModal
