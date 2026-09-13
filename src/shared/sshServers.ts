@@ -7,7 +7,6 @@ export interface SshCheckItem {
   id: "connect" | "login" | `agent:${string}`;
   status: SshCheckStatus;
   installed?: boolean;
-  command?: string;
 }
 
 export interface SshTestResult { at: string; items: SshCheckItem[] }
