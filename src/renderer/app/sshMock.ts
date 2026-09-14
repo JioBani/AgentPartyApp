@@ -118,6 +118,8 @@ export const sshMockApi: SshApi = {
     if (!draft.user) fieldErrors.push({ field: "user" as const, kind: "required" as const });
     if (draft.auth.kind === "password" && !draft.auth.password && !draft.originalName) fieldErrors.push({ field: "password" as const, kind: "required" as const });
     if (draft.auth.kind === "key" && !draft.auth.keyPath) fieldErrors.push({ field: "keyPath" as const, kind: "required" as const });
+    // Like the backend: auto-login can only be kept on an existing server.
+    if (draft.auth.kind === "auto" && !draft.originalName) fieldErrors.push({ field: "password" as const, kind: "required" as const });
     if (fieldErrors.length) return { fieldErrors };
 
     const attemptId = `mock-${Date.now()}`;
@@ -148,6 +150,8 @@ export const sshMockApi: SshApi = {
         push(id, { phase: "failed", steps: [{ id: "connect", status: "ok" }, { id: "login", status: "fail" }], error: { kind: "password-not-allowed" } });
       } else if (draft.auth.kind === "key" && draft.auth.keyPath.includes("reject")) {
         push(id, { phase: "failed", steps: [{ id: "connect", status: "ok" }, { id: "login", status: "fail" }], error: { kind: "key-rejected", keyFingerprint: "SHA256:xY9kP2mQ7vR4sT1uW8zA3bC6dE0fG5hJ" } });
+      } else if (draft.auth.kind === "auto") {
+        runTest(id, "auto");
       } else if (draft.auth.kind === "password") {
         push(id, { phase: "offer-auto-login", steps: [{ id: "connect", status: "ok" }, { id: "login", status: "ok" }] });
       } else {

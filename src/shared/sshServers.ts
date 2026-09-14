@@ -31,6 +31,7 @@ export interface SshServerDraft {
   host: string;
   port: number;
   user: string;
+  /** `auto` is edit-only: keep using the stored app key; a new server must choose password or key. */
   auth:
     | { kind: "auto" }
     | { kind: "password"; password?: string }

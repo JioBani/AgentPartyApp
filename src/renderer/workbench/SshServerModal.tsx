@@ -25,7 +25,7 @@ import { LocalizedText, localized } from "../i18n/I18nProvider";
 export interface SshServerModalProps {
   mode: "add" | "edit";
   /** Seed values. Secrets are never seeded; edit shows "변경 시 입력". */
-  initial?: Omit<SshServerDraft, "auth"> & { authKind: "password" | "key"; keyPath?: string };
+  initial?: Omit<SshServerDraft, "auth"> & { authKind: "password" | "key" | "auto"; keyPath?: string };
   /** The running attempt, once 연결 / 저장 was pressed. */
   attempt?: SshConnectAttempt;
   /** Synchronous validation result of the last submit. */
@@ -99,7 +99,10 @@ export function SshServerModal(props: SshServerModalProps) {
   const [host, setHost] = useState(initial?.host ?? "");
   const [port, setPort] = useState(String(initial?.port ?? 22));
   const [user, setUser] = useState(initial?.user ?? "");
-  const [authKind, setAuthKind] = useState<"password" | "key">(initial?.authKind ?? "password");
+  const [authKind, setAuthKind] = useState<"password" | "key" | "auto">(initial?.authKind ?? "password");
+  // Auto-login is offered only while editing a server that already has it: the
+  // stored app key keeps working until the user deliberately picks another method.
+  const canKeepAuto = mode === "edit" && initial?.authKind === "auto";
   const [password, setPassword] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const keyPath = initial?.keyPath;
@@ -117,15 +120,17 @@ export function SshServerModal(props: SshServerModalProps) {
     host: host.trim(),
     port: Number(port),
     user: user.trim(),
-    auth: authKind === "password"
-      ? { kind: "password", password: password || undefined }
-      : { kind: "key", keyPath: keyPath ?? "", passphrase: passphrase || undefined },
+    auth: authKind === "auto"
+      ? { kind: "auto" }
+      : authKind === "password"
+        ? { kind: "password", password: password || undefined }
+        : { kind: "key", keyPath: keyPath ?? "", passphrase: passphrase || undefined },
   });
 
   const keyOk = keyInspection && !("error" in keyInspection) ? keyInspection : undefined;
   const keyError = keyInspection && "error" in keyInspection ? KEY_FILE_ERROR[keyInspection.error] : undefined;
   const error = phase === "failed" ? attempt?.error : undefined;
-  const authWord = authKind === "key" ? "키 파일" : attempt?.autoLoginSteps?.every((step) => step.status === "ok") ? "자동 로그인" : "비밀번호";
+  const authWord = authKind === "key" ? "키 파일" : authKind === "auto" || attempt?.autoLoginSteps?.every((step) => step.status === "ok") ? "자동 로그인" : "비밀번호";
   const target = attempt ? `${attempt.serverName} · ${attempt.target.user}@${attempt.target.host}:${attempt.target.port}` : "";
 
   // Portaled: a settings tab panel is a containing block, which clipped the scrim to its column.
@@ -168,6 +173,9 @@ export function SshServerModal(props: SshServerModalProps) {
               <div className="set-field set-ssh-field">
                 <span className="set-field-label"><LocalizedText id="STR-4104" /></span>
                 <div className="wb-env-seg set-ssh-auth-seg" role="group" aria-label={localized("STR-4105")}>
+                  {canKeepAuto && (
+                    <button type="button" className={authKind === "auto" ? "is-active" : ""} aria-pressed={authKind === "auto"} onClick={() => setAuthKind("auto")} data-ssh-auth="auto"><ShieldCheck size={13} /> <LocalizedText id="STR-3934" /></button>
+                  )}
                   <button type="button" className={authKind === "password" ? "is-active" : ""} aria-pressed={authKind === "password"} onClick={() => setAuthKind("password")}><Lock size={13} /> <LocalizedText id="STR-4106" /></button>
                   <button type="button" className={authKind === "key" ? "is-active" : ""} aria-pressed={authKind === "key"} onClick={() => setAuthKind("key")}><FileKey size={13} /> <LocalizedText id="STR-4107" /></button>
                 </div>

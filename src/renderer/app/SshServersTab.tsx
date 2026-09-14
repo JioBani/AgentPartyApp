@@ -166,7 +166,7 @@ export function useSshServerFlow(onSaved?: (serverName: string) => void) {
       <SshServerModal
         key={seed}
         mode={target.mode}
-        initial={server ? { name: server.name, host: server.host, port: server.port, user: server.user, authKind: server.auth === "key" ? "key" : "password", keyPath } : { name: "", host: "", port: 22, user: "", authKind: "password", keyPath }}
+        initial={server ? { name: server.name, host: server.host, port: server.port, user: server.user, authKind: server.auth, keyPath } : { name: "", host: "", port: 22, user: "", authKind: "password", keyPath }}
         attempt={attempt}
         fieldErrors={fieldErrors}
         keyInspection={keyInspection}

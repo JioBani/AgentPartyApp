@@ -10038,6 +10038,8 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-ssh-fp-label { font-size: 11px; font-weight: var(--weight-semibold); color: var(--text-3); white-space: nowrap; }
 .wb-ssh-fp-compare code { overflow-wrap: anywhere; font-size: 11.5px; color: var(--text-0); }
 /* 지문 변경: 모달 전체가 위험 톤. 다른 확인창과 헷갈리지 않게 머리줄부터 다르다. */
+/* A full SHA256 fingerprint (50 mono chars) must read on one line; at 430px the last character wrapped alone. Narrow windows still wrap. */
+.wb-modal.wb-ssh-fp { width: min(520px, 92vw); }
 .wb-ssh-fp.is-danger { border-color: var(--danger-bd); }
 .wb-ssh-fp.is-danger .wb-modal-head { background: var(--danger-dim); border-bottom-color: var(--danger-bd); }
 .wb-ssh-fp.is-danger .wb-ssh-fp-compare { border-color: var(--danger-bd); }
