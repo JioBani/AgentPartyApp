@@ -49,6 +49,7 @@ import type { MemberView, Subagent, TranscriptBlock } from "./workbench/types";
 import { buildMemberView } from "./workbench/memberStatus";
 import { findRoute, RouteLike, routeKey } from "./workbench/routes";
 import { ipcErrorMessage } from "./app/ipcError";
+import { memberCreateFailureText, type MemberCreateResult } from "./workbench/memberCreateFailure";
 import { initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { NAV_ICONS, NavRail, TitleBar, WorkbenchScreenHeader } from "./app/AppChrome";
 import { isAgentTabId, isSettingsTabId, type AgentTabId, type SettingsTabId } from "../shared/runtimeTabs";
@@ -1440,7 +1441,7 @@ export function App() {
     await refreshParty();
   }
 
-  async function createMemberInline(input: CreateMemberInput) {
+  async function createMemberInline(input: CreateMemberInput): Promise<MemberCreateResult> {
     try {
       // The wizard owns an object-shaped location because it edits environment,
       // distro, and cwd independently. IPC/API own the serialized string shape.
@@ -1453,10 +1454,10 @@ export function App() {
         location: location ? serializeMemberLocation(location) : undefined,
       });
       await applyPartyResult(result);
-      return true;
+      return { ok: true };
     } catch (error) {
-      noticeOnFailure(`'${input.name}' 멤버를 만들지 못했습니다`)(error);
-      return false;
+      // Shown inside the wizard that is still open, not as a toast behind it.
+      return { ok: false, reason: memberCreateFailureText(input.name, ipcErrorMessage(error)) };
     }
   }
 
