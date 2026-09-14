@@ -6,7 +6,9 @@ function draft(p: Record<string, any>): SshServerDraft {
   return {
     originalName: p.originalName ? text(p.originalName) : undefined,
     name: text(p.name), host: text(p.host), port: Number(p.port), user: text(p.user),
-    auth: auth.kind === "key"
+    auth: auth.kind === "auto"
+      ? { kind: "auto" }
+      : auth.kind === "key"
       ? { kind: "key", keyPath: text(auth.keyPath), ...(auth.passphrase !== undefined ? { passphrase: String(auth.passphrase) } : {}) }
       : { kind: "password", ...(auth.password !== undefined ? { password: String(auth.password) } : {}) },
   };

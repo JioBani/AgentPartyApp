@@ -289,6 +289,7 @@ export class SshServerService extends EventEmitter {
       attempt.state = { ...attempt.state, phase: attempt.draft.auth.kind === "password" ? "offer-auto-login" : "testing", steps: [{ id: "connect", status: "ok" }, { id: "login", status: "ok" }] };
       this.push(attempt);
       if (attempt.draft.auth.kind === "key") await this.testAndSave(attempt, connection, "key");
+      else if (attempt.draft.auth.kind === "auto") await this.testAndSave(attempt, connection, "auto");
     } catch (error) { if (!attempt.cancelled) this.fail(attempt, error); }
   }
 
@@ -356,11 +357,12 @@ export class SshServerService extends EventEmitter {
     if (attempt.cancelled) return;
     const old = attempt.draft.originalName ? this.deps.store.get(attempt.draft.originalName) : undefined;
     const secret = auth === "auto" && pair ? { privateKey: pair.privateKey } : secretOfDraft(attempt.draft, old);
+    const autoLoginPublicKey = pair?.publicKey || (auth === "auto" ? old?.autoLoginPublicKey : undefined);
     const stored: StoredSshServer = {
       name: attempt.draft.name, host: attempt.draft.host, port: attempt.draft.port, user: attempt.draft.user,
       auth, hostFingerprint: attempt.fingerprint!, secret, lastTest: test,
       ...(auth === "key" ? { keyFileName: path.basename((attempt.draft.auth as any).keyPath) } : {}),
-      ...(pair ? { autoLoginPublicKey: pair.publicKey } : {}),
+      ...(autoLoginPublicKey ? { autoLoginPublicKey } : {}),
     };
     this.deps.store.save(stored, attempt.draft.originalName);
     if (attempt.draft.originalName && attempt.draft.originalName !== attempt.draft.name) {
@@ -502,12 +504,17 @@ function validateDraft(draft: SshServerDraft, servers: StoredSshServer[]): SshFi
   if (!Number.isInteger(draft.port) || draft.port < 1 || draft.port > 65535) errors.push({ field: "port", kind: "port-range" });
   if (servers.some((server) => server.name === draft.name) && draft.originalName !== draft.name) errors.push({ field: "name", kind: "duplicate" });
   const previous = draft.originalName ? servers.find((server) => server.name === draft.originalName) : undefined;
+  if (draft.auth.kind === "auto" && (!previous || previous.auth !== "auto" || !previous.secret.privateKey)) errors.push({ field: "password", kind: "required" });
   if (draft.auth.kind === "password" && !draft.auth.password && !(previous?.auth === "password" && previous.secret.password)) errors.push({ field: "password", kind: "required" });
   if (draft.auth.kind === "key" && !draft.auth.keyPath) errors.push({ field: "keyPath", kind: "required" });
   return errors;
 }
 function targetOf(value: { host: string; port: number; user: string }): SshTarget { return { host: value.host, port: value.port, user: value.user }; }
 function credentialOfDraft(draft: SshServerDraft, old?: StoredSshServer): SshCredential {
+  if (draft.auth.kind === "auto") {
+    if (old?.auth !== "auto" || !old.secret.privateKey) throw new Error(`${draft.name} 자동 로그인 키가 없습니다`);
+    return { kind: "key", privateKey: old.secret.privateKey };
+  }
   if (draft.auth.kind === "password") {
     const password = draft.auth.password || (old?.auth === "password" ? old.secret.password : undefined);
     if (!password) throw new Error(`${draft.name} 의 비밀번호를 입력하세요`);
@@ -516,6 +523,7 @@ function credentialOfDraft(draft: SshServerDraft, old?: StoredSshServer): SshCre
   return { kind: "key", privateKey: fs.readFileSync(draft.auth.keyPath, "utf8"), ...(draft.auth.passphrase ? { passphrase: draft.auth.passphrase } : {}) };
 }
 function secretOfDraft(draft: SshServerDraft, old?: StoredSshServer): StoredSshServer["secret"] {
+  if (draft.auth.kind === "auto") return old?.auth === "auto" ? old.secret : {};
   if (draft.auth.kind === "password") return draft.auth.password ? { password: draft.auth.password } : old?.secret || {};
   return { privateKey: fs.readFileSync(draft.auth.keyPath, "utf8"), ...(draft.auth.passphrase ? { passphrase: draft.auth.passphrase } : {}) };
 }
@@ -525,7 +533,18 @@ function credentialOfStored(server: StoredSshServer): SshCredential {
   return { kind: "key", privateKey: server.secret.privateKey, ...(server.secret.passphrase ? { passphrase: server.secret.passphrase } : {}) };
 }
 function draftFromStored(server: StoredSshServer): SshServerDraft {
-  return { originalName: server.name, name: server.name, host: server.host, port: server.port, user: server.user, auth: server.auth === "password" ? { kind: "password", password: server.secret.password } : { kind: "key", keyPath: "" } };
+  return {
+    originalName: server.name,
+    name: server.name,
+    host: server.host,
+    port: server.port,
+    user: server.user,
+    auth: server.auth === "auto"
+      ? { kind: "auto" }
+      : server.auth === "password"
+        ? { kind: "password", password: server.secret.password }
+        : { kind: "key", keyPath: "" },
+  };
 }
 function problemOf(error: unknown): SshRemotePathProblem {
   if (error instanceof SshTransportError && ["auth-failed", "fingerprint-changed", "unreachable"].includes(error.kind)) return error.kind as SshRemotePathProblem;
@@ -542,5 +561,5 @@ function attemptFailureDetail(kind: import("../../shared/sshServers").SshAttempt
 
 function forgetDraftSecrets(draft: SshServerDraft): void {
   if (draft.auth.kind === "password") draft.auth = { kind: "password" };
-  else draft.auth = { kind: "key", keyPath: "" };
+  else if (draft.auth.kind === "key") draft.auth = { kind: "key", keyPath: "" };
 }

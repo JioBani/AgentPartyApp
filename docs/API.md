@@ -4688,7 +4688,10 @@ Checks an absolute POSIX directory on a registered server and returns a specific
 
 `POST /api/ssh/attempts` accepts `{name,host,port,user,originalName?,auth}`,
 where `auth` is either `{kind:"password",password?}` or
-`{kind:"key",keyPath,passphrase?}`. Passwords, private keys and passphrases are
+`{kind:"key",keyPath,passphrase?}`. When editing a server whose current auth is
+automatic login, `{kind:"auto"}` keeps the stored app key without returning it
+to the caller; it is rejected for new servers and for servers using another
+auth mode. Passwords, private keys and passphrases are
 write-only. They are OS-encrypted in the desktop store and are absent from every
 API response. The renderer additionally receives `ssh:attempt` progress and
 `ssh:servers` snapshot events. Connection tests report login success plus only

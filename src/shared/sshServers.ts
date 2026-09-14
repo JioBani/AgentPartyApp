@@ -31,7 +31,10 @@ export interface SshServerDraft {
   host: string;
   port: number;
   user: string;
-  auth: { kind: "password"; password?: string } | { kind: "key"; keyPath: string; passphrase?: string };
+  auth:
+    | { kind: "auto" }
+    | { kind: "password"; password?: string }
+    | { kind: "key"; keyPath: string; passphrase?: string };
 }
 
 export type SshDraftField = "name" | "host" | "port" | "user" | "password" | "keyPath";
