@@ -48,9 +48,21 @@ export class SshServerService extends EventEmitter {
   constructor(private readonly deps: SshServerServiceDeps) {
     super();
     deps.transport.on("state", (event) => {
-      const state = event as { server?: unknown; connection?: unknown };
+      const state = event as { server?: unknown; connection?: unknown; fingerprint?: unknown };
       if (typeof state.server === "string" && typeof state.connection === "string") {
         this.connectionStates.set(state.server, state.connection as SshServerView["connection"]);
+        if (state.connection === "fingerprint-changed" && typeof state.fingerprint === "string") {
+          try {
+            const stored = this.deps.store.get(state.server);
+            if (stored) {
+              this.fingerprintChanges.set(state.server, { previous: stored.hostFingerprint, next: state.fingerprint });
+            }
+          } catch (error) {
+            log("error", "ssh", "지문 변경 정보를 기록하지 못했습니다", { server: state.server, error: messageOf(error) });
+          }
+        } else if (state.connection === "connected") {
+          this.fingerprintChanges.delete(state.server);
+        }
       }
       this.emitServers();
     });

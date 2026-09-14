@@ -89,6 +89,12 @@ export class RemoteHarnessSession extends EventEmitter implements HarnessSession
       this.reportError(error, true);
       throw error;
     });
+    // Keep the rejected promise for later operations (`requireReady`) while
+    // marking the eager background start as observed. Without this terminal
+    // observer, an SSH/WSL engine failure during automatic member startup was
+    // also reported by Node as an unhandled rejection after the session had
+    // already surfaced the same error to the transcript and snapshot.
+    this.ready.catch(() => undefined);
   }
 
   sendUserTurn(text: string, attachments?: ImageAttachment[]): void {

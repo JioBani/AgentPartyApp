@@ -72,6 +72,9 @@ export class Ssh2Transport extends SshTransport {
           connection: ["auth-failed", "key-rejected", "password-not-allowed"].includes(classified.kind)
             ? "auth-failed"
             : classified.kind,
+          ...(classified.kind === "fingerprint-changed" && classified.fingerprint
+            ? { fingerprint: classified.fingerprint }
+            : {}),
         });
         reject(classified);
       };
