@@ -1676,7 +1676,10 @@
       "inPerM": 0.95,
       "outPerM": 4,
       "ioPerM": 1.713,
-      "reasoning": null
+      "reasoning": null,
+      "vision": {
+        "image": true
+      }
     },
     {
       "id": "Qwen3.8-Flash B.AI",
@@ -1746,7 +1749,10 @@
       "inPerM": 0.3,
       "outPerM": 1.2,
       "ioPerM": 0.525,
-      "reasoning": null
+      "reasoning": null,
+      "vision": {
+        "image": true
+      }
     },
     {
       "id": "MiniMax M2.7 B.AI",
