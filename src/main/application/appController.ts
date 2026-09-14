@@ -3932,8 +3932,18 @@ export class AppController {
     const key = String(body?.key || "").trim();
     if (key) {
       const modifiers = (Array.isArray(body?.modifiers) ? body.modifiers : []).map((m) => String(m).toLowerCase());
+      // Chromium exposes DOM key names (`ArrowDown`), while Electron's native
+      // input bridge expects the corresponding accelerator names (`Down`).
+      // Keep the HTTP contract browser-shaped and translate only at this
+      // boundary; callers should not need Electron-specific key vocabulary.
+      const electronKey = ({
+        ArrowDown: "Down",
+        ArrowLeft: "Left",
+        ArrowRight: "Right",
+        ArrowUp: "Up",
+      } as Record<string, string>)[key] || key;
       const sendKeyEvent = (type: "keyDown" | "char" | "keyUp") => {
-        win.webContents.sendInputEvent({ type, keyCode: key, modifiers } as Parameters<typeof win.webContents.sendInputEvent>[0]);
+        win.webContents.sendInputEvent({ type, keyCode: electronKey, modifiers } as Parameters<typeof win.webContents.sendInputEvent>[0]);
       };
       sendKeyEvent("keyDown");
       // Electron's `char` event literally inserts keyCode as text. Sending one
@@ -3942,7 +3952,7 @@ export class AppController {
       // only for printable keys without a command modifier, so mirror that
       // boundary here and leave navigation/action keys to keyDown/keyUp.
       const commandModifiers = new Set(["alt", "command", "control", "ctrl", "meta", "super"]);
-      const producesCharacter = Array.from(key).length === 1 && !modifiers.some((modifier) => commandModifiers.has(modifier));
+      const producesCharacter = Array.from(electronKey).length === 1 && !modifiers.some((modifier) => commandModifiers.has(modifier));
       if (producesCharacter) {
         sendKeyEvent("char");
       }

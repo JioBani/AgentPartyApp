@@ -4347,6 +4347,8 @@ Every field is optional and applied in order:
   the endpoint exists: a synthetic DOM event dispatched from a script never
   fires a default action, so behaviour that depends on one — Enter submitting
   the form a single-line input sits in — cannot be verified any other way.
+  DOM arrow names (`ArrowDown`, `ArrowUp`, `ArrowLeft`, `ArrowRight`) are accepted
+  and translated to Electron's native input names at the application boundary.
 - `modifiers` — Electron modifier names (`control`, `shift`, `alt`, `meta`).
 
 Returns `{ ok, selector, key, kind, value, references }` describing what is
