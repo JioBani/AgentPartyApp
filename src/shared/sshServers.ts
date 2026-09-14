@@ -38,8 +38,8 @@ export interface SshServerDraft {
     | { kind: "key"; keyPath: string; passphrase?: string };
 }
 
-export type SshDraftField = "name" | "host" | "port" | "user" | "password" | "keyPath";
-export interface SshFieldError { field: SshDraftField; kind: "required" | "duplicate" | "port-range" }
+export type SshDraftField = "name" | "host" | "port" | "user" | "password" | "keyPath" | "passphrase";
+export interface SshFieldError { field: SshDraftField; kind: "required" | "duplicate" | "port-range" | "passphrase-wrong" }
 
 export type SshKeyInspection =
   | { fileName: string; fingerprint: string; comment?: string; locked: boolean }
