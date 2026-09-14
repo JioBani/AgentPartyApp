@@ -13,7 +13,7 @@ import type { GuideScreenInfo } from "../shared/guide";
 import type { GuideHostApi } from "../shared/guideHost";
 import type { TranscriptBlock } from "../shared/transcript";
 import type { TranscriptSnapshot } from "../shared/sessionEventStream";
-import type { SshConnectAttempt, SshDeleteResult, SshFieldError, SshKeyInspection, SshRemotePathCheck, SshServerDraft, SshServerView } from "../shared/sshServers";
+import type { SshConnectAttempt, SshDeleteResult, SshFieldError, SshKeyInspection, SshRemoteDirectoryResult, SshRemotePathCheck, SshRemotePathSuggestions, SshServerDraft, SshServerView } from "../shared/sshServers";
 
 const appearanceBoot = parseAppearanceBootArgs(process.argv)
   || ipcRenderer.sendSync("appearance:boot");
@@ -76,6 +76,9 @@ const api = {
   sshDeleteServer: (name: string, options: { removeAutoLoginKey: boolean }): Promise<SshDeleteResult> => ipcRenderer.invoke("ssh:deleteServer", name, options),
   sshCopyPublicKey: (): Promise<void> => ipcRenderer.invoke("ssh:copyPublicKey"),
   sshCheckRemotePath: (server: string, cwd: string): Promise<SshRemotePathCheck> => ipcRenderer.invoke("ssh:checkRemotePath", server, cwd),
+  sshRemoteHome: (server: string): Promise<SshRemoteDirectoryResult> => ipcRenderer.invoke("ssh:remoteHome", server),
+  sshListRemoteDirectories: (server: string, remotePath: string): Promise<SshRemoteDirectoryResult> => ipcRenderer.invoke("ssh:listRemoteDirectories", server, remotePath),
+  sshSuggestRemotePaths: (server: string, input: string): Promise<SshRemotePathSuggestions> => ipcRenderer.invoke("ssh:suggestRemotePaths", server, input),
   onSshServers: (callback: (servers: SshServerView[]) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, servers: SshServerView[]) => callback(servers);
     ipcRenderer.on("ssh:servers", listener);

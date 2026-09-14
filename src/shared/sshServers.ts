@@ -68,6 +68,24 @@ export interface SshConnectAttempt {
 export type SshRemotePathProblem = "missing" | "not-absolute" | "unreachable" | "auth-failed" | "fingerprint-changed" | "server-missing";
 export type SshRemotePathCheck = { ok: true } | { ok: false; problem: SshRemotePathProblem };
 
+export interface SshRemoteDirectory {
+  name: string;
+  path: string;
+  hidden: boolean;
+}
+
+export type SshRemoteBrowseProblem =
+  | "permission-denied" | "missing" | "not-absolute"
+  | "unreachable" | "auth-failed" | "fingerprint-changed" | "server-missing" | "read-failed";
+
+export type SshRemoteDirectoryResult =
+  | { ok: true; path: string; parent?: string; directories: SshRemoteDirectory[]; truncated?: boolean }
+  | { ok: false; path: string; problem: SshRemoteBrowseProblem; detail?: string };
+
+export type SshRemotePathSuggestions =
+  | { ok: true; input: string; items: SshRemoteDirectory[] }
+  | { ok: false; input: string; problem: SshRemoteBrowseProblem; detail?: string };
+
 export interface SshDeleteResult {
   deleted: true;
   keyRemoval: "not-requested" | "removed" | "failed";

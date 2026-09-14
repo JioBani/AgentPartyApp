@@ -4631,6 +4631,9 @@ The server capability routes are:
 | `DELETE /api/ssh/servers/:name` | `ssh.deleteServer` | Delete; optional `removeAutoLoginKey` |
 | `POST /api/ssh/public-key/copy` | `ssh.copyPublicKey` | Copy app public key (`remote: false`) |
 | `POST /api/ssh/path/check` | `ssh.checkRemotePath` | `{ok:true}` or a specific path/connection problem |
+| `POST /api/ssh/directories/home` | `ssh.remoteHome` | Absolute home path and its child folders |
+| `POST /api/ssh/directories/list` | `ssh.listRemoteDirectories` | Canonical path and child folders |
+| `POST /api/ssh/path/suggestions` | `ssh.suggestRemotePaths` | Up to 20 folder completions for typed input |
 
 ### `GET /api/ssh/servers`
 
@@ -4699,6 +4702,44 @@ Copies the app-owned automatic-login public key. This method is not remotely cal
 ### `POST /api/ssh/path/check`
 
 Checks an absolute POSIX directory on a registered server and returns a specific path or connection problem.
+
+### `POST /api/ssh/directories/home`
+
+Body: `{ "server": "mini" }`. Resolves the account home through SFTP and returns
+the same result shape as directory listing. A successful `path` is always the
+server's absolute path (for example `/home/dev`), never `~`.
+
+### `POST /api/ssh/directories/list`
+
+Body: `{ "server": "mini", "path": "/home/dev" }`. Returns only child
+directories (including symbolic links whose targets are directories), sorted
+case-insensitively with dot-prefixed folders last:
+
+```json
+{
+  "ok": true,
+  "path": "/home/dev",
+  "parent": "/home",
+  "directories": [
+    { "name": "projects", "path": "/home/dev/projects", "hidden": false },
+    { "name": ".config", "path": "/home/dev/.config", "hidden": true }
+  ],
+  "truncated": true
+}
+```
+
+At most 1000 folders are returned. `truncated: true` means more folders exist.
+Failures return `{ok:false,path,problem,detail?}`. `problem` is one of
+`permission-denied`, `missing`, `not-absolute`, `unreachable`, `auth-failed`,
+`fingerprint-changed`, `server-missing`, or `read-failed`; `detail`, when
+present, is the underlying SFTP/connection message.
+
+### `POST /api/ssh/path/suggestions`
+
+Body: `{ "server": "mini", "input": "/home/dev/pro" }`. Lists the parent
+directory and returns at most 20 child folders whose names start with the final
+path segment. Empty input uses the account home; input ending in `/` lists that
+directory. Relative input returns `not-absolute`.
 
 `POST /api/ssh/attempts` accepts `{name,host,port,user,originalName?,auth}`,
 where `auth` is either `{kind:"password",password?}` or

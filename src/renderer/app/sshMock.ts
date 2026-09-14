@@ -225,6 +225,16 @@ export const sshMockApi: SshApi = {
   sshCopyPublicKey: async () => {
     await navigator.clipboard?.writeText("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockKeyForAgentPartyQA agentparty@this-pc");
   },
+  sshRemoteHome: async (server) => mockRemoteDirectories(server, "/home/dev"),
+  sshListRemoteDirectories: async (server, remotePath) => mockRemoteDirectories(server, remotePath),
+  sshSuggestRemotePaths: async (server, input) => {
+    const directory = !input || input.endsWith("/") ? input || "/home/dev" : input.slice(0, Math.max(1, input.lastIndexOf("/") + 1));
+    const prefix = !input || input.endsWith("/") ? "" : input.slice(input.lastIndexOf("/") + 1).toLocaleLowerCase();
+    const result = await mockRemoteDirectories(server, directory);
+    return result.ok
+      ? { ok: true, input, items: result.directories.filter((entry) => entry.name.toLocaleLowerCase().startsWith(prefix)).slice(0, 20) }
+      : { ok: false, input, problem: result.problem, ...(result.detail ? { detail: result.detail } : {}) };
+  },
   sshCheckRemotePath: async (server, cwd): Promise<SshRemotePathCheck> => {
     await new Promise((resolve) => window.setTimeout(resolve, 700));
     const target = servers.find((entry) => entry.name === server);
@@ -237,3 +247,23 @@ export const sshMockApi: SshApi = {
     return { ok: true };
   },
 };
+
+async function mockRemoteDirectories(server: string, remotePath: string) {
+  await new Promise((resolve) => window.setTimeout(resolve, 250));
+  if (!servers.some((entry) => entry.name === server)) return { ok: false as const, path: remotePath, problem: "server-missing" as const };
+  if (!remotePath.startsWith("/")) return { ok: false as const, path: remotePath, problem: "not-absolute" as const };
+  if (remotePath === "/root") return { ok: false as const, path: remotePath, problem: "permission-denied" as const, detail: "Permission denied" };
+  if (remotePath.startsWith("/missing")) return { ok: false as const, path: remotePath, problem: "missing" as const, detail: "No such file" };
+  const normalized = remotePath.replace(/\/+$/, "") || "/";
+  const names = normalized === "/home/dev"
+    ? ["projects", "src", "Documents", ".config", ".ssh"]
+    : normalized === "/"
+      ? ["home", "tmp", "usr", "var"]
+      : [];
+  return {
+    ok: true as const,
+    path: normalized,
+    ...(normalized === "/" ? {} : { parent: normalized.slice(0, normalized.lastIndexOf("/")) || "/" }),
+    directories: names.map((name) => ({ name, path: `${normalized === "/" ? "" : normalized}/${name}`, hidden: name.startsWith(".") })),
+  };
+}

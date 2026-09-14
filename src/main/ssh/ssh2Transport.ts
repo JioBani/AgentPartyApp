@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import type { Duplex } from "node:stream";
-import { SshTransport, SshTransportError, type SshCommandResult, type SshCredential, type SshTarget, type SshTransportConnection } from "./sshTransport";
+import * as path from "node:path";
+import {
+  SshRemoteFileError, SshTransport, SshTransportError,
+  type SshCommandResult, type SshCredential, type SshDirectoryListing, type SshTarget, type SshTransportConnection,
+} from "./sshTransport";
 
 // ssh2 has no runtime dependency on Electron and supports password/key auth
 // without putting secrets in argv or environment variables.
@@ -184,7 +188,107 @@ class Ssh2Connection implements SshTransportConnection {
     });
   }
 
+  homeDirectory(): Promise<string> {
+    return this.withSftp((sftp) => new Promise((resolve, reject) => {
+      sftp.realpath(".", (error: unknown, absolutePath: string) => {
+        if (error) { reject(classifyRemoteFile(error)); return; }
+        if (!absolutePath?.startsWith("/")) {
+          reject(new SshRemoteFileError("read-failed", "The server did not return an absolute home path"));
+          return;
+        }
+        resolve(path.posix.normalize(absolutePath));
+      });
+    }));
+  }
+
+  listDirectories(remotePath: string, limit: number): Promise<SshDirectoryListing> {
+    return this.withSftp(async (sftp) => {
+      const canonical = await sftpRealpath(sftp, remotePath);
+      const raw = await sftpReadDirectory(sftp, canonical);
+      const entries: SshDirectoryListing["entries"] = [];
+      let nextIndex = 0;
+      const worker = async () => {
+        while (nextIndex < raw.length && entries.length <= limit) {
+          const entry = raw[nextIndex++];
+          const name = String(entry?.filename || "");
+          if (!name || name === "." || name === "..") continue;
+          let directory = Boolean(entry?.attrs?.isDirectory?.());
+          if (!directory && entry?.attrs?.isSymbolicLink?.()) {
+            try {
+              const attrs = await sftpStat(sftp, path.posix.join(canonical, name));
+              directory = Boolean(attrs?.isDirectory?.());
+            } catch {
+              // Broken or unreadable links are not selectable folders. The
+              // containing directory itself was read successfully.
+              directory = false;
+            }
+          }
+          if (directory) entries.push({ name, path: path.posix.join(canonical, name), hidden: name.startsWith(".") });
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(16, Math.max(1, raw.length)) }, worker));
+      entries.sort(compareRemoteDirectoryNames);
+      return { path: canonical, entries: entries.slice(0, limit), truncated: entries.length > limit || nextIndex < raw.length };
+    });
+  }
+
+  private withSftp<T>(run: (sftp: any) => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.client.sftp((error: unknown, sftp: any) => {
+        if (error) { reject(classify(error)); return; }
+        void run(sftp).then(
+          (value) => { sftp.end(); resolve(value); },
+          (cause) => { sftp.end(); reject(cause); },
+        );
+      });
+    });
+  }
+
   dispose(): void { this.client.end(); }
+}
+
+function sftpRealpath(sftp: any, remotePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    sftp.realpath(remotePath, (error: unknown, absolutePath: string) => {
+      if (error) { reject(classifyRemoteFile(error)); return; }
+      if (!absolutePath?.startsWith("/")) {
+        reject(new SshRemoteFileError("read-failed", "The server did not return an absolute folder path"));
+        return;
+      }
+      resolve(path.posix.normalize(absolutePath));
+    });
+  });
+}
+
+function sftpReadDirectory(sftp: any, remotePath: string): Promise<any[]> {
+  return new Promise((resolve, reject) => {
+    sftp.readdir(remotePath, (error: unknown, entries: any[]) => {
+      error ? reject(classifyRemoteFile(error)) : resolve(Array.isArray(entries) ? entries : []);
+    });
+  });
+}
+
+function sftpStat(sftp: any, remotePath: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    sftp.stat(remotePath, (error: unknown, attrs: any) => error ? reject(classifyRemoteFile(error)) : resolve(attrs));
+  });
+}
+
+function compareRemoteDirectoryNames(a: { name: string; hidden: boolean }, b: { name: string; hidden: boolean }): number {
+  if (a.hidden !== b.hidden) return a.hidden ? 1 : -1;
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+}
+
+function classifyRemoteFile(error: unknown): SshRemoteFileError {
+  const detail = error instanceof Error ? error.message : String(error);
+  const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
+  if (code === 3 || code === "EACCES" || code === "EPERM" || /permission denied/i.test(detail)) {
+    return new SshRemoteFileError("permission-denied", detail);
+  }
+  if (code === 2 || code === "ENOENT" || /no such file|not found/i.test(detail)) {
+    return new SshRemoteFileError("missing", detail);
+  }
+  return new SshRemoteFileError("read-failed", detail);
 }
 
 function fingerprintOf(key: Buffer | string): string {
