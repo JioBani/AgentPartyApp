@@ -2658,6 +2658,30 @@ export class AppController {
     return this.mutateParty(workspacePath, (engine) => engine.startMember(name, input, this.partyForWindow(windowId)));
   }
 
+  /** Rebuilds every session hosted by one SSH server after a manual reconnect. */
+  async recoverSshMembers(server: string): Promise<void> {
+    const workspacePath = this.partyStorageWorkspace("");
+    const engine = this.partyEngine(workspacePath);
+    const state = await engine.listAllParties();
+    const members = state.members.filter((member) => {
+      if (!member.location) return false;
+      const location = parseMemberLocation(member.location);
+      return location.env === "ssh" && location.server === server && member.status !== "closed";
+    });
+    for (const member of members) {
+      try {
+        await engine.respawnMember(member.name, undefined, member.partyId);
+      } catch (error) {
+        log("error", "ssh", "SSH 멤버를 다시 시작하지 못했습니다", {
+          server,
+          member: member.name,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (members.length) await this.broadcastParty(workspacePath);
+  }
+
   bindPartyMember(workspacePath: string, name: string, sessionId: string, windowId?: string): Promise<ReturnType<PartyApplicationService["bindMember"]>> {
     return this.mutateParty(workspacePath, (engine) => engine.bindMember(name, sessionId, this.partyForWindow(windowId)));
   }

@@ -24,6 +24,7 @@ export interface SshServerServiceDeps {
   memberNames(server: string): Promise<string[]>;
   renameMemberLocations(from: string, to: string): Promise<void>;
   invalidateServer?(server: string): void;
+  recoverMembers?(server: string): Promise<void>;
 }
 
 interface PendingAttempt { state: SshConnectAttempt; draft: SshServerDraft; fingerprint?: string; cleanupTimer?: NodeJS.Timeout; cancelled?: boolean; autoLoginPublicKey?: string }
@@ -44,6 +45,7 @@ export class SshServerService extends EventEmitter {
   private readonly attempts = new Map<string, PendingAttempt>();
   private readonly connectionStates = new Map<string, SshServerView["connection"]>();
   private readonly fingerprintChanges = new Map<string, { previous: string; next: string }>();
+  private readonly serversNeedingRecovery = new Set<string>();
 
   constructor(private readonly deps: SshServerServiceDeps) {
     super();
@@ -51,6 +53,9 @@ export class SshServerService extends EventEmitter {
       const state = event as { server?: unknown; connection?: unknown; fingerprint?: unknown };
       if (typeof state.server === "string" && typeof state.connection === "string") {
         this.connectionStates.set(state.server, state.connection as SshServerView["connection"]);
+        if (["disconnected", "unreachable", "auth-failed", "fingerprint-changed"].includes(state.connection)) {
+          this.serversNeedingRecovery.add(state.server);
+        }
         if (state.connection === "fingerprint-changed" && typeof state.fingerprint === "string") {
           try {
             const stored = this.deps.store.get(state.server);
@@ -99,6 +104,7 @@ export class SshServerService extends EventEmitter {
     const stored = this.deps.store.list();
     const fieldErrors = validateDraft(draft, stored);
     if (fieldErrors.length) throw new SshDraftValidationError(fieldErrors);
+    if (draft.originalName) this.serversNeedingRecovery.add(draft.originalName);
     this.deps.transport.disconnect(draft.originalName || draft.name);
     if (draft.originalName && draft.originalName !== draft.name) this.deps.transport.disconnect(draft.name);
     const attemptId = randomUUID();
@@ -389,6 +395,11 @@ export class SshServerService extends EventEmitter {
     }
     if (attempt.draft.originalName) this.deps.invalidateServer?.(attempt.draft.originalName);
     this.deps.invalidateServer?.(attempt.draft.name);
+    const recoverMembers = this.serversNeedingRecovery.delete(attempt.draft.originalName || attempt.draft.name)
+      || this.serversNeedingRecovery.delete(attempt.draft.name);
+    if (recoverMembers) {
+      await this.deps.recoverMembers?.(attempt.draft.name);
+    }
     attempt.state = { ...attempt.state, phase: "done", steps: test.items };
     this.push(attempt); this.emitServers(); this.completeAttempt(attempt);
   }
@@ -409,6 +420,10 @@ export class SshServerService extends EventEmitter {
       server.lastTest = test; this.deps.store.save(server, server.name);
       this.connectionStates.set(server.name, "connected");
       this.fingerprintChanges.delete(server.name);
+      const recoverMembers = this.serversNeedingRecovery.delete(server.name);
+      if (recoverMembers) {
+        await this.deps.recoverMembers?.(server.name);
+      }
       attempt.state = { ...attempt.state, phase: "done", steps: test.items }; this.push(attempt); this.emitServers(); this.completeAttempt(attempt);
     } catch (error) { if (!attempt.cancelled) this.fail(attempt, error); }
   }

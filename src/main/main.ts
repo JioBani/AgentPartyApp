@@ -748,6 +748,7 @@ ${body}
       }
     },
     invalidateServer: (server) => engineRegistry?.disposeSshServer(server),
+    recoverMembers: (server) => controller().recoverSshMembers(server),
   });
   sshServerService.on("attempt", (attempt) => {
     for (const entry of registry().all()) entry.window.webContents.send("ssh:attempt", attempt);
