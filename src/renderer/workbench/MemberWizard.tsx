@@ -167,7 +167,7 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
     const match = routes.find((route) => route.model === defaultProfile.model && (route.harnessId || "claude-code") === (defaultProfile.harness || "claude-code"));
     return match ? routeKey(match) : "";
   });
-  const selected = harnessEntries.find((entry) => routeKey(entry.route) === selectedKey) || harnessEntries[0];
+  const selected = harnessEntries.find((entry) => routeKey(entry.route) === selectedKey) || harnessEntries.find((entry) => entry.route.enabled !== false) || harnessEntries[0];
   const capabilities = selected?.route.capabilities || {};
   const effortCap = capabilities.effort;
   const serviceTierCap = capabilities.serviceTier;
@@ -193,8 +193,9 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
   useEffect(() => {
     if (!harnessEntries.some((entry) => routeKey(entry.route) === selectedKey)) {
       const defModel = harnessDefaults[harness]?.model;
-      const defEntry = defModel ? harnessEntries.find((entry) => entry.route.model === defModel) : undefined;
-      const seed = defEntry || harnessEntries[0];
+      const defEntry = defModel ? harnessEntries.find((entry) => entry.route.model === defModel && entry.route.enabled !== false) : undefined;
+      // Never seed a route the harness cannot run; the catalog would open on it with [선택] disabled.
+      const seed = defEntry || harnessEntries.find((entry) => entry.route.enabled !== false) || harnessEntries[0];
       setSelectedKey(seed ? routeKey(seed.route) : "");
     }
   }, [harnessEntries, selectedKey, harness, harnessDefaults]);

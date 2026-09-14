@@ -142,13 +142,19 @@ export function ModelCatalogModal({
     () => (config.harness ? entries.filter((entry) => (entry.route.harnessId || "claude-code") === harness) : entries),
     [entries, config.harness, harness],
   );
+  /**
+   * The model a fallback lands on. The first row of a harness can be a route that
+   * harness cannot run (Cursor lists Claude models it does not serve), and
+   * landing there left an unusable model selected with [선택] disabled.
+   */
+  const firstUsable = displayEntries.find((entry) => entry.route.enabled !== false) || displayEntries[0];
   const currentKey = useMemo(() => {
     const match = findRoute(value.model, displayEntries.map((entry) => entry.route));
-    return match ? routeKey(match) : displayEntries[0] ? routeKey(displayEntries[0].route) : "";
-  }, [displayEntries, value.model]);
+    return match ? routeKey(match) : firstUsable ? routeKey(firstUsable.route) : "";
+  }, [displayEntries, value.model, firstUsable]);
 
   const [selectedKey, setSelectedKey] = useState(currentKey);
-  const selected = displayEntries.find((entry) => routeKey(entry.route) === selectedKey) || displayEntries[0];
+  const selected = displayEntries.find((entry) => routeKey(entry.route) === selectedKey) || firstUsable;
 
   // --- Catalog list: search + provider collapse + favourites ---------------
   const favorites = useFavoriteModels();
@@ -183,10 +189,13 @@ export function ModelCatalogModal({
       provTouched.current = false;
     }
     if (!provTouched.current) {
-      setProvOpen(initialProvOpen(displayEntries, currentKey, favorites));
+      // Follow the SELECTED model: after a harness switch the selection moves to
+      // that harness's first usable route while currentKey still names the old
+      // model, which opened the wrong group and left the selection collapsed.
+      setProvOpen(initialProvOpen(displayEntries, selectedKey || currentKey, favorites));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [favorites, currentKey, harness]);
+  }, [favorites, currentKey, selectedKey, harness]);
 
   function setProviderOpen(provider: string, open: boolean) {
     provTouched.current = true;
@@ -271,8 +280,9 @@ export function ModelCatalogModal({
   // that opens with it is handled by the expansion effect above, which keys off
   // the resulting current model rather than off this comparison.
   useEffect(() => {
-    if (config.harness && selected && (selected.route.harnessId || "claude-code") !== harness && displayEntries[0]) {
-      setSelectedKey(routeKey(displayEntries[0].route));
+    const stale = !displayEntries.some((entry) => routeKey(entry.route) === selectedKey);
+    if (config.harness && firstUsable && (stale || (selected?.route.harnessId || "claude-code") !== harness || selected?.route.enabled === false)) {
+      setSelectedKey(routeKey(firstUsable.route));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [harness]);
