@@ -58,6 +58,8 @@ const FIELD_ERROR: Record<SshDraftField, Partial<Record<SshFieldError["kind"], s
   user: { required: "계정을 입력하세요" },
   password: { required: "비밀번호를 입력하세요" },
   keyPath: { required: "키 파일을 선택하세요" },
+  // Checked on this PC before connecting, so it never reads as the server refusing the key.
+  passphrase: { "passphrase-wrong": "암호문이 맞지 않습니다" },
 };
 
 const KEY_FILE_ERROR: Record<Extract<SshKeyInspection, { error: string }>["error"], string> = {
@@ -216,7 +218,7 @@ export function SshServerModal(props: SshServerModalProps) {
               )}
 
               {authKind === "key" && keyOk?.locked && (
-                <Field label={localized("STR-4115")}>
+                <Field label={localized("STR-4115")} error={fieldError(fieldErrors, "passphrase")}>
                   <SecretInput value={passphrase} onChange={setPassphrase} placeholder={localized("STR-4116")} field="passphrase" />
                 </Field>
               )}
