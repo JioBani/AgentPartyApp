@@ -24,6 +24,8 @@ export interface CodexCustomProvider {
   wireApi: "responses";
   /** Env var the provider API key is read from (set on the app-server process). */
   envKey: string;
+  /** Extra top-level `-c key=value` overrides this provider needs (values are TOML literals). */
+  extraConfig?: Record<string, string>;
 }
 
 export const CODEX_OPENROUTER_PROVIDER: CodexCustomProvider = {
@@ -61,6 +63,11 @@ export const CODEX_DEEPSEEK_PROVIDER: CodexCustomProvider = {
 /**
  * B.AI's unified API. Its Responses surface serves the GPT and DeepSeek
  * families only; models opt in through the catalog's `baiResponsesApi` flag.
+ *
+ * Web search is disabled: Codex attaches its web_search tool by default and
+ * B.AI rejects it for DeepSeek — measured 2026-09-14, every turn failed with
+ * "The current model does not support web search". The integration guide
+ * prescribes the same top-level `web_search = "disabled"`.
  * https://docs.b.ai/llmservice/codex/integration-guide/
  */
 export const CODEX_BAI_PROVIDER: CodexCustomProvider = {
@@ -69,6 +76,7 @@ export const CODEX_BAI_PROVIDER: CodexCustomProvider = {
   baseUrl: BAI_BASE_URL,
   wireApi: HARNESS_PROTOCOLS.codex.wireApi,
   envKey: BAI_API_KEY_ENV,
+  extraConfig: { web_search: JSON.stringify("disabled") },
 };
 
 const PROVIDERS: Record<string, CodexCustomProvider> = {
@@ -119,5 +127,6 @@ export function codexProviderConfigArgs(provider: CodexCustomProvider | undefine
     "-c", `${prefix}.wire_api=${JSON.stringify(provider.wireApi)}`,
     "-c", `${prefix}.env_key=${JSON.stringify(provider.envKey)}`,
     "-c", `${prefix}.requires_openai_auth=false`,
+    ...Object.entries(provider.extraConfig || {}).flatMap(([key, value]) => ["-c", `${key}=${value}`]),
   ];
 }

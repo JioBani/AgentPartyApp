@@ -1732,6 +1732,16 @@ export class CodexAdapter extends EventEmitter {
             pricing: pricingForModel(this.options.model),
             usage: this.lastUsage,
           }
+        : provider?.id === CODEX_DEEPSEEK_PROVIDER.id || provider?.id === CODEX_BAI_PROVIDER.id
+          ? {
+              // Own-key providers bill per token; labelling these turns "Codex
+              // subscription" hid a real charge behind a flat-rate label.
+              providerId: provider.id === CODEX_BAI_PROVIDER.id ? "bai" : "deepseek",
+              model: this.options.model,
+              runtimeModel: this.options.model,
+              pricing: pricingForModel(this.options.model),
+              usage: this.lastUsage,
+            }
         : provider?.id === CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id
           ? {
               providerId: "anthropic",

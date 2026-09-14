@@ -6,6 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { DEEPSEEK_ANTHROPIC_BASE_URL, DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { BAI_API_KEY_ENV, BAI_BASE_URL } from "../shared/baiDefaults";
+import { normalizeAnthropicRequestForBai } from "./baiRequestCompat";
 import { HARNESS_PROTOCOLS } from "../shared/harnessProtocols";
 import { routerTargetForModel, type RouterTarget } from "../shared/modelCatalog";
 import { CursorHarnessBridge } from "./cursorHarnessBridge";
@@ -387,23 +388,16 @@ export class EmbeddedHarnessRouter {
       body: payload,
       signal,
     });
-    if (response.status >= 400 && process.env.AGENTPARTY_ROUTER_DUMP) {
-      // An upstream 4xx here means xAI rejected the harness's request SHAPE, and
-      // the error text alone ("Invalid message role") does not say which field.
-      // Opt-in so a normal run never writes conversation content to disk.
-      const dump = path.join(os.tmpdir(), `agentparty-xai-reject-${Date.now()}.json`);
-      const cloned = response.clone();
-      fs.writeFileSync(dump, JSON.stringify({ status: response.status, upstream: await cloned.text(), request: JSON.parse(payload) }, null, 1));
-      console.error(`[router:xai] upstream ${response.status}; request dumped to ${dump}`);
-    }
+    await dumpRejectedRequest("xai", response, payload);
     return { response: response.ok ? filterXaiThinking(response) : response, openRouter: false };
   }
 
   /**
    * B.AI's Anthropic Messages surface. One key reaches many vendors' models
-   * there and B.AI speaks Messages natively, so — like the DeepSeek leg — the
-   * body passes through with only the model rewritten. Auth is `x-api-key`,
-   * which B.AI accepts alongside Bearer.
+   * there and B.AI speaks Messages natively, so the body passes through with the
+   * model rewritten plus the one tool-schema shape Gemini rejects normalised
+   * (see baiRequestCompat). Auth is `x-api-key`, which B.AI accepts alongside
+   * Bearer.
    */
   private async forwardToBai(
     body: any,
@@ -417,12 +411,14 @@ export class EmbeddedHarnessRouter {
         `${BAI_API_KEY_ENV} is not configured. Open AgentParty Authentication and connect B.AI. No fallback was attempted.`,
       );
     }
+    const payload = JSON.stringify(normalizeAnthropicRequestForBai(rewriteAnthropicRequestModel(body, target.model)));
     const response = await fetch(apiEndpoint(this.options.baiBaseUrl || BAI_BASE_URL, CLAUDE_PROTOCOL.endpoint), {
       method: "POST",
       headers: anthropicUpstreamHeaders(incomingHeaders, apiKey),
-      body: JSON.stringify(rewriteAnthropicRequestModel(body, target.model)),
+      body: payload,
       signal,
     });
+    await dumpRejectedRequest("bai", response, payload);
     return { response, openRouter: false };
   }
 
@@ -815,6 +811,23 @@ function waitForDrain(res: http.ServerResponse, signal: AbortSignal): Promise<vo
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Writes a provider-rejected request to a temp file when AGENTPARTY_ROUTER_DUMP
+ * is set. An upstream 4xx on a pass-through leg means the provider rejected the
+ * harness's request SHAPE, and the error text alone rarely says which of ~100
+ * tool schemas it was. Opt-in so a normal run never writes conversation content
+ * to disk.
+ */
+async function dumpRejectedRequest(label: string, response: Response, payload: string): Promise<void> {
+  if (response.status < 400 || !process.env.AGENTPARTY_ROUTER_DUMP) {
+    return;
+  }
+  const dump = path.join(os.tmpdir(), `agentparty-${label}-reject-${Date.now()}.json`);
+  const upstream = await response.clone().text();
+  fs.writeFileSync(dump, JSON.stringify({ status: response.status, upstream, request: JSON.parse(payload) }, null, 1));
+  console.error(`[router:${label}] upstream ${response.status}; request dumped to ${dump}`);
 }
 
 /**
