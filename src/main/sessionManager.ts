@@ -34,6 +34,7 @@ import { parseWorkspaceLocation } from "../shared/workspaceLocation";
 import { log } from "./logger";
 import { executionModelFor } from "../shared/modelIdentity";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
+import { BAI_API_KEY_ENV } from "../shared/baiDefaults";
 import type { ApprovalDelivery } from "../shared/approvals";
 import type { SessionEventCursor } from "../shared/sessionEventStream";
 import { registerMemoryProbe } from "../shared/memoryProbes";
@@ -1618,6 +1619,7 @@ export class SessionManager extends EventEmitter {
         // account catalog (openai) only. See codexProviders.ts.
         openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || undefined,
         deepseekApiKey: settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || undefined,
+        baiApiKey: settings.baiApiKey || process.env[BAI_API_KEY_ENV] || undefined,
         usageSourceId,
       });
     }

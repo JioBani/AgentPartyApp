@@ -3,6 +3,7 @@ import { AuthProviderState } from "../shared/types";
 import type { SubscriptionProxyProvider, SubscriptionProxyStatus } from "../core/subscriptionProxy";
 import { isE2E } from "./runtimeMode";
 import { DEEPSEEK_API_KEY_ENV, DEEPSEEK_BASE_URL } from "../shared/deepseekDefaults";
+import { BAI_API_KEY_ENV, BAI_BASE_URL } from "../shared/baiDefaults";
 import { cursorAgentAuthStatus, resolveCursorAgentCommand, type CursorAgentAuthStatus } from "../core/cursorAgentCli";
 import { grokCliInstalledPath } from "../core/grokAgentCli";
 import { grokSubscriptionAvailable } from "../core/grokSubscriptionAuth";
@@ -164,6 +165,7 @@ export function getAuthState(): AuthProviderState[] {
   const settings = getSettings();
   const openRouterKey = settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "";
   const deepseekKey = settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "";
+  const baiKey = settings.baiApiKey || process.env[BAI_API_KEY_ENV] || "";
   let cursorSource: string | undefined;
   let cursorError: string | undefined;
   try {
@@ -308,6 +310,16 @@ export function getAuthState(): AuthProviderState[] {
       maskedValue: maskSecret(deepseekKey),
       detail: deepseekKey ? "Configured. Use Test to verify provider access." : "Missing. DeepSeek V4 models need this key.",
     },
+    {
+      id: "bai",
+      label: "B.AI",
+      kind: "apiKey",
+      status: baiKey ? "configured" : "missing",
+      description: "Used by Gemini, Kimi, GLM, Qwen and other models on B.AI's unified API.",
+      source: settings.baiApiKey ? "AgentParty app settings" : process.env[BAI_API_KEY_ENV] ? BAI_API_KEY_ENV : undefined,
+      maskedValue: maskSecret(baiKey),
+      detail: baiKey ? "Configured. Use Test to verify provider access." : "Missing. B.AI models need this key.",
+    },
   ];
 }
 
@@ -425,6 +437,38 @@ export async function testDeepseekKey(): Promise<AuthProviderState[]> {
     );
   } catch (error) {
     return withProviderResult("deepseek", "network_error", error instanceof Error ? error.message : String(error));
+  }
+}
+
+export function setBaiKey(value: string): AuthProviderState[] {
+  updateSettings({ baiApiKey: value.trim() });
+  return getAuthState();
+}
+
+export function clearBaiKey(): AuthProviderState[] {
+  updateSettings({ baiApiKey: "" });
+  return getAuthState();
+}
+
+/** Verifies the key against B.AI's model list, its cheapest authenticated call. */
+export async function testBaiKey(): Promise<AuthProviderState[]> {
+  const settings = getSettings();
+  const key = settings.baiApiKey || process.env[BAI_API_KEY_ENV] || "";
+  if (isE2E()) {
+    return withProviderResult("bai", "valid", "Mocked by AGENTPARTY_E2E; no provider network call was made.");
+  }
+  if (!key) {
+    return getAuthState();
+  }
+  try {
+    const response = await fetch(`${BAI_BASE_URL}/models`, { headers: { Authorization: `Bearer ${key}` } });
+    return withProviderResult(
+      "bai",
+      response.ok ? "valid" : "invalid",
+      response.ok ? "B.AI accepted the key." : `B.AI rejected the key (${response.status}).`,
+    );
+  } catch (error) {
+    return withProviderResult("bai", "network_error", error instanceof Error ? error.message : String(error));
   }
 }
 

@@ -65,6 +65,21 @@ export const authRoutes: MethodRoute[] = [
     handler: (_p, ctx) => ctx.controller.testDeepseekKey(ctx.workspace),
   },
   {
+    name: "auth.setBaiKey",
+    http: "POST /api/auth/bai",
+    handler: (p, ctx) => ctx.controller.setBaiKey(text(p.key), ctx.workspace),
+  },
+  {
+    name: "auth.clearBaiKey",
+    http: "DELETE /api/auth/bai",
+    handler: (_p, ctx) => ctx.controller.clearBaiKey(ctx.workspace),
+  },
+  {
+    name: "auth.testBaiKey",
+    http: "POST /api/auth/bai/test",
+    handler: (_p, ctx) => ctx.controller.testBaiKey(ctx.workspace),
+  },
+  {
     name: "auth.setOpenRouterKey",
     http: "POST /api/auth/openrouter",
     handler: (p, ctx) => ctx.controller.setOpenRouterKey(text(p.key), ctx.workspace),

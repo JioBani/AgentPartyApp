@@ -10,6 +10,7 @@ import { HostChannel } from "./hostChannel";
 import { writeLine } from "./rpc";
 import type { GateReviewResult } from "../../../shared/messageGate";
 import { DEEPSEEK_API_KEY_ENV } from "../../../shared/deepseekDefaults";
+import { BAI_API_KEY_ENV } from "../../../shared/baiDefaults";
 import { partyBridgeFromInvoker } from "../../../core/partyBridge";
 
 /**
@@ -67,6 +68,7 @@ async function main(): Promise<void> {
       authToken: "engine",
       openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
       deepseekApiKey: process.env[DEEPSEEK_API_KEY_ENV] || "",
+      baiApiKey: process.env[BAI_API_KEY_ENV] || "",
       // Cursor-subscription cross-harness models run HERE (the distro owns the
       // cursor-agent login), unlike the gate reviewer which must run upward.
       cursorAcpRelayScriptPath: process.env.AGENTPARTY_ACP_RELAY_SCRIPT || undefined,

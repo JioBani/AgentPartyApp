@@ -84,7 +84,7 @@ export interface PartyCreateMemberRequest {
 export interface PartyModelQuery {
   /** Harness id (`claude-code` | `codex` | `cursor` | `grok`). */
   harness?: string;
-  /** Provider id (`anthropic` | `openai` | `openrouter` | `xai` | `cursor` | `deepseek`). */
+  /** Provider id (`anthropic` | `openai` | `openrouter` | `xai` | `cursor` | `deepseek` | `bai`). */
   provider?: string;
   /** Case-insensitive substring matched against both the model id and its label. */
   query?: string;
@@ -497,7 +497,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     type: "object",
     properties: {
       harness: { type: "string", description: "Only models runnable on this harness: claude-code | codex | cursor | grok." },
-      provider: { type: "string", description: "Only models served by this provider: anthropic | openai | openrouter | xai | cursor | deepseek." },
+      provider: { type: "string", description: "Only models served by this provider: anthropic | openai | openrouter | xai | cursor | deepseek | bai." },
       query: { type: "string", description: "Case-insensitive substring matched against the model id AND its label, e.g. \"grok\" or \"4.6\"." },
       includeUnavailable: { type: "boolean", description: "Include routes that cannot currently be used, each with the reason. Default false; the excluded count is reported either way." },
     },
@@ -1097,7 +1097,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       partyDynamicToolDescriptions["list-models"],
       {
         harness: z.string().optional().describe("Only models runnable on this harness: claude-code | codex | cursor | grok."),
-        provider: z.string().optional().describe("Only models served by this provider: anthropic | openai | openrouter | xai | cursor | deepseek."),
+        provider: z.string().optional().describe("Only models served by this provider: anthropic | openai | openrouter | xai | cursor | deepseek | bai."),
         query: z.string().optional().describe("Case-insensitive substring matched against the model id AND its label, e.g. \"grok\" or \"4.6\"."),
         includeUnavailable: z.boolean().optional().describe("Include routes that cannot currently be used, each with the reason. Default false; the excluded count is reported either way."),
       },

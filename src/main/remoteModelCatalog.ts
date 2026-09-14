@@ -39,6 +39,11 @@ export interface RemoteCatalogStatus {
   lastCheckedAt?: string;
   /** Why the newest fetch/cache load was not applied. Cleared on success. */
   lastError?: string;
+  /**
+   * Entries in the applied catalog this build skipped because their provider is
+   * newer than the build ("<id> (provider <name>)"). Updating the app routes them.
+   */
+  skippedModels?: string[];
 }
 
 interface CacheEnvelope {
@@ -104,9 +109,9 @@ async function doRefresh(): Promise<RemoteCatalogStatus> {
       throw new Error(`HTTP ${response.status}`);
     }
     const payload: unknown = await response.json();
-    const { models } = validateModelCatalogPayload(payload);
+    const { models, skipped } = validateModelCatalogPayload(payload);
     const fetchedAt = new Date().toISOString();
-    const changed = apply(models, { source: "remote", fetchedAt });
+    const changed = apply(models, { source: "remote", fetchedAt, skipped });
     saveCache({ fetchedAt, url: REMOTE_CATALOG_URL, payload });
     if (changed) {
       log("info", "model-catalog", "remote catalog applied", { models: models.length, fetchedAt });
@@ -124,7 +129,7 @@ async function doRefresh(): Promise<RemoteCatalogStatus> {
 }
 
 /** Applies validated models and updates status. Returns whether anything changed. */
-function apply(models: unknown[], next: { source: "cache" | "remote"; fetchedAt?: string }): boolean {
+function apply(models: unknown[], next: { source: "cache" | "remote"; fetchedAt?: string; skipped: string[] }): boolean {
   const json = JSON.stringify(models);
   const changed = json !== appliedJson;
   if (changed) {
@@ -137,7 +142,11 @@ function apply(models: unknown[], next: { source: "cache" | "remote"; fetchedAt?
     modelCount: models.length,
     fetchedAt: next.fetchedAt,
     lastCheckedAt: next.source === "remote" ? new Date().toISOString() : status.lastCheckedAt,
+    ...(next.skipped.length > 0 ? { skippedModels: next.skipped } : {}),
   };
+  if (changed && next.skipped.length > 0) {
+    log("warn", "model-catalog", "catalog entries skipped: provider unknown to this build", { source: next.source, skipped: next.skipped });
+  }
   if (changed) {
     onCatalogApplied?.();
   }
@@ -155,8 +164,8 @@ function loadCacheSync(): void {
       return;
     }
     const envelope = JSON.parse(fs.readFileSync(file, "utf8")) as CacheEnvelope;
-    const { models } = validateModelCatalogPayload(envelope.payload);
-    apply(models, { source: "cache", fetchedAt: envelope.fetchedAt });
+    const { models, skipped } = validateModelCatalogPayload(envelope.payload);
+    apply(models, { source: "cache", fetchedAt: envelope.fetchedAt, skipped });
     log("info", "model-catalog", "cached remote catalog applied", { models: models.length, fetchedAt: envelope.fetchedAt });
   } catch (error) {
     // A broken cache must not take the app down — but it is surfaced, and the

@@ -1292,6 +1292,24 @@ Calls DeepSeek's model endpoint to verify the configured key.
 
 When `AGENTPARTY_E2E=1`, this endpoint returns a mocked verification result and does not call DeepSeek.
 
+### `POST /api/auth/bai`
+
+Stores a B.AI API key (B.AI's unified API at `https://api.b.ai/v1`, used by the provider `bai` catalog models).
+
+```json
+{ "key": "sk-..." }
+```
+
+### `DELETE /api/auth/bai`
+
+Clears the stored B.AI API key.
+
+### `POST /api/auth/bai/test`
+
+Calls B.AI's `GET /v1/models` to verify the configured key.
+
+When `AGENTPARTY_E2E=1`, this endpoint returns a mocked verification result and does not call B.AI.
+
 ### `POST /api/auth/openrouter`
 
 Stores an OpenRouter API key.
@@ -1725,6 +1743,10 @@ never silent. `GET /api/models` carries the same object as `catalog`.
 - `lastError` — present when the newest fetch or cache load was rejected
   (network failure, invalid payload, unsupported `schemaVersion`). The
   previously applied catalog stays in effect.
+- `skippedModels` — present when the applied catalog contains entries whose
+  provider this build does not know (`"<id> (provider <name>)"`). Those entries
+  are skipped and everything else is applied, so an older install keeps
+  receiving model updates after a newer build adds a provider.
 
 Publishing an update is `npm run catalog:publish` from the source repo (also
 runs automatically inside `release:win`); users pick it up within ~5 minutes

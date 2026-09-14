@@ -20,6 +20,7 @@ import type { CodexPolicy, SandboxMode } from "../shared/codexPolicy";
 import { codexPolicyFromPermissionMode } from "../shared/codexPolicy";
 import {
   CODEX_CLAUDE_SUBSCRIPTION_PROVIDER,
+  CODEX_BAI_PROVIDER,
   CODEX_DEEPSEEK_PROVIDER,
   CODEX_OPENROUTER_PROVIDER,
   codexProviderConfigArgs,
@@ -93,6 +94,7 @@ export interface CodexAdapterOptions {
    */
   openRouterApiKey?: string;
   deepseekApiKey?: string;
+  baiApiKey?: string;
   /** Local CLIProxyAPI connection used for Claude OAuth cross-routing. */
   subscriptionProxyBaseUrl?: string;
   subscriptionProxyApiKey?: string;
@@ -725,6 +727,9 @@ export class CodexAdapter extends EventEmitter {
       ...(provider?.id === CODEX_DEEPSEEK_PROVIDER.id && this.options.deepseekApiKey
         ? { [CODEX_DEEPSEEK_PROVIDER.envKey]: this.options.deepseekApiKey }
         : {}),
+      ...(provider?.id === CODEX_BAI_PROVIDER.id && this.options.baiApiKey
+        ? { [CODEX_BAI_PROVIDER.envKey]: this.options.baiApiKey }
+        : {}),
       ...(provider?.id === CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id
         ? { [CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.envKey]: this.subscriptionProxy().apiKey }
         : {}),
@@ -884,6 +889,11 @@ export class CodexAdapter extends EventEmitter {
     const provider = this.currentProvider();
     if (!provider) {
       return undefined;
+    }
+    if (provider.id === CODEX_BAI_PROVIDER.id && !this.options.baiApiKey) {
+      throw new Error(
+        `Model '${this.options.model}' routes through B.AI, but no B.AI API key is configured. Add the key in Settings before starting this Codex member.`,
+      );
     }
     if (provider.id === CODEX_DEEPSEEK_PROVIDER.id && !this.options.deepseekApiKey) {
       throw new Error(

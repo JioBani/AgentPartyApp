@@ -249,6 +249,7 @@ export function baseState(party: InitialAppState["party"], sessions: SessionView
       routerAuthToken: "",
       openRouterApiKey: "",
       deepseekApiKey: "",
+      baiApiKey: "",
       automationApiPort: 47831,
       transcriptFontScale: 1,
       theme: DEFAULT_THEME_PREFERENCE,

@@ -22,7 +22,7 @@ async function load(entry, name) {
 }
 
 const { buildModelRoutes, displayModelFor, runtimeModelFor, inferModelProvider, grokHarnessRoutes } = await load("src/core/modelRegistry.ts", "mr.mjs");
-const { openRouterAliasMap, openRouterModels, orRoutedModels, deepseekModels, claudeSubscriptionModels, routerTargetForModel, modelCatalog, catalogModelById, catalogModelByRuntime, resolveCatalogModel, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
+const { openRouterAliasMap, openRouterModels, orRoutedModels, deepseekModels, baiModels, codexDirectDeepseekModel, claudeSubscriptionModels, routerTargetForModel, modelCatalog, catalogModelById, catalogModelByRuntime, resolveCatalogModel, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
 const { findRoute } = await load("src/renderer/workbench/routes.ts", "routes.mjs");
 const { PROVIDER_LABELS } = await load("src/renderer/workbench/modelCatalog.ts", "provider-labels.mjs");
 const { groupByProvider } = await load("src/renderer/workbench/modelMeters.tsx", "model-meters.mjs");
@@ -182,6 +182,7 @@ const expectedRouteCount =
   + orRoutedModels().length        // codex: OpenRouter-served models
   + claudeSubscriptionModels().length  // codex: Claude subscription models
   + deepseekCodexCount             // codex: DeepSeek's own API
+  + baiModels().length             // codex: B.AI (disabled where Responses is not served)
   + grokHarnessRoutes().length     // grok: what the Grok Build CLI serves
   + modelCatalog().length          // cursor: every catalog entry
   + unavailableCursorProviderCount // cursor-provider models parked on other harnesses
@@ -202,6 +203,19 @@ for (const m of deepseekModels()) {
   assert(m.vision?.image === false, `${m.id} is declared text-only (DeepSeek serves no image input)`);
 }
 assert(deepseekModels().some((m) => m.deepseekResponsesApi === true), "at least one DeepSeek model is executable on codex");
+
+// B.AI: claude-code reaches every model over B.AI's Messages surface; codex only
+// the Responses-served ones whose slug DeepSeek's own API does not also claim.
+console.log("\nB.AI routes:");
+for (const m of baiModels()) {
+  assert(routerTargetForModel(m.runtimeModel)?.kind === "bai" && routerTargetForModel(m.runtimeModel)?.model === m.baiModel, `${m.id} targets B.AI with slug '${m.baiModel}' on claude-code`);
+  const codexRoute = routes.find((r) => r.harnessId === "codex" && r.modelProvider === "bai" && r.model === m.baiModel);
+  const executable = m.baiResponsesApi === true && !codexDirectDeepseekModel(m.baiModel);
+  assert(codexRoute?.enabled === executable, `${m.id} codex route enabled=${executable}`);
+  if (!executable) {
+    assert(Boolean(codexRoute?.unavailableReason), `${m.id} explains why codex cannot run it`);
+  }
+}
 
 const cursorRoutes = routes.filter((route) => route.harnessId === "cursor");
 assert(cursorRoutes.length === modelCatalog().length + 1 && cursorRoutes.some((route) => route.model === "Auto"), "Cursor harness catalogues every model plus Auto");

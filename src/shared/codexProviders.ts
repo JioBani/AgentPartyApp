@@ -1,4 +1,5 @@
-import { catalogModelByClaudeSubscriptionModel, codexDirectDeepseekModel, orRoutedModels } from "./modelCatalog";
+import { catalogModelByClaudeSubscriptionModel, codexDirectBaiModel, codexDirectDeepseekModel, orRoutedModels } from "./modelCatalog";
+import { BAI_API_KEY_ENV, BAI_BASE_URL } from "./baiDefaults";
 import { DEEPSEEK_API_KEY_ENV, DEEPSEEK_BASE_URL } from "./deepseekDefaults";
 import { DEFAULT_SUBSCRIPTION_PROXY_BASE_URL, SUBSCRIPTION_PROXY_KEY_ENV } from "./subscriptionProxyDefaults";
 import { HARNESS_PROTOCOLS } from "./harnessProtocols";
@@ -57,10 +58,24 @@ export const CODEX_DEEPSEEK_PROVIDER: CodexCustomProvider = {
   envKey: DEEPSEEK_API_KEY_ENV,
 };
 
+/**
+ * B.AI's unified API. Its Responses surface serves the GPT and DeepSeek
+ * families only; models opt in through the catalog's `baiResponsesApi` flag.
+ * https://docs.b.ai/llmservice/codex/integration-guide/
+ */
+export const CODEX_BAI_PROVIDER: CodexCustomProvider = {
+  id: "bai",
+  name: "B.AI",
+  baseUrl: BAI_BASE_URL,
+  wireApi: HARNESS_PROTOCOLS.codex.wireApi,
+  envKey: BAI_API_KEY_ENV,
+};
+
 const PROVIDERS: Record<string, CodexCustomProvider> = {
   [CODEX_OPENROUTER_PROVIDER.id]: CODEX_OPENROUTER_PROVIDER,
   [CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id]: CODEX_CLAUDE_SUBSCRIPTION_PROVIDER,
   [CODEX_DEEPSEEK_PROVIDER.id]: CODEX_DEEPSEEK_PROVIDER,
+  [CODEX_BAI_PROVIDER.id]: CODEX_BAI_PROVIDER,
 };
 
 export function codexCustomProvider(id: string | undefined): CodexCustomProvider | undefined {
@@ -81,6 +96,9 @@ export function codexProviderForModel(model: string): CodexCustomProvider | unde
   }
   if (codexDirectDeepseekModel(model)) {
     return CODEX_DEEPSEEK_PROVIDER;
+  }
+  if (codexDirectBaiModel(model)) {
+    return CODEX_BAI_PROVIDER;
   }
   const isOpenRouterSlug = orRoutedModels().some((m) => (m.orModelId || "").toLowerCase() === lower);
   return isOpenRouterSlug ? CODEX_OPENROUTER_PROVIDER : undefined;

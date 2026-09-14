@@ -1361,6 +1361,11 @@ export function App() {
       test: () => window.agentParty.testDeepseekKey(),
       clear: () => window.agentParty.clearDeepseekKey(),
     },
+    bai: {
+      save: (value) => window.agentParty.setBaiKey(value),
+      test: () => window.agentParty.testBaiKey(),
+      clear: () => window.agentParty.clearBaiKey(),
+    },
   };
 
   async function saveApiKey(providerId: string) {

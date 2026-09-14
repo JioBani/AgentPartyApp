@@ -22,6 +22,8 @@ export interface EngineHostConfig {
     openRouterApiKey?: string;
     /** DeepSeek official API key; enables provider "deepseek" catalog models. */
     deepseekApiKey?: string;
+    /** B.AI unified API key; enables provider "bai" catalog models. */
+    baiApiKey?: string;
     /** Enables Cursor-subscription cross-harness models (the ACP bridge). */
     cursorAcpRelayScriptPath?: string;
     cursorExecutablePath?: () => string | undefined;
@@ -69,6 +71,7 @@ export function createEngineHost(config: EngineHostConfig): EngineHost {
     authToken: config.router.authToken,
     openRouterApiKey: config.router.openRouterApiKey || "",
     deepseekApiKey: config.router.deepseekApiKey || "",
+    baiApiKey: config.router.baiApiKey || "",
     cursorBridge: config.router.cursorAcpRelayScriptPath
       ? {
           relayScriptPath: config.router.cursorAcpRelayScriptPath,

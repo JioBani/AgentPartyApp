@@ -35,7 +35,7 @@ import { migratePartyGroups, type MigrationReport } from "../partyGroupMigration
 import { cwdProblem, parseMemberLocation, type CwdPreferences, type CwdProblem, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../../shared/memberLocation";
 import { clearDefaultCwd, getCheckedCwdPreferences, getCwdPreferences, rememberCwd, removeRecentCwd, setDefaultCwd } from "../cwdPreferencesStore";
 import { appWorkspaceRoot, checkCwd, locationFromPickedFolder, wslDistros, wslHome } from "../cwdService";
-import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withClaudeNativeAuth, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
+import { clearBaiKey, clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setBaiKey, setDeepseekKey, setOpenRouterKey, testBaiKey, testDeepseekKey, testOpenRouterKey, withClaudeNativeAuth, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
@@ -1328,6 +1328,22 @@ export class AppController {
 
   async testDeepseekKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, await testDeepseekKey()), await this.getSubscriptionStatus()));
+  }
+
+  async setBaiKey(key: string, workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    const state = setBaiKey(key || "");
+    this.deps.onSettingsChanged();
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
+  }
+
+  async clearBaiKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    const state = clearBaiKey();
+    this.deps.onSettingsChanged();
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
+  }
+
+  async testBaiKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, await testBaiKey()), await this.getSubscriptionStatus()));
   }
 
   /** The full provider list, for the automation API's GET /api/auth. */

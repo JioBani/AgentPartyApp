@@ -123,6 +123,8 @@ export interface AppSettings {
   openRouterApiKey: string;
   /** DeepSeek official API key (DEEPSEEK_API_KEY). Used by provider "deepseek" models. */
   deepseekApiKey: string;
+  /** B.AI unified API key (BAI_API_KEY). Used by provider "bai" models. */
+  baiApiKey: string;
   automationApiPort: number;
   /** Transcript text zoom (Ctrl+wheel over a session view). 1 = 100%; clamped 0.6–2.0. */
   transcriptFontScale: number;

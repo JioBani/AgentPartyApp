@@ -249,6 +249,7 @@ function disconnectableProviderOf(id: string): DisconnectableProvider | undefine
 const API_KEY_PLACEHOLDERS: Record<string, string> = {
   openrouter: "새 OpenRouter API 키 입력 (sk-or-…)",
   deepseek: "새 DeepSeek API 키 입력 (sk-…)",
+  bai: "새 B.AI API 키 입력 (sk-…)",
 };
 
 export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onTestNativeCli, onConnectSubscription, onDisconnectSubscription }: {

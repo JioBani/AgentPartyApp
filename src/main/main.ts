@@ -36,6 +36,7 @@ import { UpdateService } from "./updateService";
 import { DiscordControlService } from "./discordControl";
 import { loadDotEnv } from "./dotenv";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
+import { BAI_API_KEY_ENV } from "../shared/baiDefaults";
 import { MOBILE_SETTINGS_DEFAULTS } from "../shared/mobileProtocol";
 import type { CreateMobileGatewayOptions } from "./mobile/mobileGateway";
 import { isMobilePipe, loadMobilePipe } from "./mobilePipe";
@@ -493,6 +494,7 @@ ${body}
       authToken: settings.routerAuthToken,
       openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
       deepseekApiKey: settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "",
+      baiApiKey: settings.baiApiKey || process.env[BAI_API_KEY_ENV] || "",
       cursorAcpRelayScriptPath: acpRelayScript,
       cursorExecutablePath: () => getSettings().cursorExecutablePath || undefined,
     },
@@ -528,6 +530,7 @@ ${body}
         acpRelayWinPath: acpRelayScript,
         openRouterApiKey: getSettings().openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
         deepseekApiKey: getSettings().deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "",
+        baiApiKey: getSettings().baiApiKey || process.env[BAI_API_KEY_ENV] || "",
       });
       const client = new RemoteEngineClient(handle.transport, serialized, handle.dispose, {
         // The distro engine owns the gate decision but cannot reach a provider:
@@ -1040,6 +1043,7 @@ function applyRuntimeSettings(): void {
     authToken: settings.routerAuthToken,
     openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
     deepseekApiKey: settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "",
+    baiApiKey: settings.baiApiKey || process.env[BAI_API_KEY_ENV] || "",
   });
   log("info", "settings", "runtime settings applied", {
     routerBaseUrl: router?.baseUrl,
@@ -1047,6 +1051,7 @@ function applyRuntimeSettings(): void {
     harnessDefaults: settings.harnessDefaults,
     openRouterConfigured: Boolean(settings.openRouterApiKey || process.env.OPENROUTER_API_KEY),
     deepseekConfigured: Boolean(settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV]),
+    baiConfigured: Boolean(settings.baiApiKey || process.env[BAI_API_KEY_ENV]),
   });
 }
 
@@ -1130,6 +1135,9 @@ function registerIpc(): void {
   handle("auth:setDeepseekKey", async (event, value: string) => controller().setDeepseekKey(value || "", senderWorkspace(event)));
   handle("auth:clearDeepseekKey", async (event) => controller().clearDeepseekKey(senderWorkspace(event)));
   handle("auth:testDeepseekKey", async (event) => controller().testDeepseekKey(senderWorkspace(event)));
+  handle("auth:setBaiKey", async (event, value: string) => controller().setBaiKey(value || "", senderWorkspace(event)));
+  handle("auth:clearBaiKey", async (event) => controller().clearBaiKey(senderWorkspace(event)));
+  handle("auth:testBaiKey", async (event) => controller().testBaiKey(senderWorkspace(event)));
   handle("auth:setOpenRouterKey", async (event, value: string) => controller().setOpenRouterKey(value || "", senderWorkspace(event)));
   handle("auth:clearOpenRouterKey", async (event) => controller().clearOpenRouterKey(senderWorkspace(event)));
   handle("auth:testOpenRouterKey", async (event) => controller().testOpenRouterKey(senderWorkspace(event)));
