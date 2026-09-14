@@ -13,6 +13,11 @@ const { Client } = require("ssh2") as { Client: new () => any };
 
 interface LiveConnection { client: any; target: SshTarget; wrapper: Ssh2Connection; closed: boolean }
 
+// ssh2's readyTimeout covers the protocol handshake, but not every path before
+// `ready` (notably key parsing/auth negotiation). The product attempt needs one
+// deterministic end regardless of which library phase stopped responding.
+const SSH_ATTEMPT_TIMEOUT_MS = 12_000;
+
 export class Ssh2Transport extends SshTransport {
   private readonly live = new Map<string, LiveConnection>();
   private readonly pending = new Map<string, any>();
@@ -22,16 +27,21 @@ export class Ssh2Transport extends SshTransport {
     return new Promise((resolve, reject) => {
       const client = new Client();
       let settled = false;
+      let deadline: NodeJS.Timeout | undefined;
       const finish = (error?: unknown, value?: string) => {
         if (settled) return;
         settled = true;
+        if (deadline) clearTimeout(deadline);
         client.end();
         error ? reject(classify(error)) : resolve(value!);
       };
       client.on("error", (error: unknown) => { if (!settled) finish(error); });
+      deadline = setTimeout(() => finish(new Error("시간 초과")), SSH_ATTEMPT_TIMEOUT_MS);
+      deadline.unref?.();
       client.connect({
         host: target.host, port: target.port, username: target.user,
-        readyTimeout: 10_000,
+        // The application deadline above owns the user-facing timeout text.
+        readyTimeout: SSH_ATTEMPT_TIMEOUT_MS + 3_000,
         hostVerifier: (key: Buffer | string) => {
           finish(undefined, fingerprintOf(key));
           return false;
@@ -57,9 +67,11 @@ export class Ssh2Transport extends SshTransport {
       let attemptedCredential = false;
       let passwordNotAllowed = false;
       let settled = false;
+      let deadline: NodeJS.Timeout | undefined;
       const fail = (error: unknown) => {
         if (settled) return;
         settled = true;
+        if (deadline) clearTimeout(deadline);
         if (this.pending.get(serverName) === client) this.pending.delete(serverName);
         client.end();
         if (this.cancelledPending.delete(client)) {
@@ -85,6 +97,7 @@ export class Ssh2Transport extends SshTransport {
       client.once("ready", () => {
         if (settled) return;
         settled = true;
+        if (deadline) clearTimeout(deadline);
         if (this.pending.get(serverName) === client) this.pending.delete(serverName);
         client.removeListener("error", fail);
         client.removeListener("close", closedBeforeReady);
@@ -105,8 +118,13 @@ export class Ssh2Transport extends SshTransport {
       const closedBeforeReady = () => fail(new Error(`${serverName} 로그인 전에 연결이 끊겼습니다`));
       client.once("error", fail);
       client.once("close", closedBeforeReady);
+      deadline = setTimeout(() => fail(new Error("시간 초과")), SSH_ATTEMPT_TIMEOUT_MS);
+      deadline.unref?.();
       const config = {
-        host: target.host, port: target.port, username: target.user, readyTimeout: 12_000,
+        host: target.host, port: target.port, username: target.user,
+        // The application deadline above covers key parsing and authentication
+        // as well as the network handshake, and owns the localized detail.
+        readyTimeout: SSH_ATTEMPT_TIMEOUT_MS + 3_000,
         keepaliveInterval: 10_000, keepaliveCountMax: 3,
         authHandler: (methodsLeft: string[] | null, _partialSuccess: boolean | null, callback: (method: string | false) => void) => {
           if (methodsLeft === null) { callback("none"); return; }
