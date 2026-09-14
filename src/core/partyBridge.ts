@@ -282,14 +282,14 @@ export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   send: "Send the same message to one or more members of your party. Pass `to` as one member name or an array of names. Batch results separate delivered, queued, and failed recipients. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in, or queue=true to explicitly wait behind the current turn. Legacy interrupt=false is treated as omitted so model-generated false values cannot disable the saved setting.",
-  "member-create": "Create and start one or more members. Use the existing top-level fields for one member, or pass `members` as an array of member objects for a batch. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?} to choose Windows or WSL explicitly; omit it to inherit your own execution location.",
+  "member-create": "Create and start one or more members. Use the existing top-level fields for one member, or pass `members` as an array of member objects for a batch. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?, server?} to choose Windows, WSL, or SSH explicitly; server is required for SSH. Omit location to inherit your own execution location.",
   "member-remove": "Remove one or more members from your party. Pass `name` as one member name or an array of names.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
   "member-runtime": "Change one other member's model, reasoning effort, and/or Fast mode without changing its harness. Call list-models with the member's harness for valid model ids and effort options. Fast is a boolean: true selects that route's native Fast tier (for example priority on Codex or fast on Cursor), false selects Standard or clears an inapplicable stale tier. Existing conversation is preserved when a session restart is required. A busy target is refused instead of having its turn killed.",
   "gate-set": "Set one axis of another member's Message Gate. axis: send|recv (omitted = send for compatibility). mode: inherit|on|off. rule: text to enforce (null = inherit the matching party axis). reviewer: {model, effort, serviceTier?} (null = no axis-specific reviewer). Send and receive rules are combined into one review when both apply. Any member may edit any member's gate. The result confirms ruleChars without echoing the rule; use list {name} to inspect it.",
   "party-gate-set": "Set one PARTY-WIDE Message Gate axis. axis: send|recv (omitted = send for compatibility). enabled, rule, and reviewer patch only that axis; every matching inheriting member follows it. Send and receive rules are combined into one delivery-time review. Prefer gate-set when only one member should change. The result confirms ruleChars without echoing the rule.",
   list: "List compact member summaries and current tabGroups. Pass `name` to inspect one member's full model, permission, location, and Message Gate settings. Full detail for every member is intentionally unavailable because long inherited gate rules would be repeated once per member. Pass a chosen tabGroups[].id to member-create.tabGroup.",
-  "list-locations": "List the execution hosts this app supports plus recent and default cwd suggestions. Use a returned host/cwd/distro tuple as member-create.location. Entries with problem are shown for diagnostics but must not be used until repaired.",
+  "list-locations": "List the execution hosts this app supports plus recent and default cwd suggestions. Use a returned host/cwd/distro/server tuple as member-create.location. Entries with problem are shown for diagnostics but must not be used until repaired.",
   "list-models": "Discover available harnesses, models, and reasoning options for member-create. Called with NO arguments it returns a compact index of every model — label, which harnesses run it, and the id to pass to member-create when that id differs from the label. Pass `harness`, `provider`, and/or `query` to get the FULL detail (effort/thinking options, service tier, pricing, context window) for just the matches; that is the cheap way to answer 'what settings does this one model take'. Filters narrow, they never paginate: dropping them always widens back to everything. A filter that matches nothing is an ERROR listing what does exist, never an empty result — so an empty answer never means 'this model is unavailable'. Routes that cannot currently be used are excluded from detail rows but their count is always reported and `includeUnavailable: true` brings them back with the reason.",
   "member-status": "Check whether a member's turn is running (busy) or stopped (idle/error). Omit name to get every member's turn state.",
   interrupt: "Stop a member's in-flight turn. Pass a member name, or 'all' to stop every member except yourself. You cannot interrupt yourself.",
@@ -318,7 +318,8 @@ const partyCreateMemberDynamicProperties: Record<string, unknown> = {
     properties: {
       host: { type: "string", enum: [...MEMBER_EXECUTION_HOSTS], description: "Execution host. WSL is Windows-only; future native hosts extend this field." },
       cwd: { type: "string", description: "Absolute path in that host's native syntax." },
-      distro: { type: "string", description: "Required when host is wsl; omit for windows." },
+      distro: { type: "string", description: "Required when host is wsl; omit otherwise." },
+      server: { type: "string", description: "Registered SSH server name. Required when host is ssh; omit otherwise." },
     },
     required: ["host", "cwd"],
     additionalProperties: false,
@@ -975,7 +976,8 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     location: z.object({
       host: z.enum(MEMBER_EXECUTION_HOSTS).describe("Execution host. WSL is Windows-only; future native hosts extend this field."),
       cwd: z.string().describe("Absolute path in the selected host's native syntax."),
-      distro: z.string().optional().describe("Required when host is wsl; omit for windows."),
+      distro: z.string().optional().describe("Required when host is wsl; omit otherwise."),
+      server: z.string().optional().describe("Registered SSH server name. Required when host is ssh; omit otherwise."),
     }).optional().describe("Explicit execution location. Omit to inherit your own; call list-locations for suggestions."),
     codexPolicy: z.object({
       sandbox: z.enum(["read-only", "workspace-write", "danger-full-access"]),

@@ -402,6 +402,7 @@ const dynamicSendSpec = dynamic.tools.find((tool) => tool.name === "send")?.inpu
 assert(dynamicSendSpec?.properties?.interrupt?.type === "boolean" && dynamicSendSpec?.properties?.queue?.type === "boolean", "member send exposes separate interrupt and queue delivery flags");
 assert(Array.isArray(dynamicSendSpec?.properties?.to?.oneOf), "dynamic send schema exposes string-or-array recipients");
 assert(dynamic.tools.find((tool) => tool.name === "member-create")?.inputSchema?.properties?.members?.type === "array", "dynamic member-create schema exposes the members batch field");
+assert(dynamic.tools.find((tool) => tool.name === "member-create")?.inputSchema?.properties?.location?.properties?.server?.type === "string", "dynamic member-create schema exposes the SSH server alias");
 assert(Array.isArray(dynamic.tools.find((tool) => tool.name === "member-remove")?.inputSchema?.properties?.name?.oneOf), "dynamic member-remove schema exposes string-or-array names");
 assert(dynamic.tools.find((tool) => tool.name === "member-runtime")?.inputSchema?.properties?.fast?.type === "boolean", "dynamic member-runtime schema exposes Fast as a boolean");
 assert(dynamic.tools.find((tool) => tool.name === "gate-set")?.inputSchema?.properties?.axis?.enum?.join() === "send,recv", "dynamic gate-set schema exposes the send/recv axis");
