@@ -23,6 +23,7 @@ export const QA_ENDPOINTS = [
   "POST /api/qa/usage",
   "POST /api/qa/design-gallery",
   "POST /api/qa/environment",
+  "POST /api/qa/ssh/key-file/pick",
   "POST /api/qa/appearance/storage",
   "POST /api/qa/update",
   "POST /api/qa/reset",
@@ -76,6 +77,10 @@ export async function handleQaRoute(context: AutomationRouteContext): Promise<vo
   // machine. `{"reset":true}` puts the real probe back.
   if (method === "POST" && url.pathname === "/api/qa/environment") {
     sendJson(res, 200, c.qaEnvironment(await readJson(req)));
+    return;
+  }
+  if (method === "POST" && url.pathname === "/api/qa/ssh/key-file/pick") {
+    sendJson(res, 200, await c.qaSetNextSshKeyFile(await readJson(req)));
     return;
   }
   if (method === "POST" && url.pathname === "/api/qa/appearance/storage") {

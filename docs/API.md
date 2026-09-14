@@ -4492,6 +4492,20 @@ Stands a **fixed environment report** in for the real probe, so the 환경 scree
 and its blocker cards can be reviewed without breaking the reviewer's machine.
 Body is a partial report; `{ "reset": true }` puts the real probe back.
 
+### `POST /api/qa/ssh/key-file/pick`
+
+QA-only one-shot replacement for the native SSH key-file dialog result. Launch
+with `AGENTPARTY_QA=1`, then send an existing absolute local path before clicking
+**찾아보기…** in the real SSH server form:
+
+```json
+{ "path": "C:\\qa-fixtures\\id_ed25519" }
+```
+
+The next `ssh.pickKeyFile` call consumes the injected path. The renderer then
+runs the normal `ssh.inspectKeyFile` and form-update path, so only OS dialog
+control is bypassed. A later click opens the native picker again.
+
 ### `POST /api/qa/mobile/:action`
 
 Most actions drive the **phone side** of the mock mobile gateway — the only way

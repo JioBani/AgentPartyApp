@@ -279,6 +279,8 @@ export class AppController {
 
   /** Last explicit native-login proof per workspace/provider/host. */
   private readonly nativeCliAuthTests = new Map<string, { checkedAt: string; phase: NativeCliAuthProgress["phase"]; check: EnvironmentReport["checks"][number]; distro?: string }>();
+  /** One-shot native picker result used only by the QA HTTP surface. */
+  private qaNextSshKeyFile: string | undefined;
 
   /**
    * Cursor Agent CLI status for the host that actually RUNS the harness: the
@@ -2259,6 +2261,11 @@ export class AppController {
   sshSavePasswordLogin(attemptId: string) { this.requireSshServers().savePasswordLogin(attemptId); }
   sshRetest(attemptId: string) { this.requireSshServers().retest(attemptId); }
   async sshPickKeyFile(windowId?: string): Promise<string | null> {
+    if (this.qaNextSshKeyFile !== undefined) {
+      const selected = this.qaNextSshKeyFile;
+      this.qaNextSshKeyFile = undefined;
+      return selected;
+    }
     if (!this.deps.pickSshKeyFile) throw new Error("이 프로세스에서는 SSH 키 파일을 선택할 수 없습니다");
     return (await this.deps.pickSshKeyFile(windowId)) || null;
   }
@@ -3575,6 +3582,22 @@ export class AppController {
   // --- QA (test-only, workspace + window aware) ---------------------------
   isQaEnabled(): boolean {
     return isE2E() || process.env.AGENTPARTY_QA === "1";
+  }
+
+  /** Supplies the next SSH picker result while leaving all renderer handling unchanged. */
+  async qaSetNextSshKeyFile(input: { path?: unknown }): Promise<{ ok: true }> {
+    this.requireQa();
+    const selected = typeof input?.path === "string" ? input.path.trim() : "";
+    if (!selected || !path.isAbsolute(selected)) {
+      throw new Error("path must be an absolute local file path.");
+    }
+    try {
+      if (!(await fs.stat(selected)).isFile()) throw new Error("not a file");
+    } catch {
+      throw new Error(`SSH key picker fixture does not exist: ${selected}`);
+    }
+    this.qaNextSshKeyFile = selected;
+    return { ok: true };
   }
 
   async qaSeed(workspacePath: string, input: { party?: string; members?: QaMemberSpec[] }): Promise<{ ok: true; created: string[] } & ReturnType<PartyApplicationService["list"]>> {
