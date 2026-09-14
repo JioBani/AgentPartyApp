@@ -70,7 +70,16 @@ const created = svc.createParty({ name: "r63" });
 const partyId = created.member?.partyId || created.currentPartyId;
 
 console.log("\nR-63 open-tab delivery:");
-svc.createMember({ partyId, name: "idle-open", requirement: "open tab, no session yet", runtime: "claude-code" });
+const initialLayout = svc.getPartyLayout(partyId);
+assert(initialLayout?.panels[0]?.tabs.includes("main"), "new party stores its visible main tab before member creation");
+svc.createMember({
+  partyId,
+  name: "idle-open",
+  requirement: "open tab, no session yet",
+  runtime: "claude-code",
+  tabGroup: initialLayout?.focusedPanelId,
+});
+assert(svc.getPartyLayout(partyId)?.panels[0]?.tabs.includes("idle-open"), "member-create accepts the visible initial tab group");
 const opened = svc.openMember("idle-open", partyId);
 assert(opened.member?.status === "opened" && !opened.member?.sessionId, "open tab has no session yet");
 
