@@ -4340,11 +4340,13 @@ Every field is optional and applied in order:
 - `select` — requires a focused `<select>` and an existing option value, then
   drives its `input`/`change` workflow. A missing option or non-select target
   fails visibly instead of reporting a no-op as success.
-- `key` — sent as a **real input event** (`keyDown`/`char`/`keyUp`), so the
-  browser's own default action for that key still runs. This is the reason the
-  endpoint exists: a synthetic DOM event dispatched from a script never fires a
-  default action, so behaviour that depends on one — Enter submitting the form
-  a single-line input sits in — cannot be verified any other way.
+- `key` — sent as **real input events**, so the browser's own default action for
+  that key still runs. Printable keys use `keyDown`/`char`/`keyUp`; named action
+  and navigation keys such as `Enter`, `Escape`, and `ArrowDown` use
+  `keyDown`/`keyUp` and do not insert their key names as text. This is the reason
+  the endpoint exists: a synthetic DOM event dispatched from a script never
+  fires a default action, so behaviour that depends on one — Enter submitting
+  the form a single-line input sits in — cannot be verified any other way.
 - `modifiers` — Electron modifier names (`control`, `shift`, `alt`, `meta`).
 
 Returns `{ ok, selector, key, kind, value, references }` describing what is
