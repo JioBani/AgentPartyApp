@@ -100,6 +100,12 @@ const GROK_HARNESS: HarnessChoice = {
   hint: "xAI Grok Build CLI · 구독 · 도구를 스스로 승인",
 };
 const ALL_HARNESSES = [...HARNESSES, CURSOR_HARNESS, GROK_HARNESS];
+/**
+ * Phase 1 runs only Codex and Claude Code on an SSH server. The others stay in
+ * the list, visibly unavailable, because nothing the user does can make them work
+ * there — unlike an agent that is merely not installed yet.
+ */
+const SSH_UNSUPPORTED_HARNESSES = ["cursor", "grok"] as const;
 
 /**
  * Creating a party member, in three steps: identity → runtime → permission.
@@ -242,10 +248,14 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
   // being checked or is shown as the reason under the field.
   const sshPathProblem = location?.env === "ssh" && !(sshPathCheck && sshPathCheck !== "checking" && sshPathCheck.ok);
   const hasLocation = Boolean(location?.cwd) && !locationProblem && !distroProblem && !sshPathProblem;
-  const canSubmit = canCreate && hasLocation;
+  const sshUnsupported = location?.env === "ssh" && (SSH_UNSUPPORTED_HARNESSES as readonly string[]).includes(harness);
+  const unsupportedHarnesses = location?.env === "ssh"
+    ? Object.fromEntries(SSH_UNSUPPORTED_HARNESSES.map((id) => [id, localized("STR-4204")]))
+    : undefined;
+  const canSubmit = canCreate && hasLocation && !sshUnsupported;
   // Name gates the first step, location the second; the permission step is
   // pre-seeded from the saved defaults and cannot be left unusable.
-  const canAdvance = step === "identity" ? canCreate : step === "runtime" ? hasLocation : true;
+  const canAdvance = step === "identity" ? canCreate : step === "runtime" ? hasLocation && !sshUnsupported : true;
 
   function goNext() {
     if (!canAdvance) {
@@ -476,7 +486,7 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
                   rather than a second arrangement of the same controls. */}
               <button type="button" className="wb-wizard-runtime" onClick={() => setPickerOpen(true)}>
                 <span className="wb-wizard-runtime-main">
-                  <span className="wb-wizard-runtime-harness">{selectedHarness?.icon}{selectedHarness?.label || harness}</span>
+                  <span className="wb-wizard-runtime-harness">{selectedHarness?.icon}{selectedHarness?.label || harness}{sshUnsupported && <span className="wb-model-off" data-ssh-unsupported>{localized("STR-4204")}</span>}</span>
                   <span className="wb-mono wb-wizard-runtime-model">{selected?.route.label || selectedMeta?.name || "모델 선택"}</span>
                 </span>
                 <span className="wb-mono wb-wizard-runtime-sub">
@@ -595,6 +605,7 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
             config={{ harness: true, effort: true, serviceTier: true, thinking: true }}
             currentHarness={harness}
             applyLabel="선택"
+            unsupportedHarnesses={unsupportedHarnesses}
             dim
             onApply={applyRuntime}
             onClose={() => setPickerOpen(false)}

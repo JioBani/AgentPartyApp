@@ -10174,6 +10174,8 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 /* Header location chip keeps at least its icon when the panel is narrow. */
 .wb-toolbar-cwd .wb-ssh-loc { flex: 0 1 auto; min-width: 26px; }
 .wb-ssh-agent-error { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* "SSH 미지원" tag beside a harness name (catalog strip, overflow menu, wizard field). */
+.wb-harness-tab .wb-model-off, .wb-harness-menu-item .wb-model-off, .wb-wizard-runtime-harness .wb-model-off { margin-left: 6px; }
 .wb-ssh-remote-tag { margin-left: 6px; padding: 0 5px; border-radius: 4px; background: var(--bg-4); color: var(--text-3); font-family: var(--font-sans); font-size: 10px; }
 
 /* ── 파티 그룹 가시성 (사용자 요청 2026-08-20) ──────────────────────────

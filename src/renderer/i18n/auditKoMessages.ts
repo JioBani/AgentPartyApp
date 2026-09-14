@@ -1782,7 +1782,8 @@ export const auditKoMessages = {
   "STR-4153": "끊김 · 재연결 중",
   "STR-4154": "연결할 수 없음",
   "STR-4155": "인증 실패",
-  "STR-4156": "지문 변경"
+  "STR-4156": "지문 변경",
+  "STR-4204": "SSH 미지원"
 } as const;
 
 export type AuditMessageKey = keyof typeof auditKoMessages;

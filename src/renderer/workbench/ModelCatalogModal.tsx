@@ -68,6 +68,12 @@ interface ModelCatalogModalProps {
   onClose: () => void;
   /** Dim the backdrop. Default false — a clean floating popup (no dim). */
   dim?: boolean;
+  /**
+   * Harnesses shown but not selectable, with the short reason as a tag (e.g.
+   * Cursor and Grok at an SSH location). Shown rather than hidden: the user sees
+   * why an agent is missing instead of wondering where it went.
+   */
+  unsupportedHarnesses?: Readonly<Record<string, string>>;
 }
 
 const HARNESS_CHOICES = HARNESS_IDS.map((id) => ({ id, label: harnessLabel(id) }));
@@ -125,6 +131,7 @@ export function ModelCatalogModal({
   onApply,
   onClose,
   dim = false,
+  unsupportedHarnesses,
 }: ModelCatalogModalProps) {
   const entries = useMemo<RouteEntry[]>(() => routes.map((route) => ({ route, meta: modelView(route) })), [routes]);
 
@@ -374,17 +381,19 @@ export function ModelCatalogModal({
                 <div className="wb-modal-label">Harness{harnessLocked && <span className="wb-mono wb-modal-note">  <LocalizedText id="STR-1864" /></span>}</div>
                 <div className="wb-harness-strip" ref={moreRef}>
                   {primaryHarnesses.map((choice) => {
-                    const locked = harnessLocked && choice.id !== currentHarness;
+                    const unsupported = unsupportedHarnesses?.[choice.id];
+                    const locked = (harnessLocked && choice.id !== currentHarness) || Boolean(unsupported);
                     return (
                       <button
                         type="button"
                         key={choice.id}
                         disabled={locked}
-                        title={locked ? lockedHarnessHint : choice.label}
+                        title={unsupported || (locked ? lockedHarnessHint : choice.label)}
                         className={"wb-harness-tab" + (choice.id === harness ? " is-active" : "") + (locked ? " is-locked" : "")}
                         onClick={() => { if (!locked) setHarness(choice.id); }}
                       >
                         {choice.label}
+                        {unsupported && <span className="wb-model-off">{unsupported}</span>}
                       </button>
                     );
                   })}
@@ -405,18 +414,20 @@ export function ModelCatalogModal({
                     <div className="wb-harness-menu" role="menu">
                       <div className="wb-harness-menu-label"><LocalizedText id="STR-1867" /></div>
                       {overflowHarnesses.map((choice) => {
-                        const locked = harnessLocked && choice.id !== currentHarness;
+                        const unsupported = unsupportedHarnesses?.[choice.id];
+                        const locked = (harnessLocked && choice.id !== currentHarness) || Boolean(unsupported);
                         return (
                           <button
                             type="button"
                             role="menuitem"
                             key={choice.id}
                             disabled={locked}
-                            title={locked ? lockedHarnessHint : undefined}
+                            title={unsupported || (locked ? lockedHarnessHint : undefined)}
                             className={"wb-harness-menu-item" + (choice.id === harness ? " is-active" : "") + (locked ? " is-locked" : "")}
                             onClick={() => { if (!locked) { setHarness(choice.id); setMoreOpen(false); } }}
                           >
                             <span className="wb-harness-menu-name">{choice.label}</span>
+                            {unsupported && <span className="wb-model-off">{unsupported}</span>}
                             <span className="wb-mono">{harnessCount(choice.id)}</span>
                             <Check size={13} className={"wb-harness-menu-check" + (choice.id === harness ? " is-on" : "")} aria-hidden="true" />
                           </button>
