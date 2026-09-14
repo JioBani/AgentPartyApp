@@ -43,7 +43,7 @@ export function spawnSshEngine(options: SshEngineOptions): SshEngineHandle {
     }
     const isolatedCodexHome = process.env.AGENTPARTY_NATIVE_CODEX_HOME?.trim();
     if (isolatedCodexHome && !isolatedCodexHome.startsWith("/")) {
-      throw new Error(`${options.server} 의 격리된 Codex 설정 경로는 / 로 시작해야 합니다`);
+      throw new Error("격리된 Codex 설정 경로는 / 로 시작해야 합니다");
     }
     if (isolatedCodexHome) {
       log("info", "ssh-engine", "forwarding isolated Codex runtime configuration", {
