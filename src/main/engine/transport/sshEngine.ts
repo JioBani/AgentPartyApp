@@ -41,10 +41,21 @@ export function spawnSshEngine(options: SshEngineOptions): SshEngineHandle {
         log("warn", "ssh-engine", "provision lock cleanup failed", { server: options.server, error: messageOf(error) });
       });
     }
+    const isolatedCodexHome = process.env.AGENTPARTY_NATIVE_CODEX_HOME?.trim();
+    if (isolatedCodexHome && !isolatedCodexHome.startsWith("/")) {
+      throw new Error(`${options.server} 의 격리된 Codex 설정 경로는 / 로 시작해야 합니다`);
+    }
+    if (isolatedCodexHome) {
+      log("info", "ssh-engine", "forwarding isolated Codex runtime configuration", {
+        server: options.server,
+        variables: ["AGENTPARTY_NATIVE_CODEX_HOME"],
+      });
+    }
     const command = [
       `cd ${shellQuote(serverDir)}`,
       runtime.pathExport,
       "export AGENTPARTY_REMOTE_HOST_KIND=ssh",
+      isolatedCodexHome ? `export AGENTPARTY_NATIVE_CODEX_HOME=${shellQuote(isolatedCodexHome)}` : "",
       `export AGENTPARTY_CODEX_MCP_SERVER=${shellQuote(`${serverDir}/agentparty-codex-mcp-server.mjs`)}`,
       `exec node engine-server.mjs --workspace ${shellQuote(options.workspacePosix)} --storage ${shellQuote(root)}`,
     ].filter(Boolean).join(" && ");
