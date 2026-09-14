@@ -1,20 +1,25 @@
-import { useRef, useState } from "react";
-import { Check, ChevronDown, LoaderCircle, Plus, RefreshCw, Server, ShieldAlert, TriangleAlert, WifiOff } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Check, ChevronDown, Folder, FolderOpen, LoaderCircle, Plus, RefreshCw, Server, ShieldAlert, TriangleAlert, WifiOff } from "lucide-react";
 import type { MemberExecutionLocation, RecentCwd } from "../../shared/memberLocation";
 import { RECENT_CWD_LIMIT, memberLocationsEqual } from "../../shared/memberLocation";
-import type { SshRemotePathCheck, SshServerView } from "../../shared/sshServers";
+import type { SshRemoteBrowseProblem, SshRemoteDirectory, SshRemoteDirectoryResult, SshRemotePathCheck, SshRemotePathSuggestions, SshServerView } from "../../shared/sshServers";
 import { relativeDay } from "../../shared/relativeTime";
 import { SshConnectionStatus } from "./SshStatus";
 import { FloatingMenu } from "./FloatingMenu";
+import { SshFolderPickerDialog, browseProblemText } from "./SshFolderPicker";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
+
+/** How long typing must pause before subfolders are suggested. */
+const SUGGEST_DELAY_MS = 200;
 
 /**
  * The SSH tab of the member location picker (S6): server, then path.
  *
  * WSL is distro-then-path; SSH is server-then-path, for the same reason — a path
- * means nothing until we know whose filesystem it names. Unlike WSL there is no
- * folder dialog for a remote machine, so the path is typed and checked on the
- * server as soon as it changes.
+ * means nothing until we know whose filesystem it names. A remote machine has
+ * no OS folder dialog, so the path is typed (with subfolder suggestions) or
+ * picked in our own folder picker (§13-6), and checked on the server as soon as
+ * it changes.
  *
  * Every server stays selectable, including one whose fingerprint changed
  * (§13 동작 결정 2): the failure is shown when the connection is attempted, never
@@ -31,6 +36,11 @@ export interface SshBrowsing {
   onAddServer: () => void;
   onReconnect: (server: string) => void;
   onReviewFingerprint: (server: string) => void;
+  /** Lists one remote folder; `undefined` lists the account's home. */
+  listDirectories: (server: string, remotePath: string | undefined) => Promise<SshRemoteDirectoryResult>;
+  suggestPaths: (server: string, input: string) => Promise<SshRemotePathSuggestions>;
+  /** Why the empty path could not be filled with the home folder. */
+  homeProblem?: SshRemoteBrowseProblem;
 }
 
 const PATH_PROBLEM_TEXT: Record<Extract<SshRemotePathCheck, { ok: false }>["problem"], string> = {
@@ -55,6 +65,40 @@ export function SshLocationSection({ value, recent, now, ssh, onChange }: {
   const servers = ssh.servers;
   const selected = servers?.find((server) => server.name === value?.server);
   const serverRecent = recent.filter((entry) => entry.location.server === value?.server).slice(0, RECENT_CWD_LIMIT);
+  const server = value?.server;
+
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const [browsing, setBrowsing] = useState(false);
+  // What the user last TYPED. Only typing asks for suggestions, so a path that
+  // arrives any other way (picker, suggestion, recent row) never reopens the list.
+  const [typed, setTyped] = useState<string | undefined>();
+  const [suggestions, setSuggestions] = useState<SshRemoteDirectory[]>([]);
+  const [active, setActive] = useState(-1);
+
+  useEffect(() => {
+    if (typed === undefined || !server) {
+      setSuggestions([]);
+      return;
+    }
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      // A failed lookup offers nothing; the check line under the field already
+      // names the problem for this same path.
+      ssh.suggestPaths(server, typed).then(
+        (result) => {
+          if (!alive) return;
+          setSuggestions(result.ok ? result.items.filter((item) => item.path !== typed) : []);
+          setActive(-1);
+        },
+        () => { if (alive) setSuggestions([]); },
+      );
+    }, SUGGEST_DELAY_MS);
+    return () => { alive = false; window.clearTimeout(timer); };
+  }, [typed, server]);
+
+  useEffect(() => {
+    if (active >= 0) document.querySelector(".wb-ssh-suggest-item.is-active")?.scrollIntoView({ block: "nearest" });
+  }, [active]);
 
   if (servers && servers.length === 0) {
     return (
@@ -75,8 +119,35 @@ export function SshLocationSection({ value, recent, now, ssh, onChange }: {
   function chooseServer(name: string) {
     setMenuOpen(false);
     if (name === value?.server) return;
+    closeSuggestions();
     const seed = recent.find((entry) => entry.location.server === name && !entry.problem);
     onChange(seed ? seed.location : { env: "ssh", server: name, cwd: "" });
+  }
+
+  function closeSuggestions() {
+    setTyped(undefined);
+    setSuggestions([]);
+    setActive(-1);
+  }
+
+  function pickPath(remotePath: string) {
+    closeSuggestions();
+    onChange({ env: "ssh", server, cwd: remotePath });
+  }
+
+  const suggesting = typed !== undefined && suggestions.length > 0;
+
+  function onPathKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (!suggesting || event.nativeEvent.isComposing) return;
+    const count = suggestions.length;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const down = event.key === "ArrowDown";
+      setActive((current) => current < 0 ? (down ? 0 : count - 1) : (current + (down ? 1 : count - 1)) % count);
+    } else if (event.key === "Enter" && active >= 0) {
+      event.preventDefault();
+      pickPath(suggestions[active].path);
+    }
   }
 
   const check = value?.cwd ? ssh.pathCheck : undefined;
@@ -148,19 +219,73 @@ export function SshLocationSection({ value, recent, now, ssh, onChange }: {
         </div>
       )}
 
-      <div className={"wb-cwd-field wb-ssh-path" + (failed ? " is-error" : "")}>
+      <div ref={fieldRef} className={"wb-cwd-field wb-ssh-path" + (failed ? " is-error" : "")}>
         <Server size={13} />
-        {value?.server && <span className="wb-cwd-distro" title={value.server}>{value.server}</span>}
+        {server && <span className="wb-cwd-distro" title={server}>{server}</span>}
         <input
           className="wb-mono wb-ssh-path-input"
           value={value?.cwd ?? ""}
-          placeholder={localized("STR-4035")}
+          // Without a server the field is disabled and says what comes first.
+          placeholder={server ? localized("STR-4035") : localized("STR-4222")}
           aria-label={localized("STR-4036")}
-          disabled={!value?.server}
-          onChange={(event) => value?.server && onChange({ env: "ssh", server: value.server, cwd: event.target.value })}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={suggesting}
+          disabled={!server}
+          onChange={(event) => {
+            onChange({ env: "ssh", server, cwd: event.target.value });
+            setTyped(event.target.value);
+          }}
+          onKeyDown={onPathKeyDown}
           data-ssh-path-input
         />
+        <button
+          type="button"
+          className="wb-cwd-browse"
+          disabled={!server}
+          onClick={() => { closeSuggestions(); setBrowsing(true); }}
+          data-ssh-browse
+        >
+          <FolderOpen size={13} />
+          <LocalizedText id="STR-4206" />
+        </button>
       </div>
+      {suggesting && (
+        <FloatingMenu anchor={fieldRef.current} className="wb-ssh-suggest" role="listbox" ariaLabel={localized("STR-4221")} matchAnchorWidth onDismiss={closeSuggestions}>
+          {suggestions.map((item, index) => (
+            <button
+              key={item.path}
+              type="button"
+              role="option"
+              aria-selected={index === active}
+              className={"wb-ssh-suggest-item" + (index === active ? " is-active" : "") + (item.hidden ? " is-hidden" : "")}
+              // Keep the caret in the field, so typing continues after a pick.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => pickPath(item.path)}
+              title={item.path}
+              data-ssh-suggestion={item.path}
+            >
+              <Folder size={13} />
+              <span className="wb-mono wb-ssh-suggest-name">{item.path}</span>
+            </button>
+          ))}
+        </FloatingMenu>
+      )}
+      {browsing && server && (
+        <SshFolderPickerDialog
+          server={server}
+          startPath={value?.cwd}
+          list={(remotePath) => ssh.listDirectories(server, remotePath)}
+          onChoose={(remotePath) => { setBrowsing(false); pickPath(remotePath); }}
+          onCancel={() => setBrowsing(false)}
+        />
+      )}
+      {server && !value?.cwd && ssh.homeProblem && (
+        <span className="wb-ssh-path-check is-fail" data-ssh-home-problem={ssh.homeProblem}>
+          <TriangleAlert size={12} />
+          <LocalizedText id="STR-4225" />: {browseProblemText(ssh.homeProblem)}
+        </span>
+      )}
       {check && (
         <span className={"wb-ssh-path-check is-" + (check === "checking" ? "busy" : check.ok ? "ok" : "fail")} data-ssh-path-check>
           {check === "checking" ? <LoaderCircle size={12} className="wb-spin" /> : check.ok ? <Check size={12} strokeWidth={3} /> : <TriangleAlert size={12} />}
