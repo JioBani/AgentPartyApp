@@ -5,12 +5,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type {
   SshConnectAttempt, SshDeleteResult, SshFieldError, SshKeyInspection,
-  SshRemotePathCheck, SshServerDraft, SshServerView, SshTestResult,
+  SshRemoteBrowseProblem, SshRemoteDirectoryResult, SshRemotePathCheck, SshRemotePathSuggestions,
+  SshServerDraft, SshServerView, SshTestResult,
   SshAutoLoginStep, SshRemotePathProblem,
 } from "../../shared/sshServers";
 import type { StoredSshServer } from "./sshServerStore";
 import { SshServerStore } from "./sshServerStore";
-import { shellQuote, SshTransport, SshTransportError, type SshCredential, type SshTarget } from "./sshTransport";
+import { shellQuote, SshRemoteFileError, SshTransport, SshTransportError, type SshCredential, type SshTarget } from "./sshTransport";
 import { log } from "../logger";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -28,6 +29,9 @@ export interface SshServerServiceDeps {
 }
 
 interface PendingAttempt { state: SshConnectAttempt; draft: SshServerDraft; fingerprint?: string; cleanupTimer?: NodeJS.Timeout; cancelled?: boolean; autoLoginPublicKey?: string }
+
+const REMOTE_DIRECTORY_LIMIT = 1_000;
+const REMOTE_SUGGESTION_LIMIT = 20;
 
 class SshAttemptFailure extends Error {
   constructor(readonly kind: import("../../shared/sshServers").SshAttemptErrorKind, message: string) {
@@ -244,8 +248,70 @@ export class SshServerService extends EventEmitter {
     }
   }
 
+  async remoteHome(serverName: string): Promise<SshRemoteDirectoryResult> {
+    const server = this.deps.store.get(serverName);
+    if (!server) return { ok: false, path: ".", problem: "server-missing" };
+    try {
+      const connection = await this.connectStored(server);
+      const home = await connection.homeDirectory();
+      return await this.readRemoteDirectory(connection, home);
+    } catch (error) {
+      return remoteBrowseFailure(".", error);
+    }
+  }
+
+  async listRemoteDirectories(serverName: string, remotePath: string): Promise<SshRemoteDirectoryResult> {
+    if (!remotePath.startsWith("/")) return { ok: false, path: remotePath, problem: "not-absolute" };
+    const server = this.deps.store.get(serverName);
+    if (!server) return { ok: false, path: remotePath, problem: "server-missing" };
+    try {
+      const connection = await this.connectStored(server);
+      return await this.readRemoteDirectory(connection, remotePath);
+    } catch (error) {
+      return remoteBrowseFailure(remotePath, error);
+    }
+  }
+
+  async suggestRemotePaths(serverName: string, input: string): Promise<SshRemotePathSuggestions> {
+    if (!input) {
+      const home = await this.remoteHome(serverName);
+      return home.ok
+        ? { ok: true, input, items: home.directories.slice(0, REMOTE_SUGGESTION_LIMIT) }
+        : { ok: false, input, problem: home.problem, ...(home.detail ? { detail: home.detail } : {}) };
+    }
+    if (!input.startsWith("/")) return { ok: false, input, problem: "not-absolute" };
+    const trailingSlash = input.endsWith("/");
+    const directory = trailingSlash ? path.posix.normalize(input) : path.posix.dirname(input);
+    const prefix = trailingSlash ? "" : path.posix.basename(input).toLocaleLowerCase();
+    const listed = await this.listRemoteDirectories(serverName, directory);
+    return listed.ok
+      ? {
+          ok: true,
+          input,
+          items: listed.directories
+            .filter((entry) => entry.name.toLocaleLowerCase().startsWith(prefix))
+            .slice(0, REMOTE_SUGGESTION_LIMIT),
+        }
+      : { ok: false, input, problem: listed.problem, ...(listed.detail ? { detail: listed.detail } : {}) };
+  }
+
   async runtimeConnection(serverName: string) {
     return this.connectStored(this.requireServer(serverName));
+  }
+
+  private async readRemoteDirectory(
+    connection: Awaited<ReturnType<SshTransport["connect"]>>,
+    remotePath: string,
+  ): Promise<SshRemoteDirectoryResult> {
+    const listing = await connection.listDirectories(remotePath, REMOTE_DIRECTORY_LIMIT);
+    const parent = listing.path === "/" ? undefined : path.posix.dirname(listing.path);
+    return {
+      ok: true,
+      path: listing.path,
+      ...(parent ? { parent } : {}),
+      directories: listing.entries,
+      ...(listing.truncated ? { truncated: true } : {}),
+    };
   }
 
   inspectKeyFile(file: string): SshKeyInspection {
@@ -600,6 +666,21 @@ function draftFromStored(server: StoredSshServer): SshServerDraft {
 function problemOf(error: unknown): SshRemotePathProblem {
   if (error instanceof SshTransportError && ["auth-failed", "fingerprint-changed", "unreachable"].includes(error.kind)) return error.kind as SshRemotePathProblem;
   return "unreachable";
+}
+
+function remoteBrowseFailure(remotePath: string, error: unknown): SshRemoteDirectoryResult {
+  const problem: SshRemoteBrowseProblem = error instanceof SshRemoteFileError
+    ? error.kind
+    : error instanceof SshTransportError && ["auth-failed", "fingerprint-changed", "unreachable"].includes(error.kind)
+      ? error.kind as SshRemoteBrowseProblem
+      : "read-failed";
+  const detail = messageOf(error).trim();
+  log(problem === "missing" ? "warn" : "error", "ssh", "Remote SSH folder could not be read", {
+    path: remotePath,
+    problem,
+    ...(detail ? { detail } : {}),
+  });
+  return { ok: false, path: remotePath, problem, ...(detail ? { detail } : {}) };
 }
 
 function sshKeygenExecutable(): string {

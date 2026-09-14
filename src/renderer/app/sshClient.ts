@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type {
-  SshConnectAttempt, SshDeleteResult, SshFieldError, SshKeyInspection, SshRemotePathCheck, SshServerDraft, SshServerView,
+  SshConnectAttempt, SshDeleteResult, SshFieldError, SshKeyInspection, SshRemoteDirectoryResult, SshRemotePathCheck, SshRemotePathSuggestions, SshServerDraft, SshServerView,
 } from "../../shared/sshServers";
 import { sshMockApi } from "./sshMock";
 
@@ -37,6 +37,9 @@ export interface SshApi {
   sshDeleteServer: (name: string, options: { removeAutoLoginKey: boolean }) => Promise<SshDeleteResult>;
   sshCopyPublicKey: () => Promise<void>;
   sshCheckRemotePath: (server: string, cwd: string) => Promise<SshRemotePathCheck>;
+  sshRemoteHome: (server: string) => Promise<SshRemoteDirectoryResult>;
+  sshListRemoteDirectories: (server: string, remotePath: string) => Promise<SshRemoteDirectoryResult>;
+  sshSuggestRemotePaths: (server: string, input: string) => Promise<SshRemotePathSuggestions>;
 }
 
 export function sshMockEnabled(): boolean {

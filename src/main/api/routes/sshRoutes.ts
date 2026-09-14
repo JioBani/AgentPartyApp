@@ -33,4 +33,7 @@ export const sshRoutes: MethodRoute[] = [
   { name: "ssh.deleteServer", http: "DELETE /api/ssh/servers/:name", handler: (p, ctx) => ctx.controller.sshDeleteServer(required(p.name, "name"), { removeAutoLoginKey: flag(p.removeAutoLoginKey) }) },
   { name: "ssh.copyPublicKey", http: "POST /api/ssh/public-key/copy", remote: false, handler: (_p, ctx) => ctx.controller.sshCopyPublicKey() },
   { name: "ssh.checkRemotePath", http: "POST /api/ssh/path/check", handler: (p, ctx) => ctx.controller.sshCheckRemotePath(required(p.server, "server"), required(p.cwd, "cwd")) },
+  { name: "ssh.remoteHome", http: "POST /api/ssh/directories/home", handler: (p, ctx) => ctx.controller.sshRemoteHome(required(p.server, "server")) },
+  { name: "ssh.listRemoteDirectories", http: "POST /api/ssh/directories/list", handler: (p, ctx) => ctx.controller.sshListRemoteDirectories(required(p.server, "server"), required(p.path, "path")) },
+  { name: "ssh.suggestRemotePaths", http: "POST /api/ssh/path/suggestions", handler: (p, ctx) => ctx.controller.sshSuggestRemotePaths(required(p.server, "server"), typeof p.input === "string" ? p.input : "") },
 ];

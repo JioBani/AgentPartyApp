@@ -2279,6 +2279,9 @@ export class AppController {
     this.deps.writeClipboardText(this.requireSshServers().publicKey());
   }
   sshCheckRemotePath(server: string, cwd: string) { return this.requireSshServers().checkRemotePath(server, cwd); }
+  sshRemoteHome(server: string) { return this.requireSshServers().remoteHome(server); }
+  sshListRemoteDirectories(server: string, remotePath: string) { return this.requireSshServers().listRemoteDirectories(server, remotePath); }
+  sshSuggestRemotePaths(server: string, input: string) { return this.requireSshServers().suggestRemotePaths(server, input); }
 
   async createParty(workspacePath: string, input: CreatePartyInput, windowId?: string): Promise<ReturnType<PartyApplicationService["createParty"]>> {
     // `main` needs a cwd it can actually run in. Checked BEFORE the party is

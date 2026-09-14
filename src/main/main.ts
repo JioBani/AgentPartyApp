@@ -1199,6 +1199,9 @@ function registerIpc(): void {
   handle("ssh:deleteServer", async (_event, name, options) => controller().sshDeleteServer(String(name || ""), { removeAutoLoginKey: options?.removeAutoLoginKey === true }));
   handle("ssh:copyPublicKey", async () => controller().sshCopyPublicKey());
   handle("ssh:checkRemotePath", async (_event, server, cwd) => controller().sshCheckRemotePath(String(server || ""), String(cwd || "")));
+  handle("ssh:remoteHome", async (_event, server) => controller().sshRemoteHome(String(server || "")));
+  handle("ssh:listRemoteDirectories", async (_event, server, remotePath) => controller().sshListRemoteDirectories(String(server || ""), String(remotePath || "")));
+  handle("ssh:suggestRemotePaths", async (_event, server, input) => controller().sshSuggestRemotePaths(String(server || ""), String(input || "")));
 
   handle("auth:list", async (event) => controller().listAuthProviders(senderWorkspace(event)));
   handle("auth:setDeepseekKey", async (event, value: string) => controller().setDeepseekKey(value || "", senderWorkspace(event)));
