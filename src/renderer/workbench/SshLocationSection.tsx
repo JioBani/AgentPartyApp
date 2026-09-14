@@ -67,7 +67,7 @@ export function SshLocationSection({ value, recent, now, ssh, onChange }: {
   const serverRecent = recent.filter((entry) => entry.location.server === value?.server).slice(0, RECENT_CWD_LIMIT);
   const server = value?.server;
 
-  const fieldRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLLabelElement>(null);
   const [browsing, setBrowsing] = useState(false);
   // What the user last TYPED. Only typing asks for suggestions, so a path that
   // arrives any other way (picker, suggestion, recent row) never reopens the list.
@@ -219,7 +219,10 @@ export function SshLocationSection({ value, recent, now, ssh, onChange }: {
         </div>
       )}
 
-      <div ref={fieldRef} className={"wb-cwd-field wb-ssh-path" + (failed ? " is-error" : "")}>
+      {/* A label, not a div: a click anywhere on the visible box — the server chip,
+          the icon, the padding — lands in the input. The input used to be a 16px
+          strip behind the chip, so clicks on the rest of the box typed nowhere. */}
+      <label ref={fieldRef} className={"wb-cwd-field wb-ssh-path" + (failed ? " is-error" : "")}>
         <Server size={13} />
         {server && <span className="wb-cwd-distro" title={server}>{server}</span>}
         <input
@@ -249,7 +252,7 @@ export function SshLocationSection({ value, recent, now, ssh, onChange }: {
           <FolderOpen size={13} />
           <LocalizedText id="STR-4206" />
         </button>
-      </div>
+      </label>
       {suggesting && (
         <FloatingMenu anchor={fieldRef.current} className="wb-ssh-suggest" role="listbox" ariaLabel={localized("STR-4221")} matchAnchorWidth onDismiss={closeSuggestions}>
           {suggestions.map((item, index) => (
