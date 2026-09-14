@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import type { SshConnectAttempt, SshFieldError, SshKeyInspection, SshServerDraft, SshServerView } from "../../shared/sshServers";
 import { SshServerSettings } from "./SshServerSettings";
@@ -102,12 +102,21 @@ export function useSshServerFlow(onSaved?: (serverName: string) => void) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [seed, setSeed] = useState(0);
+  // Which pushed attempts belong to the form on screen. A cancelled attempt can
+  // still answer (its connect call resolving, a late event), and must not pull
+  // the form back into "connecting" after the user stopped it.
+  const submitGen = useRef(0);
+  const awaitingId = useRef(false);
+  const ownIds = useRef(new Set<string>());
 
   useEffect(() => {
     if (!target) return;
     let off: (() => void) | undefined;
     try {
-      off = sshApi().onSshAttempt((next) => setAttempt((current) => (current && current.attemptId !== next.attemptId ? current : next)));
+      off = sshApi().onSshAttempt((next) => {
+        if (!ownIds.current.has(next.attemptId) && !awaitingId.current) return;
+        setAttempt((current) => (current && current.attemptId !== next.attemptId ? current : next));
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -138,18 +147,47 @@ export function useSshServerFlow(onSaved?: (serverName: string) => void) {
     void action().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   };
 
+  /**
+   * Stops the connection in progress and hands the form back as it was typed.
+   * The modal is not remounted, so every field keeps its value; the next
+   * [연결] starts a fresh attempt.
+   */
+  const cancelAttempt = useCallback(() => {
+    submitGen.current += 1;
+    awaitingId.current = false;
+    if (attempt) {
+      ownIds.current.delete(attempt.attemptId);
+      void sshApi().sshCancelAttempt(attempt.attemptId).catch(() => undefined);
+    }
+    setAttempt(undefined);
+    setSubmitting(false);
+    setError(undefined);
+  }, [attempt]);
+
   async function submit(draft: SshServerDraft) {
+    const gen = ++submitGen.current;
+    ownIds.current.clear();
+    awaitingId.current = true;
     setSubmitting(true);
     setFieldErrors(undefined);
     setAttempt(undefined);
     try {
       const withKey = draft.auth.kind === "key" ? { ...draft, auth: { ...draft.auth, keyPath: keyPath ?? "" } } : draft;
       const result = await sshApi().sshConnectDraft(withKey);
+      if (gen !== submitGen.current) {
+        // Cancelled before the attempt had an id: stop it now that it has one.
+        if ("attemptId" in result) void sshApi().sshCancelAttempt(result.attemptId).catch(() => undefined);
+        return;
+      }
+      if ("attemptId" in result) ownIds.current.add(result.attemptId);
       if ("fieldErrors" in result) setFieldErrors(result.fieldErrors);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (gen === submitGen.current) setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setSubmitting(false);
+      if (gen === submitGen.current) {
+        awaitingId.current = false;
+        setSubmitting(false);
+      }
     }
   }
 
@@ -175,6 +213,7 @@ export function useSshServerFlow(onSaved?: (serverName: string) => void) {
         onTest={(draft) => void submit(draft)}
         onPickKeyFile={() => guard(pickKey)}
         onCancel={close}
+        onCancelAttempt={cancelAttempt}
         onSetupAutoLogin={() => attempt && guard(() => sshApi().sshSetupAutoLogin(attempt.attemptId))}
         onContinueWithPassword={() => attempt && guard(() => sshApi().sshContinueWithPassword(attempt.attemptId))}
         onSavePasswordLogin={() => attempt && guard(() => sshApi().sshSavePasswordLogin(attempt.attemptId))}
@@ -188,7 +227,7 @@ export function useSshServerFlow(onSaved?: (serverName: string) => void) {
           serverName={attempt.serverName}
           fingerprint={attempt.fingerprint.sha256}
           previous={attempt.fingerprint.previous}
-          onCancel={close}
+          onCancel={cancelAttempt}
           onTrust={() => guard(() => sshApi().sshTrustFingerprint(attempt.attemptId))}
         />
       )}

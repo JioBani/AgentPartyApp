@@ -40,6 +40,8 @@ export interface SshServerModalProps {
   onTest?: (draft: SshServerDraft) => void;
   onPickKeyFile: () => void;
   onCancel: () => void;
+  /** Stops the connection in progress; the form stays open with its values. */
+  onCancelAttempt: () => void;
   onSetupAutoLogin: () => void;
   onContinueWithPassword: () => void;
   onSavePasswordLogin: () => void;
@@ -113,7 +115,10 @@ export function SshServerModal(props: SshServerModalProps) {
   const connecting = submitting || phase === "connecting" || phase === "fingerprint";
   const afterConnect = phase === "offer-auto-login" || phase === "auto-login" || phase === "auto-login-failed" || phase === "testing" || phase === "done";
   const locked = phase === "auto-login";
-  useModalEscape(onCancel, !connecting && !locked);
+  // While connecting, Escape and [취소] stop the attempt and hand the form back;
+  // otherwise they close the modal.
+  const cancel = connecting ? props.onCancelAttempt : onCancel;
+  useModalEscape(cancel, !locked);
 
   const draft = (): SshServerDraft => ({
     originalName: editing ? initial?.name : undefined,
@@ -146,7 +151,7 @@ export function SshServerModal(props: SshServerModalProps) {
             <strong>{editing ? "SSH 서버 수정" : "SSH 서버 추가"}</strong>
             {afterConnect && <span className="wb-mono wb-modal-sub">{target}</span>}
           </div>
-          <button type="button" className="wb-icon-btn" title={localized("STR-4097")} disabled={locked || connecting} onClick={onCancel}><X size={16} /></button>
+          <button type="button" className="wb-icon-btn" title={localized("STR-4097")} disabled={locked} onClick={onCancel}><X size={16} /></button>
         </header>
 
         <div className="wb-modal-body wb-ssh-body">
@@ -334,7 +339,7 @@ export function SshServerModal(props: SshServerModalProps) {
               <button type="button" className="wb-btn wb-btn-accent" onClick={props.onSavePasswordLogin}><LocalizedText id="STR-4134" /></button>
             ) : phase === "offer-auto-login" ? null : (
               <>
-                <button type="button" className="wb-btn wb-btn-ghost" disabled={connecting} onClick={onCancel}><LocalizedText id="STR-4135" /></button>
+                <button type="button" className="wb-btn wb-btn-ghost" onClick={cancel} data-ssh-cancel><LocalizedText id="STR-4135" /></button>
                 {editing && onTest && (
                   <button type="button" className="wb-btn wb-btn-ghost" disabled={connecting} onClick={() => onTest(draft())}><FlaskConical size={13} /> <LocalizedText id="STR-4136" /></button>
                 )}
