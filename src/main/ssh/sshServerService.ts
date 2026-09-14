@@ -228,10 +228,18 @@ export class SshServerService extends EventEmitter {
         detail = messageOf(error).trim() || undefined;
       }
     }
+    // Delete the stored row before disconnecting. `disconnect` emits a state
+    // event synchronously, and that event starts an async list refresh. When
+    // the row was deleted afterwards, the stale refresh (which still had to
+    // resolve member names) could arrive after the empty refresh and put the
+    // deleted server back on screen until the settings view was reopened.
+    this.deps.store.delete(name);
+    this.connectionStates.delete(name);
+    this.fingerprintChanges.delete(name);
+    this.serversNeedingRecovery.delete(name);
     this.deps.transport.disconnect(name);
     this.deps.invalidateServer?.(name);
-    this.deps.store.delete(name);
-    this.emitServers();
+    await this.emitServers();
     return { deleted: true, keyRemoval, ...(detail ? { detail } : {}) };
   }
 
@@ -561,9 +569,9 @@ export class SshServerService extends EventEmitter {
     attempt.cleanupTimer.unref?.();
     this.attempts.set(attempt.state.attemptId, attempt);
   }
-  private emitServers() {
-    void this.listServers()
-      .then((servers) => this.emit("servers", servers))
+  private emitServers(): Promise<void> {
+    return this.listServers()
+      .then((servers) => { this.emit("servers", servers); })
       .catch((error) => log("error", "ssh", "SSH 서버 목록을 갱신하지 못했습니다", { error: messageOf(error) }));
   }
   private fail(attempt: PendingAttempt, error: unknown) {
