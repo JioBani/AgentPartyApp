@@ -16,7 +16,10 @@ import { log } from "../logger";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { utils: sshUtils } = require("ssh2") as {
-  utils: { generateKeyPairSync(type: "ed25519", options: { comment: string }): { private: string; public: string } };
+  utils: {
+    generateKeyPairSync(type: "ed25519", options: { comment: string }): { private: string; public: string };
+    parseKey(data: string | Buffer, passphrase?: string): unknown | Error;
+  };
 };
 
 export interface SshServerServiceDeps {
@@ -107,6 +110,9 @@ export class SshServerService extends EventEmitter {
   connectDraft(draft: SshServerDraft): { attemptId: string } {
     const stored = this.deps.store.list();
     const fieldErrors = validateDraft(draft, stored);
+    if (fieldErrors.length === 0 && draft.auth.kind === "key" && !keyPassphraseMatches(draft.auth.keyPath, draft.auth.passphrase)) {
+      fieldErrors.push({ field: "passphrase", kind: "passphrase-wrong" });
+    }
     if (fieldErrors.length) throw new SshDraftValidationError(fieldErrors);
     if (draft.originalName) this.serversNeedingRecovery.add(draft.originalName);
     this.deps.transport.disconnect(draft.originalName || draft.name);
@@ -712,6 +718,19 @@ function privateKeyIsLocked(text: string): boolean | undefined {
   return /-----BEGIN ENCRYPTED PRIVATE KEY-----/.test(text)
     || /Proc-Type:\s*4,ENCRYPTED/i.test(text)
     || /DEK-Info:/i.test(text);
+}
+
+function keyPassphraseMatches(keyPath: string, passphrase: string | undefined): boolean {
+  let privateKey: string;
+  try {
+    privateKey = fs.readFileSync(keyPath, "utf8");
+  } catch {
+    // File inspection reports unreadable paths separately. Do not mislabel a
+    // filesystem failure as an incorrect passphrase at submit time.
+    return true;
+  }
+  if (privateKeyIsLocked(privateKey) !== true) return true;
+  return !(sshUtils.parseKey(privateKey, passphrase) instanceof Error);
 }
 
 function messageOf(error: unknown) { return error instanceof Error ? error.message : String(error); }
