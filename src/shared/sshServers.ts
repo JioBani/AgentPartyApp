@@ -43,7 +43,8 @@ export interface SshFieldError { field: SshDraftField; kind: "required" | "dupli
 
 export type SshKeyInspection =
   | { fileName: string; fingerprint: string; comment?: string; locked: boolean }
-  | { error: "public-key" | "ppk" | "not-key" };
+  | { error: "public-key" | "ppk" | "not-key" }
+  | { error: "inspect-failed"; detail: string };
 
 export type SshAttemptErrorKind =
   | "password-not-allowed" | "key-rejected" | "auth-failed" | "unreachable" | "fingerprint-changed"

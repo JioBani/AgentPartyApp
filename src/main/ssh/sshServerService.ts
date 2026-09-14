@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -253,28 +253,52 @@ export class SshServerService extends EventEmitter {
     if (ext === ".pub") return { error: "public-key" };
     if (ext === ".ppk") return { error: "ppk" };
     let text: string;
-    try { text = fs.readFileSync(file, "utf8"); } catch { return { error: "not-key" }; }
+    try {
+      text = fs.readFileSync(file, "utf8");
+    } catch (error) {
+      const detail = messageOf(error).trim() || "Could not read the file";
+      log("error", "ssh", "SSH key file inspection could not read the file", { file, detail });
+      return { error: "inspect-failed", detail };
+    }
     if (/^PuTTY-User-Key-File-/m.test(text)) return { error: "ppk" };
     if (/^(?:ssh-|ecdsa-)[A-Za-z0-9-]+\s+[A-Za-z0-9+/=]+/m.test(text)) return { error: "public-key" };
-    if (!/-----BEGIN (?:OPENSSH|RSA|EC|DSA|ENCRYPTED )?PRIVATE KEY-----/.test(text)) return { error: "not-key" };
-    try {
-      // OpenSSH ships ssh-keygen with ssh.exe and can read the public metadata
-      // from both plain and passphrase-protected private keys without exposing
-      // key material to this response.
-      const output = execFileSync("ssh-keygen", ["-lf", file, "-E", "sha256"], {
-        encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
-      const match = /^\d+\s+(SHA256:\S+)(?:\s+(.+?))?\s+\([^()]+\)$/.exec(output);
-      if (!match) return { error: "not-key" };
-      const comment = match[2] && match[2] !== "no comment" ? match[2] : undefined;
-      return {
-        fileName: path.basename(file), fingerprint: match[1],
-        ...(comment ? { comment } : {}),
-        locked: /ENCRYPTED|bcrypt/i.test(text),
-      };
-    } catch {
+    if (!/-----BEGIN (?:(?:OPENSSH|RSA|EC|DSA|ENCRYPTED) )?PRIVATE KEY-----/.test(text)) return { error: "not-key" };
+    // Use the OpenSSH executable beside ssh.exe on Windows. Electron does not
+    // inherit the same PATH as an interactive shell on every installation.
+    const executable = sshKeygenExecutable();
+    const result = spawnSync(executable, ["-lf", file, "-E", "sha256"], {
+      encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (result.error) {
+      const detail = result.error.message.trim() || "Could not start ssh-keygen";
+      log("error", "ssh", "SSH key file inspection could not start ssh-keygen", { file, executable, detail });
+      return { error: "inspect-failed", detail };
+    }
+    if (result.status !== 0) {
+      log("warn", "ssh", "ssh-keygen rejected an SSH private key file", {
+        file, executable, status: result.status, detail: result.stderr.trim() || undefined,
+      });
       return { error: "not-key" };
     }
+    const output = result.stdout.trim();
+    const match = /^\d+\s+(SHA256:\S+)(?:\s+(.+?))?\s+\([^()]+\)$/.exec(output);
+    if (!match) {
+      const detail = "ssh-keygen returned an unsupported result";
+      log("error", "ssh", detail, { file, executable, output });
+      return { error: "inspect-failed", detail };
+    }
+    const comment = match[2] && match[2] !== "no comment" ? match[2] : undefined;
+    const locked = privateKeyIsLocked(text);
+    if (locked === undefined) {
+      const detail = "OpenSSH private key encryption metadata is invalid";
+      log("error", "ssh", detail, { file });
+      return { error: "inspect-failed", detail };
+    }
+    return {
+      fileName: path.basename(file), fingerprint: match[1],
+      ...(comment ? { comment } : {}),
+      locked,
+    };
   }
 
   private async discoverFingerprint(attempt: PendingAttempt): Promise<void> {
@@ -577,6 +601,30 @@ function problemOf(error: unknown): SshRemotePathProblem {
   if (error instanceof SshTransportError && ["auth-failed", "fingerprint-changed", "unreachable"].includes(error.kind)) return error.kind as SshRemotePathProblem;
   return "unreachable";
 }
+
+function sshKeygenExecutable(): string {
+  if (process.platform !== "win32") return "ssh-keygen";
+  const windowsDir = process.env.SystemRoot || process.env.WINDIR || "C:\\Windows";
+  const bundled = path.join(windowsDir, "System32", "OpenSSH", "ssh-keygen.exe");
+  return fs.existsSync(bundled) ? bundled : "ssh-keygen";
+}
+
+function privateKeyIsLocked(text: string): boolean | undefined {
+  const openSsh = /-----BEGIN OPENSSH PRIVATE KEY-----\s*([A-Za-z0-9+/=\s]+?)\s*-----END OPENSSH PRIVATE KEY-----/.exec(text);
+  if (openSsh) {
+    const payload = Buffer.from(openSsh[1].replace(/\s/g, ""), "base64");
+    const magic = Buffer.from("openssh-key-v1\0", "ascii");
+    if (payload.length < magic.length + 4 || !payload.subarray(0, magic.length).equals(magic)) return undefined;
+    const cipherLength = payload.readUInt32BE(magic.length);
+    const cipherStart = magic.length + 4;
+    const cipherEnd = cipherStart + cipherLength;
+    return cipherEnd <= payload.length ? payload.toString("ascii", cipherStart, cipherEnd) !== "none" : undefined;
+  }
+  return /-----BEGIN ENCRYPTED PRIVATE KEY-----/.test(text)
+    || /Proc-Type:\s*4,ENCRYPTED/i.test(text)
+    || /DEK-Info:/i.test(text);
+}
+
 function messageOf(error: unknown) { return error instanceof Error ? error.message : String(error); }
 
 function attemptFailureDetail(kind: import("../../shared/sshServers").SshAttemptErrorKind, error: unknown): string | undefined {

@@ -62,6 +62,7 @@ const KEY_FILE_ERROR: Record<Extract<SshKeyInspection, { error: string }>["error
   "public-key": "공개 키 파일입니다. 개인 키 파일을 선택하세요.",
   "ppk": "PuTTY 형식은 아직 지원하지 않습니다.",
   "not-key": "SSH 개인 키 파일이 아닙니다.",
+  "inspect-failed": localized("STR-4205"),
 };
 
 const AUTO_LOGIN_STEP_LABEL: Record<SshAutoLoginStep["id"], string> = {
@@ -128,7 +129,9 @@ export function SshServerModal(props: SshServerModalProps) {
   });
 
   const keyOk = keyInspection && !("error" in keyInspection) ? keyInspection : undefined;
-  const keyError = keyInspection && "error" in keyInspection ? KEY_FILE_ERROR[keyInspection.error] : undefined;
+  const keyError = keyInspection && "error" in keyInspection
+    ? `${KEY_FILE_ERROR[keyInspection.error]}${keyInspection.error === "inspect-failed" ? ` · ${keyInspection.detail}` : ""}`
+    : undefined;
   const error = phase === "failed" ? attempt?.error : undefined;
   const authWord = authKind === "key" ? "키 파일" : authKind === "auto" || attempt?.autoLoginSteps?.every((step) => step.status === "ok") ? "자동 로그인" : "비밀번호";
   const target = attempt ? `${attempt.serverName} · ${attempt.target.user}@${attempt.target.host}:${attempt.target.port}` : "";
