@@ -83,7 +83,7 @@ export function workbenchProps(panels: string[][] = [["impl"], ["luna"]]) {
     cwdPrefs: GALLERY_CWD_PREFERENCES as never,
     appWorkspaceRoot: GALLERY_APP_WORKSPACE_ROOT,
     now: GALLERY_NOW,
-    onCreateMember: asyncTrue,
+    onCreateMember: async () => ({ ok: true as const }),
     onRemoveMember: noop,
     onSetMemberKeepAwake: noop,
     onSleepMember: noop,

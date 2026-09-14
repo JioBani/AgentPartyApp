@@ -1804,7 +1804,9 @@ export const auditKoMessages = {
   "STR-4222": "서버를 먼저 선택하세요",
   "STR-4223": "원격 폴더",
   "STR-4224": "현재 경로",
-  "STR-4225": "홈 폴더를 읽을 수 없음"
+  "STR-4225": "홈 폴더를 읽을 수 없음",
+  "STR-4226": "멤버를 표시할 탭을 찾을 수 없습니다. 다시 시도하세요",
+  "STR-4227": "${…} 멤버가 이미 있습니다"
 } as const;
 
 export type AuditMessageKey = keyof typeof auditKoMessages;

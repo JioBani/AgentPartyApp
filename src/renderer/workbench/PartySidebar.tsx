@@ -9,6 +9,7 @@ import type { PartyGate } from "../../shared/messageGate";
 import type { MemberView } from "./types";
 import type { RouteLike } from "./routes";
 import { MemberWizard } from "./MemberWizard";
+import type { MemberCreateResult } from "./memberCreateFailure";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 import { useModalEscape } from "./useModalEscape";
@@ -90,7 +91,7 @@ interface PartySidebarProps {
   /** Opens the platform folder picker; resolves null when the user cancelled. */
   onBrowseCwd: (env: ExecutionEnv, distro?: string) => Promise<MemberExecutionLocation | null>;
   wsl?: WslBrowsing;
-  onCreateMember: (input: CreateMemberInput) => Promise<boolean>;
+  onCreateMember: (input: CreateMemberInput) => Promise<MemberCreateResult>;
   onOpenMember: (member: string) => void;
   /** Hard restart (in-place harness restart); enabled only with a live session. */
   onRestartMember: (member: string) => void;
@@ -526,12 +527,17 @@ export function PartySidebar(props: PartySidebarProps) {
   }
 
 
+  const [createError, setCreateError] = useState<string | undefined>();
+
   async function createMember(input: CreateMemberInput) {
     if (memberSubmittingRef.current) return;
     memberSubmittingRef.current = true;
     setMemberSubmitting(true);
+    setCreateError(undefined);
     try {
-      if (await onCreateMember(input)) setCreating(false);
+      const result = await onCreateMember(input);
+      if (result.ok) setCreating(false);
+      else setCreateError(result.reason);
     } finally {
       memberSubmittingRef.current = false;
       setMemberSubmitting(false);
@@ -663,7 +669,8 @@ export function PartySidebar(props: PartySidebarProps) {
             onBrowseCwd={onBrowseCwd}
             wsl={wsl}
             submitting={memberSubmitting}
-            onCancel={() => setCreating(false)}
+            createError={createError}
+            onCancel={() => { setCreating(false); setCreateError(undefined); }}
             onCreate={(input) => { void createMember(input); }}
           />
         )}

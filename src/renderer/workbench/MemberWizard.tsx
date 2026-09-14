@@ -67,6 +67,8 @@ interface MemberWizardProps {
    */
   startStep?: number;
   submitting?: boolean;
+  /** Why the last [멤버 생성] failed, shown as one line above the buttons. */
+  createError?: string;
   onCancel: () => void;
   onCreate: (input: CreateMemberInput) => void;
 }
@@ -131,7 +133,7 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: "runtime", label: "실행 구성" },
   { id: "permission", label: "권한" },
 ];
-export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, submitting = false, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, submitting = false, createError, onCancel, onCreate }: MemberWizardProps) {
   const [name, setName] = useState("");
   const [tabGroup, setTabGroup] = useState(() => (
     defaultTabGroupId && tabGroups.some((group) => group.id === defaultTabGroupId)
@@ -559,6 +561,7 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
           </div>
         </div>
 
+        {createError && <p className="wb-wizard-error wb-wizard-create-error" role="alert" data-member-create-error>{createError}</p>}
         <footer className="wb-modal-foot wb-wizard-foot">
           <button type="button" className="wb-btn wb-btn-ghost" disabled={submitting} onClick={onCancel}><LocalizedText id="STR-1764" /></button>
           <div className="wb-modal-actions">
