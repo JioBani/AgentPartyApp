@@ -658,6 +658,13 @@ export class PartyApplicationService {
     state.members.push(main);
     this.writeRoleFile(workspace, main);
     this.persistParty(workspace, state, party.id);
+    // A party and its first visible tab are one creation result. Leaving the
+    // layout absent made the renderer invent a provisional panel id while a
+    // later member creation independently invented another one in this
+    // service. The wizard then submitted the panel the user could see and was
+    // correctly rejected because that id had never been stored. Persist the
+    // initial main panel here, before any caller can choose it as a tab group.
+    this.repository.writeLayout(workspace, party.id, openMemberTab(EMPTY_LAYOUT, main.name));
     this.persistIndex(workspace, state);
     log("info", "party", "party created", { workspace, partyId: party.id, name: party.name });
     // Auto-init main's session (no turn — like prewarm) so the party is usable
