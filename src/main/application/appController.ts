@@ -3932,9 +3932,21 @@ export class AppController {
     const key = String(body?.key || "").trim();
     if (key) {
       const modifiers = (Array.isArray(body?.modifiers) ? body.modifiers : []).map((m) => String(m).toLowerCase());
-      for (const type of ["keyDown", "char", "keyUp"] as const) {
+      const sendKeyEvent = (type: "keyDown" | "char" | "keyUp") => {
         win.webContents.sendInputEvent({ type, keyCode: key, modifiers } as Parameters<typeof win.webContents.sendInputEvent>[0]);
+      };
+      sendKeyEvent("keyDown");
+      // Electron's `char` event literally inserts keyCode as text. Sending one
+      // for a named key such as ArrowDown therefore types "Arr" instead of
+      // moving a combobox selection. A physical keyboard produces characters
+      // only for printable keys without a command modifier, so mirror that
+      // boundary here and leave navigation/action keys to keyDown/keyUp.
+      const commandModifiers = new Set(["alt", "command", "control", "ctrl", "meta", "super"]);
+      const producesCharacter = Array.from(key).length === 1 && !modifiers.some((modifier) => commandModifiers.has(modifier));
+      if (producesCharacter) {
+        sendKeyEvent("char");
       }
+      sendKeyEvent("keyUp");
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
     // Report what IS there, not that the call ran. An editable area is read as
