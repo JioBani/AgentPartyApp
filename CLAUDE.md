@@ -18,4 +18,6 @@ Plan work by dependencies and the critical path, distinguishing prerequisites an
 
 Worktree and temporary-directory cleanup that is not required for a release must not delay deployment; track it and complete it after deployment succeeds and is verified. Cleanup necessary for safety, integrity, or release reproducibility remains a pre-deployment gate.
 
+Never create a party member or spawn an agent with a worktree as its cwd: worktrees are cleaned up by default when their work is done, so a session rooted there can be lost. Start it from the main checkout and give it the worktree's absolute path to work in.
+
 Worktree `node_modules` handling follows the mandatory rules in `AGENTS.md`: worktrees share the main checkout's single install through junctions, so before any worktree removal or recursive cleanup, check whether `node_modules` is a junction and remove the link itself first (`cmd /c rmdir <worktree>\node_modules`) — deleting through a live junction wipes the shared install for everyone (it happened on 2026-08-17 and again on 2026-08-23). `npm install` runs only in the main checkout; never substitute another worktree's install via a temporary junction; if the shared install is found empty, stop builds, announce to the party, and restore before resuming.
