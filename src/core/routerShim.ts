@@ -5,8 +5,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { DEEPSEEK_ANTHROPIC_BASE_URL, DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
-import { BAI_API_KEY_ENV, BAI_BASE_URL } from "../shared/baiDefaults";
-import { normalizeAnthropicRequestForBai } from "./baiRequestCompat";
 import { HARNESS_PROTOCOLS } from "../shared/harnessProtocols";
 import { routerTargetForModel, type RouterTarget } from "../shared/modelCatalog";
 import { CursorHarnessBridge } from "./cursorHarnessBridge";
@@ -30,9 +28,6 @@ export interface EmbeddedHarnessRouterOptions {
   deepseekAnthropicBaseUrl?: string;
   /** Override exists for protocol-contract QA; production uses api.x.ai. */
   xaiBaseUrl?: string;
-  baiApiKey?: string;
-  /** Override exists for protocol-contract QA; production uses api.b.ai. */
-  baiBaseUrl?: string;
   subscriptionProxyBaseUrl?: string;
   subscriptionProxyApiKey?: string;
   authToken: string;
@@ -277,9 +272,6 @@ export class EmbeddedHarnessRouter {
     if (target.kind === "xai-subscription") {
       return this.forwardToXai(body, incomingHeaders, target, signal);
     }
-    if (target.kind === "bai") {
-      return this.forwardToBai(body, incomingHeaders, target, signal);
-    }
     return target.kind === "codex-subscription"
       ? this.forwardToCodexSubscription(body, incomingHeaders, target, signal)
       : this.forwardToOpenRouter(body, incomingHeaders, target, signal);
@@ -392,36 +384,6 @@ export class EmbeddedHarnessRouter {
     return { response: response.ok ? filterXaiThinking(response) : response, openRouter: false };
   }
 
-  /**
-   * B.AI's Anthropic Messages surface. One key reaches many vendors' models
-   * there and B.AI speaks Messages natively, so the body passes through with the
-   * model rewritten plus the one tool-schema shape Gemini rejects normalised
-   * (see baiRequestCompat). Auth is `x-api-key`, which B.AI accepts alongside
-   * Bearer.
-   */
-  private async forwardToBai(
-    body: any,
-    incomingHeaders: http.IncomingHttpHeaders,
-    target: RouterTarget & { kind: "bai" },
-    signal: AbortSignal,
-  ): Promise<UpstreamRoute> {
-    const apiKey = this.baiApiKey();
-    if (!apiKey) {
-      throw new Error(
-        `${BAI_API_KEY_ENV} is not configured. Open AgentParty Authentication and connect B.AI. No fallback was attempted.`,
-      );
-    }
-    const payload = JSON.stringify(normalizeAnthropicRequestForBai(rewriteAnthropicRequestModel(body, target.model)));
-    const response = await fetch(apiEndpoint(this.options.baiBaseUrl || BAI_BASE_URL, CLAUDE_PROTOCOL.endpoint), {
-      method: "POST",
-      headers: anthropicUpstreamHeaders(incomingHeaders, apiKey),
-      body: payload,
-      signal,
-    });
-    await dumpRejectedRequest("bai", response, payload);
-    return { response, openRouter: false };
-  }
-
   private async forwardToOpenRouter(
     body: any,
     incomingHeaders: http.IncomingHttpHeaders,
@@ -490,10 +452,6 @@ export class EmbeddedHarnessRouter {
 
   private deepseekApiKey(): string {
     return this.options.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "";
-  }
-
-  private baiApiKey(): string {
-    return this.options.baiApiKey || process.env[BAI_API_KEY_ENV] || "";
   }
 
   private subscriptionProxy() {

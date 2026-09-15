@@ -137,11 +137,7 @@ export interface CatalogModel {
    * instead of failing once the user has already picked it.
    */
   xaiClientToolsBeta?: boolean;
-  /**
-   * Model id on B.AI's unified API (e.g. "kimi-k3"). Presence + provider "bai"
-   * routes the claude-code gateway at https://api.b.ai/v1/messages, billed to
-   * the user's B.AI credits. https://docs.b.ai/llmservice/api/
-   */
+  /** Model id on B.AI's Responses API, used only by the Codex harness. */
   baiModel?: string;
   /**
    * Whether B.AI serves this model on the OpenAI Responses API — the only wire
@@ -423,23 +419,17 @@ export function codexDirectDeepseekModel(model: string): CatalogModel | undefine
   );
 }
 
-/** Models served by B.AI's unified API (provider bai with a concrete id). */
+/** Models explicitly verified on B.AI's Responses API. */
 export function baiModels(): CatalogModel[] {
-  return MODELS.filter((m) => m.provider === "bai" && Boolean(m.baiModel));
+  return MODELS.filter((m) => m.provider === "bai" && m.baiResponsesApi === true && Boolean(m.baiModel));
 }
 
 /**
- * The B.AI entry a codex model slug names, when B.AI serves it on Responses.
- *
- * The codex adapter chooses its custom provider from the slug alone, so a slug
- * DeepSeek's own API also serves ("deepseek-v4-pro") cannot be told apart and
- * resolves to DeepSeek, never here. codexBaiRoute shows that route disabled
- * with the reason instead of letting it bill the wrong key.
+ * The B.AI entry a Codex model slug names, when B.AI serves it on Responses.
+ * Provider selection itself uses route metadata; this lookup only answers
+ * whether the slug is valid on B.AI and may therefore overlap another provider.
  */
 export function codexDirectBaiModel(model: string): CatalogModel | undefined {
-  if (codexDirectDeepseekModel(model)) {
-    return undefined;
-  }
   const lower = model.toLowerCase();
   return baiModels().find((m) => m.baiResponsesApi === true && m.baiModel?.toLowerCase() === lower);
 }
@@ -475,8 +465,7 @@ export type RouterTarget =
   | { kind: "openrouter"; model: string }
   | { kind: "cursor-subscription"; model: string }
   | { kind: "deepseek"; model: string }
-  | { kind: "xai-subscription"; model: string }
-  | { kind: "bai"; model: string };
+  | { kind: "xai-subscription"; model: string };
 
 /** Exact provider target for one Claude Code gateway alias. */
 export function routerTargetForModel(model: string): RouterTarget | undefined {
@@ -498,9 +487,6 @@ export function routerTargetForModel(model: string): RouterTarget | undefined {
   }
   if (entry.provider === "xai" && entry.xaiModel) {
     return { kind: "xai-subscription", model: entry.xaiModel };
-  }
-  if (entry.provider === "bai" && entry.baiModel) {
-    return { kind: "bai", model: entry.baiModel };
   }
   return undefined;
 }

@@ -3,6 +3,7 @@ import { BAI_API_KEY_ENV, BAI_BASE_URL } from "./baiDefaults";
 import { DEEPSEEK_API_KEY_ENV, DEEPSEEK_BASE_URL } from "./deepseekDefaults";
 import { DEFAULT_SUBSCRIPTION_PROXY_BASE_URL, SUBSCRIPTION_PROXY_KEY_ENV } from "./subscriptionProxyDefaults";
 import { HARNESS_PROTOCOLS } from "./harnessProtocols";
+import { backendFor } from "./modelIdentity";
 
 /**
  * Codex custom model providers (Phase 2 — docs/codex-ux-research/07-model-routing.md).
@@ -97,7 +98,11 @@ export function codexCustomProvider(id: string | undefined): CodexCustomProvider
  * provider; a bare account slug (e.g. "gpt-5.5") maps to nothing (built-in
  * openai).
  */
-export function codexProviderForModel(model: string): CodexCustomProvider | undefined {
+export function codexProviderForModel(model: string, routeProvider?: string): CodexCustomProvider | undefined {
+  const explicit = codexCustomProvider(routeProvider);
+  if (explicit) {
+    return explicit;
+  }
   const lower = model.toLowerCase();
   if (catalogModelByClaudeSubscriptionModel(model)) {
     return CODEX_CLAUDE_SUBSCRIPTION_PROVIDER;
@@ -110,6 +115,26 @@ export function codexProviderForModel(model: string): CodexCustomProvider | unde
   }
   const isOpenRouterSlug = orRoutedModels().some((m) => (m.orModelId || "").toLowerCase() === lower);
   return isOpenRouterSlug ? CODEX_OPENROUTER_PROVIDER : undefined;
+}
+
+/** Resolve a picker route before its display id is replaced by the wire slug. */
+export function codexProviderForRoute(model: string, routeProvider?: string): CodexCustomProvider | undefined {
+  const explicit = codexCustomProvider(routeProvider);
+  if (explicit) {
+    return explicit;
+  }
+  switch (backendFor(model, "codex")?.kind) {
+    case "codex-bai":
+      return CODEX_BAI_PROVIDER;
+    case "codex-deepseek":
+      return CODEX_DEEPSEEK_PROVIDER;
+    case "codex-openrouter":
+      return CODEX_OPENROUTER_PROVIDER;
+    case "codex-claude-subscription":
+      return CODEX_CLAUDE_SUBSCRIPTION_PROVIDER;
+    default:
+      return undefined;
+  }
 }
 
 /**

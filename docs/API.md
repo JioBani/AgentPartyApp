@@ -1294,7 +1294,10 @@ When `AGENTPARTY_E2E=1`, this endpoint returns a mocked verification result and 
 
 ### `POST /api/auth/bai`
 
-Stores a B.AI API key (B.AI's unified API at `https://api.b.ai/v1`, used by the provider `bai` catalog models).
+Stores a B.AI API key (B.AI's unified API at `https://api.b.ai/v1`). B.AI is
+exposed only on the Codex harness for the three verified DeepSeek Responses
+models; its Anthropic Messages surface is not offered because it discards
+reasoning settings.
 
 ```json
 { "key": "sk-..." }

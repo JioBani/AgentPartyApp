@@ -4,7 +4,6 @@ import {
   catalogModelByRuntime,
   claudeSubscriptionModels,
   codexAccountModels,
-  codexDirectDeepseekModel,
   deepseekModels,
   modelCatalog,
   orRoutedModels,
@@ -198,10 +197,11 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   for (const model of codexAccountModels()) {
     addRoute(routes, seen, codexRouteFromCatalog(model));
   }
-  // The catalog is authoritative for the claude-code model list. OpenAI models
+  // The catalog is authoritative for the claude-code model list. B.AI is
+  // Codex-only because its Messages endpoint discards reasoning controls.
   // retain the Claude SDK process while the embedded router forwards them to
   // the local Codex/ChatGPT subscription proxy.
-  for (const model of modelCatalog()) {
+  for (const model of modelCatalog().filter((entry) => entry.provider !== "bai")) {
     addRoute(routes, seen, routeFromCatalog(model));
   }
   // True OpenRouter catalog models stay token-billed on the OpenRouter custom
@@ -225,14 +225,14 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
     addRoute(routes, seen, route);
   }
   addRoute(routes, seen, cursorAutoRoute());
-  for (const model of modelCatalog().filter((entry) => Boolean(entry.cursorModel))) {
+  for (const model of modelCatalog().filter((entry) => entry.provider !== "bai" && Boolean(entry.cursorModel))) {
     addRoute(routes, seen, cursorRouteFromCatalog(model));
   }
   // Catalog completeness is independent from executable protocol support.
   // Cursor is an agent runtime, not an Anthropic/OpenAI-compatible model
   // endpoint, so unsupported combinations remain visible with an explicit
   // reason instead of disappearing or silently switching harnesses.
-  for (const model of modelCatalog().filter((entry) => !entry.cursorModel)) {
+  for (const model of modelCatalog().filter((entry) => entry.provider !== "bai" && !entry.cursorModel)) {
     addRoute(routes, seen, unavailableCursorHarnessRoute(model));
   }
   // The claude-code placeholder ("Cursor is an agent runtime, not an endpoint")
@@ -444,26 +444,20 @@ export function codexDeepseekRoute(model: CatalogModel): ModelRoute {
 /**
  * A B.AI model on the codex harness, over B.AI's Responses surface.
  *
- * B.AI serves Responses for the GPT and DeepSeek families only, so a model
- * without `baiResponsesApi` stays visible with the reason, like DeepSeek's
- * routes. A slug DeepSeek's own API also serves is disabled too: the codex
- * adapter resolves its provider from the slug alone, so that member would be
- * billed to the DeepSeek key while the picker said B.AI.
+ * Every catalogued B.AI model is explicitly verified for Responses support.
+ * The route keeps the catalog id as its identity and the API slug as its
+ * runtime model so overlapping provider slugs remain unambiguous.
  */
 export function codexBaiRoute(model: CatalogModel): ModelRoute {
-  const effort = model.reasoning?.effort;
+  // Product policy for the verified B.AI Responses set. Keep this authoritative
+  // over a stale remote catalog that may still advertise reasoning: null.
+  const effort = { options: ["low", "high", "max"] as const, default: "high" as const };
   const slug = model.baiModel || model.id;
   const served = model.baiResponsesApi === true;
-  const claimedByDeepseek = Boolean(codexDirectDeepseekModel(slug));
-  const unavailableReason = !served
-    ? "B.AI serves the OpenAI Responses API only for GPT and DeepSeek models, and Responses is the only wire the Codex harness speaks. No fallback will be attempted."
-    : claimedByDeepseek
-      ? `DeepSeek's own API serves the same model id (${slug}) on the Codex harness, so the two routes cannot be told apart. Use the DeepSeek route here, or run this B.AI model on Claude Code.`
-      : undefined;
   return {
     harnessId: "codex",
     providerId: model.provider,
-    model: slug,
+    model: model.id,
     runtimeModel: slug,
     modelProvider: CODEX_BAI_PROVIDER.id,
     label: model.label,
@@ -490,8 +484,8 @@ export function codexBaiRoute(model: CatalogModel): ModelRoute {
       ioPerM: model.ioPerM,
       context: model.context,
     },
-    enabled: !unavailableReason,
-    ...(unavailableReason ? { unavailableReason } : {}),
+    enabled: served,
+    ...(served ? {} : { unavailableReason: "B.AI does not serve this model on the Responses API required by Codex. No fallback will be attempted." }),
   };
 }
 

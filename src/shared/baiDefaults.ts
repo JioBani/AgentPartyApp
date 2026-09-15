@@ -1,13 +1,10 @@
 /**
  * B.AI's unified LLM API endpoint and credential env var.
  *
- * One key reaches many vendors' models (Gemini, Kimi, GLM, Qwen, DeepSeek, …)
- * behind three wires on the same base, so each harness talks its own protocol
- * with no translation of ours:
- *  - claude-code emits Anthropic Messages -> `${BAI_BASE_URL}/messages`
- *  - codex emits OpenAI Responses        -> `${BAI_BASE_URL}/responses`
- *    (served for the GPT and DeepSeek families only)
- * `Authorization: Bearer` and `x-api-key` are both accepted.
+ * AgentParty exposes the verified DeepSeek models through Codex's OpenAI
+ * Responses wire at `${BAI_BASE_URL}/responses`. B.AI's Anthropic Messages
+ * surface is intentionally not routed because it discards reasoning settings.
+ * `Authorization: Bearer` is supplied by Codex through this env-backed key.
  *
  * Verified 2026-09-14 against https://docs.b.ai/llmservice/api/ and the B.AI
  * Codex / Claude Code integration guides.

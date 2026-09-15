@@ -35,6 +35,7 @@ import { log } from "./logger";
 import { executionModelFor } from "../shared/modelIdentity";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { BAI_API_KEY_ENV } from "../shared/baiDefaults";
+import { codexProviderForRoute } from "../shared/codexProviders";
 import type { ApprovalDelivery } from "../shared/approvals";
 import type { SessionEventCursor } from "../shared/sessionEventStream";
 import { registerMemoryProbe } from "../shared/memoryProbes";
@@ -1344,7 +1345,8 @@ export class SessionManager extends EventEmitter {
     }
     const adapterHarness = adapter instanceof CodexAdapter ? "codex" : adapter instanceof CursorAdapter ? "cursor" : "claude-code";
     const effectiveModel = adapterHarness === "codex" ? executionModelFor(model, "codex") : model;
-    adapter.setModel(effectiveModel, providerId as any, runtimeModel);
+    const effectiveProvider = adapterHarness === "codex" ? codexProviderForRoute(model, providerId)?.id : providerId;
+    adapter.setModel(effectiveModel, effectiveProvider as any, runtimeModel);
   }
 
   setEffort(id: string, effort: string): void {
@@ -1588,6 +1590,7 @@ export class SessionManager extends EventEmitter {
       }) as unknown as HarnessSession;
     }
     if (selectedHarness === "codex") {
+      const modelProvider = codexProviderForRoute(selectedModel, request.selectedProviderId)?.id;
       const adapterScope = binding
         ? `party:${binding.identity.party}:member:${binding.identity.member}`
         : usageSourceId
@@ -1600,6 +1603,7 @@ export class SessionManager extends EventEmitter {
         id,
         cwd,
         model: executionModelFor(selectedModel, "codex"),
+        modelProvider,
         effort: request.effort || harnessDefaults.effort,
         serviceTier: request.serviceTier || harnessDefaults.serviceTier,
         permissionMode: request.permissionMode || harnessDefaults.permissionMode,

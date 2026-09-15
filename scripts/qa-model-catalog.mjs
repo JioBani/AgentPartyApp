@@ -22,7 +22,8 @@ async function load(entry, name) {
 }
 
 const { buildModelRoutes, displayModelFor, runtimeModelFor, inferModelProvider, grokHarnessRoutes } = await load("src/core/modelRegistry.ts", "mr.mjs");
-const { openRouterAliasMap, openRouterModels, orRoutedModels, deepseekModels, baiModels, codexDirectDeepseekModel, claudeSubscriptionModels, routerTargetForModel, modelCatalog, catalogModelById, catalogModelByRuntime, resolveCatalogModel, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
+const { openRouterAliasMap, openRouterModels, orRoutedModels, deepseekModels, baiModels, codexDirectBaiModel, claudeSubscriptionModels, routerTargetForModel, modelCatalog, catalogModelById, catalogModelByRuntime, resolveCatalogModel, parseContextTokens } = await load("src/shared/modelCatalog.ts", "cat.mjs");
+const { codexProviderForModel, codexProviderForRoute } = await load("src/shared/codexProviders.ts", "providers.mjs");
 const { findRoute } = await load("src/renderer/workbench/routes.ts", "routes.mjs");
 const { PROVIDER_LABELS } = await load("src/renderer/workbench/modelCatalog.ts", "provider-labels.mjs");
 const { groupByProvider } = await load("src/renderer/workbench/modelMeters.tsx", "model-meters.mjs");
@@ -177,14 +178,14 @@ const deepseekCodexCount = deepseekModels().length;
 // anonymous sum. The Grok Build CLI owns its own model list (the catalog does
 // not route it), so its count comes from the registry, not from modelCatalog().
 const expectedRouteCount =
-  modelCatalog().length            // claude-code: every catalog entry
+  modelCatalog().filter((m) => m.provider !== "bai").length // claude-code: B.AI is Codex-only
   + codexAccountCount              // codex: native OpenAI models
   + orRoutedModels().length        // codex: OpenRouter-served models
   + claudeSubscriptionModels().length  // codex: Claude subscription models
   + deepseekCodexCount             // codex: DeepSeek's own API
-  + baiModels().length             // codex: B.AI (disabled where Responses is not served)
+  + baiModels().length             // codex: verified B.AI Responses models
   + grokHarnessRoutes().length     // grok: what the Grok Build CLI serves
-  + modelCatalog().length          // cursor: every catalog entry
+  + modelCatalog().filter((m) => m.provider !== "bai").length // cursor: B.AI is Codex-only
   + unavailableCursorProviderCount // cursor-provider models parked on other harnesses
   + 1;                             // cursor: the Auto route
 assert(expectedRouteCount === routes.length, `all catalog combinations plus executable Cursor and Grok routes are produced (expected ${expectedRouteCount}, got ${routes.length})`);
@@ -204,21 +205,23 @@ for (const m of deepseekModels()) {
 }
 assert(deepseekModels().some((m) => m.deepseekResponsesApi === true), "at least one DeepSeek model is executable on codex");
 
-// B.AI: claude-code reaches every model over B.AI's Messages surface; codex only
-// the Responses-served ones whose slug DeepSeek's own API does not also claim.
+// B.AI is deliberately Codex-only: its Messages surface discards reasoning
+// settings. Only the three verified DeepSeek Responses models are exposed.
 console.log("\nB.AI routes:");
+assert(baiModels().map((m) => m.baiModel).join() === "deepseek-v4.1-flash,deepseek-v4-pro,deepseek-v4-flash-vision-exp", "B.AI exposes exactly the three approved DeepSeek models");
 for (const m of baiModels()) {
-  assert(routerTargetForModel(m.runtimeModel)?.kind === "bai" && routerTargetForModel(m.runtimeModel)?.model === m.baiModel, `${m.id} targets B.AI with slug '${m.baiModel}' on claude-code`);
-  const codexRoute = routes.find((r) => r.harnessId === "codex" && r.modelProvider === "bai" && r.model === m.baiModel);
-  const executable = m.baiResponsesApi === true && !codexDirectDeepseekModel(m.baiModel);
-  assert(codexRoute?.enabled === executable, `${m.id} codex route enabled=${executable}`);
-  if (!executable) {
-    assert(Boolean(codexRoute?.unavailableReason), `${m.id} explains why codex cannot run it`);
-  }
+  assert(!routes.some((r) => r.harnessId !== "codex" && r.providerId === "bai"), "B.AI has no non-Codex route");
+  const codexRoute = routes.find((r) => r.harnessId === "codex" && r.modelProvider === "bai" && r.model === m.id);
+  assert(codexRoute?.enabled === true && codexRoute.runtimeModel === m.baiModel, `${m.id} has an enabled Codex route with runtime slug '${m.baiModel}'`);
+  assert(codexRoute?.capabilities.effort.options.map((o) => o.id).join() === "low,high,max" && codexRoute.capabilities.effort.defaultValue === "high", `${m.id} exposes low/high/max effort with high default`);
+  assert(codexDirectBaiModel(m.baiModel)?.id === m.id, `${m.baiModel} is accepted on B.AI Responses`);
 }
+assert(codexProviderForModel("deepseek-v4-pro")?.id === "deepseek", "shared V4 Pro slug keeps DeepSeek direct as the legacy/default inference");
+assert(codexProviderForModel("deepseek-v4-pro", "bai")?.id === "bai", "explicit B.AI route metadata overrides the shared V4 Pro slug");
+assert(codexProviderForRoute("DeepSeek V4 Pro B.AI", "bai")?.id === "bai", "B.AI picker identity resolves before conversion to the overlapping wire slug");
 
 const cursorRoutes = routes.filter((route) => route.harnessId === "cursor");
-assert(cursorRoutes.length === modelCatalog().length + 1 && cursorRoutes.some((route) => route.model === "Auto"), "Cursor harness catalogues every model plus Auto");
+assert(cursorRoutes.length === modelCatalog().filter((m) => m.provider !== "bai").length + 1 && cursorRoutes.some((route) => route.model === "Auto"), "Cursor harness excludes Codex-only B.AI and catalogues every other model plus Auto");
 assert(cursorRoutes.find((route) => route.model === "Auto")?.runtimeModel === "auto", "Cursor Auto route carries the CLI auto slug");
 assert(cursorRoutes.find((route) => route.model === "Grok 4.5")?.runtimeModel === "cursor-grok-4.5-high", "Cursor Grok route carries the verified named-model slug");
 const grokRoutes = grokHarnessRoutes();

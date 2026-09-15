@@ -56,6 +56,8 @@ export interface CodexAdapterOptions {
   id: string;
   cwd: string;
   model: string;
+  /** Explicit custom provider from the selected route; required for overlapping slugs. */
+  modelProvider?: string;
   effort: ClaudeEffort;
   /** Native Codex serving tier id from model/list (for example `priority` / Fast). */
   serviceTier?: string;
@@ -210,11 +212,11 @@ export class CodexAdapter extends EventEmitter {
   /**
    * The custom provider the current model routes through (OpenRouter etc.), or
    * undefined for the built-in openai account catalog. Derived from the model
-   * slug via the shared catalog so no extra plumbing is threaded through the
-   * session layers. See codexProviders.ts.
+   * selected route. Slug inference remains for legacy callers, but route data
+   * wins because two providers may legitimately serve the same model id.
    */
   private currentProvider(): CodexCustomProvider | undefined {
-    const provider = codexProviderForModel(this.options.model);
+    const provider = codexProviderForModel(this.options.model, this.options.modelProvider);
     if (provider?.id !== CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id) {
       return provider;
     }
@@ -487,9 +489,10 @@ export class CodexAdapter extends EventEmitter {
     this.emit("snapshot", this.getSnapshot());
   }
 
-  setModel(model: string): void {
+  setModel(model: string, modelProvider?: string): void {
     const previousProvider = this.currentProvider()?.id;
-    (this.options as { model: string }).model = model;
+    (this.options as { model: string; modelProvider?: string }).model = model;
+    (this.options as { model: string; modelProvider?: string }).modelProvider = modelProvider;
     const nextProvider = this.currentProvider()?.id;
     if (previousProvider !== nextProvider && this.started) {
       this.emitEvent({
@@ -1070,7 +1073,7 @@ export class CodexAdapter extends EventEmitter {
         approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
         sandboxPolicy: sandboxPolicyObject(this.policy.sandbox),
         model: this.options.model,
-        effort: effortFor(this.options.model, this.options.effort),
+        effort: effortFor(this.options.model, this.options.effort, this.currentProvider()?.id),
         // The model catalog owns the wire id (`priority` is labelled Fast).
         // Re-send it per turn because Codex allows this setting to change at
         // turn scope and a resumed thread may have a different prior value.
@@ -1952,7 +1955,12 @@ function sandboxPolicyObject(mode: SandboxMode): unknown {
   return { type: "readOnly", networkAccess: false };
 }
 
-function effortFor(model: string, effort: ClaudeEffort): string | null {
+function effortFor(model: string, effort: ClaudeEffort, modelProvider?: string): string | null {
+  // B.AI's supported Codex routes all use Responses reasoning.effort. Keep
+  // sending it even if a stale remote catalog still carries reasoning: null.
+  if (modelProvider === CODEX_BAI_PROVIDER.id) {
+    return effort;
+  }
   const catalogModel = resolveCatalogModel(model);
   if (catalogModel && !catalogModel.reasoning?.effort) {
     return null;

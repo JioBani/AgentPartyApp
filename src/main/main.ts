@@ -494,7 +494,6 @@ ${body}
       authToken: settings.routerAuthToken,
       openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
       deepseekApiKey: settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "",
-      baiApiKey: settings.baiApiKey || process.env[BAI_API_KEY_ENV] || "",
       cursorAcpRelayScriptPath: acpRelayScript,
       cursorExecutablePath: () => getSettings().cursorExecutablePath || undefined,
     },
@@ -1043,7 +1042,6 @@ function applyRuntimeSettings(): void {
     authToken: settings.routerAuthToken,
     openRouterApiKey: settings.openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
     deepseekApiKey: settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "",
-    baiApiKey: settings.baiApiKey || process.env[BAI_API_KEY_ENV] || "",
   });
   log("info", "settings", "runtime settings applied", {
     routerBaseUrl: router?.baseUrl,

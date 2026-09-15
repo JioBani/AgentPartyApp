@@ -99,6 +99,22 @@ assert(streamed.emits.join("") === FULL, "delta + completed sequence contributes
 assert((streamed.emits.join("").match(new RegExp(SENTINEL, "g")) || []).length === 1, "delta + completed sequence contains one sentinel");
 assert(streamed.statuses.filter((status) => status === "responding").length === 1, "active thread + turn start produces one responding status");
 
+console.log("\nProvider changes with an overlapping model slug:");
+const overlapping = new CodexAdapter({
+  id: "provider-switch",
+  cwd: process.cwd(),
+  model: "deepseek-v4-pro",
+  modelProvider: "deepseek",
+  effort: "high",
+  debugEnabled: false,
+});
+assert(overlapping.currentProvider()?.id === "deepseek", "shared V4 Pro slug starts on the explicit DeepSeek provider");
+overlapping.setModel("deepseek-v4-pro", "bai");
+assert(overlapping.currentProvider()?.id === "bai", "same V4 Pro slug switches to B.AI when route metadata changes");
+overlapping.setModel("gpt-5.5");
+assert(overlapping.currentProvider() === undefined, "switching to an account model clears the prior custom provider");
+overlapping.dispose();
+
 console.log("\nFull pipeline (adapter emits → renderer applyEvents):");
 // Feed the adapter's real emitted events through the real renderer reducer.
 const events = orEmits.map((text) => ({ type: "assistant_text_delta", text }));

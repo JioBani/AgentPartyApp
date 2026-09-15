@@ -315,7 +315,7 @@ export function getAuthState(): AuthProviderState[] {
       label: "B.AI",
       kind: "apiKey",
       status: baiKey ? "configured" : "missing",
-      description: "Used by Gemini, Kimi, GLM, Qwen and other models on B.AI's unified API.",
+      description: "Used by DeepSeek models on B.AI's Responses API through the Codex harness.",
       source: settings.baiApiKey ? "AgentParty app settings" : process.env[BAI_API_KEY_ENV] ? BAI_API_KEY_ENV : undefined,
       maskedValue: maskSecret(baiKey),
       detail: baiKey ? "Configured. Use Test to verify provider access." : "Missing. B.AI models need this key.",

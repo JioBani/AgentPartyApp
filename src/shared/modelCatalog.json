@@ -245,10 +245,24 @@
       "cacheReadPerM": 1,
       "cacheWritePerM": 12.5,
       "serviceTierPricing": {
-        "priority": { "inPerM": 20, "cacheReadPerM": 2, "cacheWritePerM": 25, "outPerM": 100 },
-        "fast": { "inPerM": 20, "cacheReadPerM": 2, "cacheWritePerM": 25, "outPerM": 100 }
+        "priority": {
+          "inPerM": 20,
+          "cacheReadPerM": 2,
+          "cacheWritePerM": 25,
+          "outPerM": 100
+        },
+        "fast": {
+          "inPerM": 20,
+          "cacheReadPerM": 2,
+          "cacheWritePerM": 25,
+          "outPerM": 100
+        }
       },
-      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
       "reasoning": {
         "effort": {
           "options": [
@@ -284,10 +298,24 @@
       "cacheReadPerM": 0.4,
       "cacheWritePerM": 5,
       "serviceTierPricing": {
-        "priority": { "inPerM": 8, "cacheReadPerM": 0.8, "cacheWritePerM": 10, "outPerM": 40 },
-        "fast": { "inPerM": 8, "cacheReadPerM": 0.8, "cacheWritePerM": 10, "outPerM": 40 }
+        "priority": {
+          "inPerM": 8,
+          "cacheReadPerM": 0.8,
+          "cacheWritePerM": 10,
+          "outPerM": 40
+        },
+        "fast": {
+          "inPerM": 8,
+          "cacheReadPerM": 0.8,
+          "cacheWritePerM": 10,
+          "outPerM": 40
+        }
       },
-      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
       "reasoning": {
         "effort": {
           "options": [
@@ -323,10 +351,24 @@
       "cacheReadPerM": 0.2,
       "cacheWritePerM": 2.5,
       "serviceTierPricing": {
-        "priority": { "inPerM": 4, "cacheReadPerM": 0.4, "cacheWritePerM": 5, "outPerM": 24 },
-        "fast": { "inPerM": 4, "cacheReadPerM": 0.4, "cacheWritePerM": 5, "outPerM": 24 }
+        "priority": {
+          "inPerM": 4,
+          "cacheReadPerM": 0.4,
+          "cacheWritePerM": 5,
+          "outPerM": 24
+        },
+        "fast": {
+          "inPerM": 4,
+          "cacheReadPerM": 0.4,
+          "cacheWritePerM": 5,
+          "outPerM": 24
+        }
       },
-      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
       "reasoning": {
         "effort": {
           "options": [
@@ -362,10 +404,24 @@
       "cacheReadPerM": 0.02,
       "cacheWritePerM": 0.25,
       "serviceTierPricing": {
-        "priority": { "inPerM": 0.4, "cacheReadPerM": 0.04, "cacheWritePerM": 0.5, "outPerM": 2.4 },
-        "fast": { "inPerM": 0.4, "cacheReadPerM": 0.04, "cacheWritePerM": 0.5, "outPerM": 2.4 }
+        "priority": {
+          "inPerM": 0.4,
+          "cacheReadPerM": 0.04,
+          "cacheWritePerM": 0.5,
+          "outPerM": 2.4
+        },
+        "fast": {
+          "inPerM": 0.4,
+          "cacheReadPerM": 0.04,
+          "cacheWritePerM": 0.5,
+          "outPerM": 2.4
+        }
       },
-      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
       "reasoning": {
         "effort": {
           "options": [
@@ -400,10 +456,22 @@
       "outPerM": 30,
       "ioPerM": 11.25,
       "serviceTierPricing": {
-        "priority": { "inPerM": 12.5, "cacheReadPerM": 1.25, "outPerM": 75 },
-        "fast": { "inPerM": 12.5, "cacheReadPerM": 1.25, "outPerM": 75 }
+        "priority": {
+          "inPerM": 12.5,
+          "cacheReadPerM": 1.25,
+          "outPerM": 75
+        },
+        "fast": {
+          "inPerM": 12.5,
+          "cacheReadPerM": 1.25,
+          "outPerM": 75
+        }
       },
-      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
       "reasoning": {
         "effort": {
           "options": [
@@ -437,10 +505,22 @@
       "outPerM": 15,
       "ioPerM": 5.63,
       "serviceTierPricing": {
-        "priority": { "inPerM": 5, "cacheReadPerM": 0.5, "outPerM": 30 },
-        "fast": { "inPerM": 5, "cacheReadPerM": 0.5, "outPerM": 30 }
+        "priority": {
+          "inPerM": 5,
+          "cacheReadPerM": 0.5,
+          "outPerM": 30
+        },
+        "fast": {
+          "inPerM": 5,
+          "cacheReadPerM": 0.5,
+          "outPerM": 30
+        }
       },
-      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
       "reasoning": {
         "effort": {
           "options": [
@@ -474,8 +554,16 @@
       "outPerM": 4.5,
       "ioPerM": 1.69,
       "serviceTierPricing": {
-        "priority": { "inPerM": 1.5, "cacheReadPerM": 0.15, "outPerM": 9 },
-        "fast": { "inPerM": 1.5, "cacheReadPerM": 0.15, "outPerM": 9 }
+        "priority": {
+          "inPerM": 1.5,
+          "cacheReadPerM": 0.15,
+          "outPerM": 9
+        },
+        "fast": {
+          "inPerM": 1.5,
+          "cacheReadPerM": 0.15,
+          "outPerM": 9
+        }
       },
       "reasoning": {
         "effort": {
@@ -1360,102 +1448,9 @@
       }
     },
     {
-      "id": "Gemini 3.8 Flash B.AI",
-      "label": "Gemini 3.8 Flash (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-gemini-3-8-flash",
-      "baiModel": "gemini-3.8-flash",
-      "subscription": false,
-      "description": "Gemini 3.8 Flash on B.AI's unified API, billed to B.AI credits. Thinking low/medium/high (minimal is rejected). Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "costTier": 2,
-      "inPerM": 0.75,
-      "outPerM": 3.75,
-      "ioPerM": 1.5,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
-      "id": "Gemini 3.6 Flash B.AI",
-      "label": "Gemini 3.6 Flash (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-gemini-3-6-flash",
-      "baiModel": "gemini-3.6-flash",
-      "subscription": false,
-      "description": "Gemini 3.6 Flash on B.AI's unified API, billed to B.AI credits. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "costTier": 4,
-      "inPerM": 1.5,
-      "outPerM": 7.5,
-      "ioPerM": 3,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
-      "id": "Gemini 3.5 Flash B.AI",
-      "label": "Gemini 3.5 Flash (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-gemini-3-5-flash",
-      "baiModel": "gemini-3.5-flash",
-      "subscription": false,
-      "description": "Gemini 3.5 Flash on B.AI's unified API, billed to B.AI credits. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "perf": 4,
-      "costTier": 4,
-      "inPerM": 1.5,
-      "outPerM": 9,
-      "ioPerM": 3.375,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
-      "id": "Gemini 3.5 Flash-Lite B.AI",
-      "label": "Gemini 3.5 Flash-Lite (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-gemini-3-5-flash-lite",
-      "baiModel": "gemini-3.5-flash-lite",
-      "subscription": false,
-      "description": "Gemini 3.5 Flash-Lite on B.AI's unified API, billed to B.AI credits. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "costTier": 1,
-      "inPerM": 0.3,
-      "outPerM": 2.5,
-      "ioPerM": 0.85,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
-      "id": "Gemini 3.1 Pro B.AI",
-      "label": "Gemini 3.1 Pro (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-gemini-3-1-pro",
-      "baiModel": "gemini-3.1-pro",
-      "subscription": false,
-      "description": "Gemini 3.1 Pro on B.AI's unified API, billed to B.AI credits. B.AI serves this id as gemini-3.1-pro-preview. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "perf": 2,
-      "costTier": 4,
-      "inPerM": 2,
-      "outPerM": 12,
-      "ioPerM": 4.5,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
       "id": "DeepSeek V4.1 Flash B.AI",
       "label": "DeepSeek V4.1 Flash (B.AI)",
       "provider": "bai",
-      "runtimeModel": "claude-bai-deepseek-v4-1-flash",
       "baiModel": "deepseek-v4.1-flash",
       "baiResponsesApi": true,
       "subscription": false,
@@ -1465,7 +1460,16 @@
       "inPerM": 0.3,
       "outPerM": 1.2,
       "ioPerM": 0.525,
-      "reasoning": null,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "high",
+            "max"
+          ],
+          "default": "high"
+        }
+      },
       "vision": {
         "image": true
       }
@@ -1474,7 +1478,6 @@
       "id": "DeepSeek V4 Pro B.AI",
       "label": "DeepSeek V4 Pro (B.AI)",
       "provider": "bai",
-      "runtimeModel": "claude-bai-deepseek-v4-pro",
       "baiModel": "deepseek-v4-pro",
       "baiResponsesApi": true,
       "subscription": false,
@@ -1486,12 +1489,13 @@
       "outPerM": 3.96,
       "ioPerM": 1.98,
       "reasoning": {
-        "thinking": {
-          "modes": [
-            "enabled",
-            "disabled"
+        "effort": {
+          "options": [
+            "low",
+            "high",
+            "max"
           ],
-          "default": "enabled"
+          "default": "high"
         }
       },
       "vision": {
@@ -1502,7 +1506,6 @@
       "id": "DeepSeek V4 Flash Vision Exp B.AI",
       "label": "DeepSeek V4 Flash Vision Exp (B.AI)",
       "provider": "bai",
-      "runtimeModel": "claude-bai-deepseek-v4-flash-vision-exp",
       "baiModel": "deepseek-v4-flash-vision-exp",
       "baiResponsesApi": true,
       "subscription": false,
@@ -1512,264 +1515,18 @@
       "inPerM": 0.3,
       "outPerM": 1.2,
       "ioPerM": 0.525,
-      "reasoning": null,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "high",
+            "max"
+          ],
+          "default": "high"
+        }
+      },
       "vision": {
         "image": true
-      }
-    },
-    {
-      "id": "Hy4 Preview B.AI",
-      "label": "Hy4 Preview (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-hy4-preview",
-      "baiModel": "hy4-preview",
-      "subscription": false,
-      "description": "Hy4 Preview on B.AI's unified API, billed to B.AI credits. Tencent Hunyuan. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "costTier": 2,
-      "inPerM": 0.834,
-      "outPerM": 2.501,
-      "ioPerM": 1.251,
-      "reasoning": null,
-      "vision": {
-        "image": false
-      }
-    },
-    {
-      "id": "Hy3 B.AI",
-      "label": "Hy3 (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-hy3",
-      "baiModel": "hy3",
-      "subscription": false,
-      "description": "Hy3 on B.AI's unified API, billed to B.AI credits. Tencent Hunyuan. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "256K",
-      "costTier": 1,
-      "inPerM": 0.132,
-      "outPerM": 0.528,
-      "ioPerM": 0.231,
-      "reasoning": null,
-      "vision": {
-        "image": false
-      }
-    },
-    {
-      "id": "MiMo-V2.5-Pro B.AI",
-      "label": "MiMo-V2.5-Pro (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-mimo-v2-5-pro",
-      "baiModel": "mimo-v2.5-pro",
-      "subscription": false,
-      "description": "MiMo-V2.5-Pro on B.AI's unified API, billed to B.AI credits. Xiaomi. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "costTier": 1,
-      "inPerM": 0.435,
-      "outPerM": 0.87,
-      "ioPerM": 0.544,
-      "reasoning": null,
-      "vision": {
-        "image": false
-      }
-    },
-    {
-      "id": "MiMo-V2.5 B.AI",
-      "label": "MiMo-V2.5 (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-mimo-v2-5",
-      "baiModel": "mimo-v2.5",
-      "subscription": false,
-      "description": "MiMo-V2.5 on B.AI's unified API, billed to B.AI credits. Xiaomi. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "costTier": 1,
-      "inPerM": 0.14,
-      "outPerM": 0.28,
-      "ioPerM": 0.175,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
-      "id": "GLM-5.3-Flash B.AI",
-      "label": "GLM-5.3-Flash (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-glm-5-3-flash",
-      "baiModel": "glm-5.3-flash",
-      "subscription": false,
-      "description": "GLM-5.3-Flash on B.AI's unified API, billed to B.AI credits. Z.AI; reasoning is always on. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "costTier": 1,
-      "inPerM": 0.15,
-      "outPerM": 0.5,
-      "ioPerM": 0.238,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
-      "id": "GLM-5.3 B.AI",
-      "label": "GLM-5.3 (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-glm-5-3",
-      "baiModel": "glm-5.3",
-      "subscription": false,
-      "description": "GLM-5.3 on B.AI's unified API, billed to B.AI credits. Z.AI; reasoning is always on. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "costTier": 3,
-      "inPerM": 1.4,
-      "outPerM": 4.4,
-      "ioPerM": 2.15,
-      "reasoning": null,
-      "vision": {
-        "image": false
-      }
-    },
-    {
-      "id": "GLM-5.2 B.AI",
-      "label": "GLM-5.2 (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-glm-5-2",
-      "baiModel": "glm-5.2",
-      "subscription": false,
-      "description": "GLM-5.2 on B.AI's unified API, billed to B.AI credits. Z.AI. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "perf": 4,
-      "costTier": 3,
-      "inPerM": 1.4,
-      "outPerM": 4.4,
-      "ioPerM": 2.15,
-      "reasoning": null,
-      "vision": {
-        "image": false
-      }
-    },
-    {
-      "id": "Kimi K3 B.AI",
-      "label": "Kimi K3 (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-kimi-k3",
-      "baiModel": "kimi-k3",
-      "subscription": false,
-      "description": "Kimi K3 on B.AI's unified API, billed to B.AI credits. Moonshot AI; only max reasoning is accepted. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "costTier": 4,
-      "inPerM": 3,
-      "outPerM": 15,
-      "ioPerM": 6,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
-      "id": "Kimi K2.6 B.AI",
-      "label": "Kimi K2.6 (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-kimi-k2-6",
-      "baiModel": "kimi-k2.6",
-      "subscription": false,
-      "description": "Kimi K2.6 on B.AI's unified API, billed to B.AI credits. Moonshot AI. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "—",
-      "perf": 1,
-      "costTier": 3,
-      "inPerM": 0.95,
-      "outPerM": 4,
-      "ioPerM": 1.713,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
-      "id": "Qwen3.8-Flash B.AI",
-      "label": "Qwen3.8-Flash (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-qwen3-8-flash",
-      "baiModel": "qwen3.8-flash",
-      "subscription": false,
-      "description": "Qwen3.8-Flash on B.AI's unified API, billed to B.AI credits. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "costTier": 1,
-      "inPerM": 0.16,
-      "outPerM": 0.47,
-      "ioPerM": 0.238,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
-      "id": "Qwen3.8-27B B.AI",
-      "label": "Qwen3.8-27B (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-qwen3-8-27b",
-      "baiModel": "qwen3.8-27b",
-      "subscription": false,
-      "description": "Qwen3.8-27B on B.AI's unified API, billed to B.AI credits. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "262K",
-      "costTier": 1,
-      "inPerM": 0.22,
-      "outPerM": 1.6,
-      "ioPerM": 0.565,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
-      "id": "Qwen3.8-Max B.AI",
-      "label": "Qwen3.8-Max (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-qwen3-8-max",
-      "baiModel": "qwen3.8-max",
-      "subscription": false,
-      "description": "Qwen3.8-Max on B.AI's unified API, billed to B.AI credits. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "costTier": 4,
-      "inPerM": 2,
-      "outPerM": 6,
-      "ioPerM": 3,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
-      "id": "MiniMax M3 B.AI",
-      "label": "MiniMax M3 (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-minimax-m3",
-      "baiModel": "minimax-m3",
-      "subscription": false,
-      "description": "MiniMax M3 on B.AI's unified API, billed to B.AI credits. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "1M",
-      "perf": 2,
-      "costTier": 1,
-      "inPerM": 0.3,
-      "outPerM": 1.2,
-      "ioPerM": 0.525,
-      "reasoning": null,
-      "vision": {
-        "image": true
-      }
-    },
-    {
-      "id": "MiniMax M2.7 B.AI",
-      "label": "MiniMax M2.7 (B.AI)",
-      "provider": "bai",
-      "runtimeModel": "claude-bai-minimax-m2-7",
-      "baiModel": "minimax-m2.7",
-      "subscription": false,
-      "description": "MiniMax M2.7 on B.AI's unified API, billed to B.AI credits. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
-      "context": "204.8K",
-      "costTier": 1,
-      "inPerM": 0.3,
-      "outPerM": 1.2,
-      "ioPerM": 0.525,
-      "reasoning": null,
-      "vision": {
-        "image": false
       }
     }
   ]

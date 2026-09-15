@@ -15,7 +15,7 @@
  * strings are converted to this typed data at the narrowest possible boundary;
  * downstream code branches on `Backend.kind`, never on the model spelling.
  */
-import { codexDirectBaiModel, resolveCatalogModel } from "./modelCatalog";
+import { resolveCatalogModel } from "./modelCatalog";
 import { harnessLabel } from "./types";
 
 export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
@@ -110,7 +110,7 @@ export function backendFor(model: string, harnessId: HarnessId): Backend | undef
     // raw slug happened to work because codexProviderForModel matches slugs.
     return { kind: "codex-deepseek", slug: entry.deepseekModel };
   }
-  if (entry.baiModel && codexDirectBaiModel(entry.baiModel)) {
+  if (entry.provider === "bai" && entry.baiResponsesApi === true && entry.baiModel) {
     return { kind: "codex-bai", slug: entry.baiModel };
   }
   if (entry.provider === "openrouter" && entry.orModelId) {
