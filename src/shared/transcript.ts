@@ -1,5 +1,6 @@
 import type { ImageAttachment } from "./attachments";
 import type { GateReviewer, GateScope, GateViolation } from "./messageGate";
+import type { SshMessageUnavailable } from "./types";
 
 /**
  * One rendered block of a member's conversation.
@@ -20,7 +21,10 @@ export type TranscriptBlock =
   // badge is the only way to tell that this message reached the agent later than
   // it was typed. `queuedN` > 1 means several queued items merged into it, and
   // `from` names the sending member (absent = the user). See shared/messageQueue.ts.
-  | { id: string; kind: "user" | "assistant" | "reasoning" | "status"; text: string; attachments?: ImageAttachment[]; sent?: boolean; at?: string; fromQueue?: boolean; queuedN?: number; from?: string | null }
+  // `sendFailure` marks a user message the app refused because the member's SSH
+  // server is gone or unusable. Such a block lives only in the window that sent it
+  // (never persisted, never retried): the user sends again once the server is back.
+  | { id: string; kind: "user" | "assistant" | "reasoning" | "status"; text: string; attachments?: ImageAttachment[]; sent?: boolean; at?: string; fromQueue?: boolean; queuedN?: number; from?: string | null; sendFailure?: SshMessageUnavailable }
   | { id: string; kind: "error"; text: string; at?: string; remote?: { server: string; agent: string } }
   | { id: string; kind: "tool"; name: string; status?: string; input?: unknown; result?: unknown; source?: string; cwd?: string; exitCode?: number; durationMs?: number; output?: string; at?: string }
   // A Codex plan/TODO card (from a plan item + turn/plan/updated); latest wins.

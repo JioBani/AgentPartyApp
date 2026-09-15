@@ -85,6 +85,30 @@ export interface BuildMemberViewInput {
   compactDefault?: AutoCompactSetting;
   /** True while this member is mid-compaction (transient toolbar spinner). */
   compacting?: boolean;
+  /** Messages this window could not send (see {@link FailedSend}). */
+  failedSends?: FailedSend[];
+}
+
+/**
+ * A message the app refused before it reached the member, kept where it was
+ * typed. `afterCount` is how many transcript blocks preceded it, so it stays in
+ * place when the conversation later grows. Window-local by contract: not saved
+ * and not re-sent.
+ */
+export interface FailedSend {
+  afterCount: number;
+  block: TranscriptBlock;
+}
+
+function withFailedSends(transcript: TranscriptBlock[], failed: FailedSend[] | undefined): TranscriptBlock[] {
+  if (!failed?.length) return transcript;
+  const merged = [...transcript];
+  // Insert from the back so every earlier `afterCount` still names the same slot;
+  // equal slots keep the order they were sent in.
+  const ordered = failed.map((entry, index) => ({ entry, index }))
+    .sort((a, b) => b.entry.afterCount - a.entry.afterCount || b.index - a.index);
+  for (const { entry } of ordered) merged.splice(Math.min(entry.afterCount, transcript.length), 0, entry.block);
+  return merged;
 }
 
 /** Finds a route by a model's route id, runtime id, or display label. */
@@ -153,15 +177,16 @@ export function thresholdWindowFor(view: MemberView): number | undefined {
 }
 
 /** Assembles the per-member view consumed by panels, tabs, and the sidebar. */
-export function buildMemberView({ member, sessions, transcriptBySession, subagentsBySession, seenCount, restored, transcriptReady = true, routes, compactDefault, compacting }: BuildMemberViewInput): MemberView {
+export function buildMemberView({ member, sessions, transcriptBySession, subagentsBySession, seenCount, restored, transcriptReady = true, routes, compactDefault, compacting, failedSends }: BuildMemberViewInput): MemberView {
   const session = member.sessionId ? sessions.find((item) => item.id === member.sessionId) : undefined;
   const subagents = session ? (subagentsBySession?.[session.id] || []) : [];
   // A live session's transcript wins (it is seeded from the restored history on
   // resume, so it already contains it); otherwise show the restored history so a
   // closed member — or a reopened app — still displays its past conversation.
   const live = session ? transcriptBySession[session.id] || [] : [];
-  const transcript = live.length ? live : (restored || []);
-  const status = deriveStatus(member, session, transcript);
+  const history = live.length ? live : (restored || []);
+  const status = deriveStatus(member, session, history);
+  const transcript = withFailedSends(history, failedSends);
   const model = String(session?.snapshot.model || member.model || "");
   return {
     name: member.name,

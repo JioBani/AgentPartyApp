@@ -2093,6 +2093,12 @@ body.wb-resizing-y {
   white-space: nowrap;
 }
 
+/* 전송 실패: 보낸 자리에 남기고 이유 한 줄 + [서버 설정 열기]. 색은 위험 톤 하나. */
+.wb-user.is-send-failed .wb-user-bubble { border-color: var(--danger-bd); background: var(--danger-dim); }
+.wb-user-send-failed { display: inline-flex; align-items: center; gap: 3px; color: var(--danger); font-weight: var(--weight-semibold); }
+.wb-user-send-reason { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 2px 8px; max-width: 90%; font-size: 11px; line-height: 1.45; color: var(--danger); text-align: right; overflow-wrap: anywhere; }
+.wb-user-send-reason .set-link-btn { font-size: 11px; }
+
 .wb-user-bubble {
   max-width: 90%;
   padding: 8px 11px;

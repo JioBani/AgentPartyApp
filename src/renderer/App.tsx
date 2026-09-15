@@ -46,7 +46,7 @@ import type { WorkbenchActions } from "./workbench/actions";
 import { createLatestMethodProxy } from "./workbench/stableActions";
 import { PROGRESSIVE_TRANSCRIPT_GAP_MS } from "./workbench/transcriptScheduling";
 import type { MemberView, Subagent, TranscriptBlock } from "./workbench/types";
-import { buildMemberView } from "./workbench/memberStatus";
+import { buildMemberView, type FailedSend } from "./workbench/memberStatus";
 import { findRoute, RouteLike, routeKey } from "./workbench/routes";
 import { ipcErrorMessage } from "./app/ipcError";
 import { memberCreateFailureText, type MemberCreateResult } from "./workbench/memberCreateFailure";
@@ -119,6 +119,9 @@ export function App() {
   // Persisted transcripts restored from disk, keyed by member name — shown for a
   // closed member or right after an app reopen (before/without a live session).
   const [restoredByMember, setRestoredByMember] = useState<Record<string, TranscriptBlock[]>>({});
+  // Messages refused because the member's SSH server is unusable, by member key.
+  // Shown in place as 전송 실패; this window only, never saved or re-sent.
+  const [failedSendsByMember, setFailedSendsByMember] = useState<Record<string, FailedSend[]>>({});
   const [apiKeyDrafts, setApiKeyDrafts] = useState<Record<string, string>>({});
   // Account/provider-scoped rate-limit usage (titlebar indicator). Global, pushed
   // by main; fetched once on mount and kept live via the "usage:update" channel.
@@ -683,7 +686,9 @@ export function App() {
       const restored = restoredByMember[key];
       const transcriptReady = revealedMembers.has(member.name);
       const compacting = compactingByMember[member.name];
+      const failedSends = failedSendsByMember[key];
       const signature = [
+        failedSends,
         member,
         session,
         session ? logsBySession[session.id] : undefined,
@@ -711,13 +716,14 @@ export function App() {
         routes,
         compactDefault: state.settings.compactDefault,
         compacting,
+        failedSends,
       });
       nextCache.set(key, { signature, view });
       return view;
     });
     viewCacheRef.current = nextCache;
     return result;
-  }, [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, revealedMembers, routes, state.settings.compactDefault, compactingByMember]);
+  }, [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, revealedMembers, routes, state.settings.compactDefault, compactingByMember, failedSendsByMember]);
 
   // Auto-compaction trigger: when a member's live occupancy crosses its
   // threshold, fire ONE compaction (hysteresis via autoArmedRef so it never
@@ -1896,6 +1902,16 @@ export function App() {
       if (!result.ok) {
         if (known) {
           setLogsBySession((current) => removeBlock(current, known, echoId));
+        }
+        const owner = members.find((item) => item.name === name);
+        if (result.sshUnavailable && owner) {
+          // The message stays where it was typed, marked 전송 실패 with the reason;
+          // the composer clears because the text now lives in the conversation.
+          const key = memberKey(owner);
+          const afterCount = (known ? logsBySession[known] : restoredByMember[key])?.length ?? 0;
+          const block: TranscriptBlock = { id: echoId, kind: "user", text, attachments, at: nowTime(), sendFailure: result.sshUnavailable };
+          setFailedSendsByMember((current) => ({ ...current, [key]: [...(current[key] || []), { afterCount, block }] }));
+          return result;
         }
         throw new Error(result.message || `Could not send a message to ${name}.`);
       }
