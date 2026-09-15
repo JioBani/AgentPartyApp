@@ -2544,6 +2544,12 @@ already-delivered message is not mistaken for a failure and resent:
 
 If the target member is bound to an active session, AgentParty injects the message directly into that session as a channel payload. If no active session is bound, the message is recorded with `delivered: false` and no provider call is made. Sending an image to a text-only model is refused with a visible `vision` diagnostic (never silently dropped).
 
+For an SSH member, delivery is refused before queueing when its saved server is
+missing, unreachable, unable to authenticate, or blocked by a changed host
+fingerprint. The response has `ok: false`, a concrete `partyMessage.error`, and
+`sshUnavailable: { server, problem }`. Batch sends and broadcasts keep that
+recipient in `failed` while still delivering to available recipients.
+
 **Message Gate**: when `from` is a member (not `"user"`), AgentParty resolves the
 sender's active `send` rule and the target's active `recv` rule. The two rules
 are kept separate in one reviewer request (`<sender_rules>` and
@@ -2686,6 +2692,12 @@ person typed it and is waiting.
 This endpoint is a **human/user turn**, so omitting `interrupt` means `false`.
 The app's own Send button remains independent and fills its value from
 `composer.interruptOnSend`; a caller may explicitly pass either boolean.
+
+An unavailable SSH destination returns `ok: false` with
+`sshUnavailable: { server, problem }`, where `problem` is `server-missing`,
+`unreachable`, `auth-failed`, or `fingerprint-changed`. The message is not
+queued or retried. The composer uses the same result to keep the user's local
+message visible as a failed send and link to SSH server settings.
 
 ### `GET /api/party/members/:name/queue`
 
@@ -3043,6 +3055,9 @@ including the intended member.
 ```
 
 Returns per-member delivery: `{ "delivered": ["impl", "test"], "failed": [{ "name": "survey1", "error": "target_member_has_no_active_session" }] }`.
+An unavailable SSH recipient appears independently in `failed`, including the
+member name, SSH server name, and reason; it never prevents delivery to the
+remaining recipients.
 With `"interrupt": true` each busy recipient's turn is stopped first so the
 message is handled immediately. Agents reach this via the `broadcast` party tool.
 

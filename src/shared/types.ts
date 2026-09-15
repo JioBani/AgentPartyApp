@@ -496,6 +496,14 @@ export interface PartyMessage {
   error?: string;
 }
 
+export type SshMessageUnavailableProblem = "server-missing" | "unreachable" | "auth-failed" | "fingerprint-changed";
+
+/** Why a message could not reach a member whose immutable location is SSH. */
+export interface SshMessageUnavailable {
+  server: string;
+  problem: SshMessageUnavailableProblem;
+}
+
 export interface PartyCommandResult {
   ok: boolean;
   message: string;
@@ -505,6 +513,12 @@ export interface PartyCommandResult {
   messages?: PartyMessage[];
   member?: PartyMember;
   partyMessage?: PartyMessage;
+  /**
+   * Structured SSH delivery refusal shared by the composer, HTTP API and MCP
+   * delivery paths. The renderer owns localized copy; agent tools receive the
+   * concrete text in `message` / `partyMessage.error`.
+   */
+  sshUnavailable?: SshMessageUnavailable;
   session?: SessionView;
   /**
    * Fresh destination snapshot when selecting this party also moved the

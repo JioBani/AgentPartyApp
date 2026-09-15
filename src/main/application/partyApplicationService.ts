@@ -12,6 +12,7 @@ import type {
   MemberRuntimeInput,
   StartPartyMemberInput,
   SessionView,
+  SshMessageUnavailable,
   TranscriptSave,
   TranscriptSaveResult,
 } from "../../shared/types";
@@ -142,6 +143,8 @@ export interface PartyExecutionLocationPort {
   list(): Promise<MemberExecutionLocationCatalog>;
   check(location: MemberExecutionLocation): Promise<{ location: MemberExecutionLocation; serialized: string; problem?: CwdProblem }>;
   remember(location: MemberExecutionLocation): void;
+  /** Synchronous status guard used immediately before handing over a message. */
+  sshUnavailable(location: MemberExecutionLocation): SshMessageUnavailable | undefined;
 }
 
 /**
@@ -1228,6 +1231,14 @@ export class PartyApplicationService {
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
     this.assertNotOwnedByExternalCli(member, "send a message");
+    const unavailable = this.sshMessageUnavailable(member);
+    if (unavailable) {
+      const detail = this.sshMessageUnavailableError(member, unavailable);
+      log("warn", "party", "user message refused: SSH server unavailable", {
+        workspace, partyId: member.partyId, member: member.name, server: unavailable.server, problem: unavailable.problem,
+      });
+      return { ...this.result(detail, state, member), ok: false, sshUnavailable: unavailable };
+    }
     let session: SessionView | undefined;
     let sessionId = member.sessionId && this.deps.sessionManager.hasSession(member.sessionId) ? member.sessionId : undefined;
     // Interrupt is meaningful only for a turn that existed when this message
@@ -1239,6 +1250,14 @@ export class PartyApplicationService {
       session = started.session;
       sessionId = session?.id;
       if (!sessionId) {
+        const startupUnavailable = this.sshMessageUnavailable(member);
+        if (startupUnavailable) {
+          return {
+            ...this.result(this.sshMessageUnavailableError(member, startupUnavailable), state, member),
+            ok: false,
+            sshUnavailable: startupUnavailable,
+          };
+        }
         throw new Error(started.message);
       }
     }
@@ -2648,6 +2667,19 @@ export class PartyApplicationService {
         partyMessage: message,
       };
     }
+    const unavailable = this.sshMessageUnavailable(target);
+    if (unavailable) {
+      const detail = this.sshMessageUnavailableError(target, unavailable);
+      message.error = detail;
+      target.updatedAt = message.createdAt;
+      state.messages.push(message);
+      this.persistParty(workspace, state, this.partyIdOf(target));
+      log("warn", "party", "party message refused: SSH server unavailable", {
+        workspace, partyId: target.partyId, from: message.from, to: target.name,
+        server: unavailable.server, problem: unavailable.problem,
+      });
+      return { ...this.result(detail, state, target), ok: false, partyMessage: message, sshUnavailable: unavailable };
+    }
     // R-63: an open tab without a live session used to record
     // `target_member_has_no_active_session` and never deliver. User turns already
     // auto-start; party messages must do the same for any non-closed member.
@@ -2695,6 +2727,17 @@ export class PartyApplicationService {
         });
       }
     }
+    if (!sessionId) {
+      const startupUnavailable = this.sshMessageUnavailable(target);
+      if (startupUnavailable) {
+        const detail = this.sshMessageUnavailableError(target, startupUnavailable);
+        message.error = detail;
+        target.updatedAt = message.createdAt;
+        state.messages.push(message);
+        this.persistParty(workspace, state, this.partyIdOf(target));
+        return { ...this.result(detail, state, target), ok: false, partyMessage: message, sshUnavailable: startupUnavailable };
+      }
+    }
     if (sessionId) {
       if (turnWasActive) {
         // Busy: same visible queue a user's message uses. `interrupt` parks at
@@ -2739,6 +2782,23 @@ export class PartyApplicationService {
       ...this.result(message.delivered ? `Message delivered to '${target.name}'.` : `Message queued for '${target.name}', but no active session is bound.`, state, target),
       partyMessage: message,
     };
+  }
+
+  private sshMessageUnavailable(member: PartyMember): SshMessageUnavailable | undefined {
+    if (!member.location || !this.deps.executionLocations) return undefined;
+    const location = parseMemberLocation(member.location);
+    return location.env === "ssh" ? this.deps.executionLocations.sshUnavailable(location) : undefined;
+  }
+
+  private sshMessageUnavailableError(member: PartyMember, unavailable: SshMessageUnavailable): string {
+    const reason = unavailable.problem === "server-missing"
+      ? "is not registered"
+      : unavailable.problem === "auth-failed"
+        ? "could not authenticate"
+        : unavailable.problem === "fingerprint-changed"
+          ? "has a changed fingerprint"
+          : "is unreachable";
+    return `Member '${member.name}' could not receive the message because SSH server '${unavailable.server}' ${reason}.`;
   }
 
   /**

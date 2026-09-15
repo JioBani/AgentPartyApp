@@ -9,6 +9,7 @@ import type {
   SshServerDraft, SshServerView, SshTestResult,
   SshAutoLoginStep, SshRemotePathProblem,
 } from "../../shared/sshServers";
+import type { SshMessageUnavailable } from "../../shared/types";
 import type { StoredSshServer } from "./sshServerStore";
 import { SshServerStore } from "./sshServerStore";
 import { shellQuote, SshRemoteFileError, SshTransport, SshTransportError, type SshCredential, type SshTarget } from "./sshTransport";
@@ -105,6 +106,21 @@ export class SshServerService extends EventEmitter {
       memberNames: await this.deps.memberNames(server.name),
       lastTest: server.lastTest,
     })));
+  }
+
+  /**
+   * Answers whether a message may be handed to a member on this server now.
+   * This deliberately does not reconnect: a disconnected server is recovered
+   * by the user's explicit reconnect action, and a send must never become a
+   * hidden retry or an invisible queue.
+   */
+  messageUnavailable(serverName: string): SshMessageUnavailable | undefined {
+    if (!this.deps.store.get(serverName)) return { server: serverName, problem: "server-missing" };
+    const connection = this.connectionStates.get(serverName) || "disconnected";
+    if (connection === "connected") return undefined;
+    if (connection === "fingerprint-changed") return { server: serverName, problem: "fingerprint-changed" };
+    if (connection === "auth-failed") return { server: serverName, problem: "auth-failed" };
+    return { server: serverName, problem: "unreachable" };
   }
 
   connectDraft(draft: SshServerDraft): { attemptId: string } {
