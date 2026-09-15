@@ -67,6 +67,7 @@ import {
 } from "../../shared/sessionEventStream";
 import { idleSleepTimeoutMs, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
 import {
+  composeLayout,
   EMPTY_LAYOUT,
   layoutsEqual,
   openMemberInNewPanel,
@@ -711,8 +712,15 @@ export class PartyApplicationService {
     // could not choose a group and two windows could briefly disagree.
     const storedLayout = this.repository.readLayout(workspace, party.id);
     const firstExisting = state.members.find((item) => item.partyId === party.id);
+    // Parties created before layout persistence have no authoritative panel id,
+    // but an open renderer already shows a provisional panel and submits that
+    // exact id. Adopt it as the initial stored layout so the first creation
+    // lands in the tab the user can see instead of rejecting it or silently
+    // inventing a different panel.
     const baseLayout = storedLayout
-      ?? (firstExisting ? openMemberTab(EMPTY_LAYOUT, firstExisting.name) : EMPTY_LAYOUT);
+      ?? (firstExisting && input.tabGroup && input.tabGroup !== firstExisting.name
+        ? composeLayout([{ id: input.tabGroup, tabs: [firstExisting.name], active: firstExisting.name, weight: 1 }], input.tabGroup, undefined)
+        : firstExisting ? openMemberTab(EMPTY_LAYOUT, firstExisting.name) : EMPTY_LAYOUT);
     const exactGroup = input.tabGroup
       ? baseLayout.panels.find((panel) => panel.id === input.tabGroup)
       : undefined;
