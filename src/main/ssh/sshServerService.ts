@@ -258,8 +258,10 @@ export class SshServerService extends EventEmitter {
     if (!server) return { ok: false, problem: "server-missing" };
     try {
       const connection = await this.connectStored(server);
-      const result = await connection.exec(`test -d ${shellQuote(cwd)}`);
-      return result.code === 0 ? { ok: true } : { ok: false, problem: "missing" };
+      const quoted = shellQuote(cwd);
+      const result = await connection.exec(`if test ! -d ${quoted}; then printf __AP_MISSING__; elif test ! -r ${quoted} || test ! -x ${quoted}; then printf __AP_DENIED__; else printf __AP_OK__; fi`);
+      if (result.stdout.includes("__AP_OK__")) return { ok: true };
+      return { ok: false, problem: result.stdout.includes("__AP_DENIED__") ? "denied" : "missing" };
     } catch (error) {
       return { ok: false, problem: problemOf(error) };
     }
