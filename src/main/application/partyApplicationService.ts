@@ -2529,7 +2529,12 @@ export class PartyApplicationService {
     // otherwise treating the UI's default "disconnected" label as a failure
     // blocks the first valid message, while blindly allowing it can strand the
     // message in a remote adapter that never connected.
-    await this.ensureSshMessageAvailable(target);
+    if (await this.ensureSshMessageAvailable(target)) {
+      // `sendMessage` records the refused party message and returns the same
+      // structured problem. Do not spend a gate review on a message that cannot
+      // reach its destination.
+      return this.sendMessage(to, content, from, attachments, partyId, { interrupt: options?.interrupt });
+    }
 
     if (sender && this.deps.reviewGate) {
       const party = state.parties.find((item) => item.id === targetPartyId);
