@@ -1625,6 +1625,14 @@ export class SessionManager extends EventEmitter {
         deepseekApiKey: settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || undefined,
         baiApiKey: settings.baiApiKey || process.env[BAI_API_KEY_ENV] || undefined,
         usageSourceId,
+        onStartupStage: (stage, ms) => log("info", "codex", "session startup stage", {
+          sessionId: id,
+          member: binding?.identity.member,
+          model: selectedModel,
+          modelProvider: modelProvider || "openai",
+          stage,
+          ms,
+        }),
       });
     }
     const storageDir = path.join(this.userDataDir, "logs");

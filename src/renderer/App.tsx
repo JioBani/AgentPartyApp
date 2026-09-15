@@ -2081,11 +2081,16 @@ export function App() {
         });
         await applyPartyResult(result);
       } else {
-        if (runtime.route && sessionId) {
-          await window.agentParty.setModel(sessionId, runtime.route.model, runtime.route.providerId, runtime.route.runtimeModel);
-        }
-        if (sessionId && runtime.effort) {
-          await window.agentParty.setEffort(sessionId, runtime.effort);
+        // Model + effort are member settings, including while the prewarmed
+        // harness is still starting or before a session exists. The shared
+        // party runtime action persists and applies them atomically; direct
+        // session setters used to drop the no-session case entirely.
+        if (runtime.route || runtime.effort) {
+          const result = await window.agentParty.setMemberRuntime(name, {
+            model: runtime.route?.model,
+            effort: runtime.effort || undefined,
+          });
+          await applyPartyResult(result);
         }
         if (sessionId && runtime.thinkingMode) {
           await window.agentParty.setThinking(sessionId, runtime.thinkingMode, runtime.thinkingBudget);
@@ -2105,10 +2110,9 @@ export function App() {
       }));
     },
     setEffort(name, effort) {
-      const sessionId = sessionIdFor(name);
-      if (sessionId) {
-        void window.agentParty.setEffort(sessionId, effort).catch(noticeOnFailure("추론 강도를 바꾸지 못했습니다"));
-      }
+      void window.agentParty.setMemberRuntime(name, { effort })
+        .then((result) => applyPartyResult(result, false))
+        .catch(noticeOnFailure("추론 강도를 바꾸지 못했습니다"));
       setRuntimeDrafts((current) => ({ ...current, [name]: { ...current[name], effort } }));
     },
     setThinking(name, mode, budget) {

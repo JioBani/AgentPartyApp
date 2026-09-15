@@ -16,6 +16,7 @@ import { HarnessPermissionControl } from "./HarnessPermissionControl";
 import { CwdPicker, selectableWslDistroError, type WslBrowsing } from "./CwdPicker";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
 import { checkLocationShape, suggestedCwd } from "../../shared/memberLocation";
+import { seedCapabilityOption } from "../../shared/modelOptions";
 
 /** Why this harness's permission axes matter, in the wizard's own voice. */
 const PERMISSION_HINTS: Record<HarnessId, string> = {
@@ -196,10 +197,9 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
   // honors that harness's saved default), else the model's own default.
   useEffect(() => {
     const hDefaults = harnessDefaults[harness];
-    const effDefault = effortCap?.supported ? effortCap.defaultValue || "medium" : "";
     const thinkDefault = thinkingCap?.supported ? thinkingCap.defaultValue || "" : "";
     const budgetDefault = thinkingCap?.budget?.default ?? 0;
-    setEffort(effortCap?.supported && hDefaults?.effort ? hDefaults.effort : effDefault);
+    setEffort(seedCapabilityOption(effortCap, hDefaults?.effort) || "");
     setServiceTier(serviceTierCap?.supported ? hDefaults?.serviceTier || serviceTierCap.defaultValue || SERVICE_TIER_INHERIT : "");
     setThinkingMode(thinkingCap?.supported && hDefaults?.reasoning ? hDefaults.reasoning : thinkDefault);
     setBudget(hDefaults?.reasoningBudget ? hDefaults.reasoningBudget : budgetDefault);

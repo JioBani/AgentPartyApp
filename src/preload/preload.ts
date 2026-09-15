@@ -208,6 +208,7 @@ const api = {
   /** Compacts a member's conversation, waking it first if it is asleep. */
   compactPartyMember: (name: string) => ipcRenderer.invoke("party:compact", name),
   setMemberPermission: (name: string, permission: unknown) => ipcRenderer.invoke("party:permission", name, permission),
+  setMemberRuntime: (name: string, runtime: unknown) => ipcRenderer.invoke("party:runtime", name, runtime),
   setMemberGate: (name: string, gate: unknown) => ipcRenderer.invoke("party:gate", name, gate),
   setMemberOutboundInterrupt: (name: string, outboundInterrupt: boolean | null) => ipcRenderer.invoke("party:outbound-interrupt", name, outboundInterrupt),
   setPartyGate: (partyId: string, gate: unknown) => ipcRenderer.invoke("party:partyGate", partyId, gate),

@@ -11,7 +11,7 @@ import {
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import { invokePartyToolFromExecutionHost, partyToolNameOf, type PartyToolResult } from "../../core/partyBridge";
-import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
+import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, MemberRuntimeInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
@@ -2692,6 +2692,11 @@ export class AppController {
    */
   setMemberPermission(workspacePath: string, name: string, permission: MemberPermissionInput, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberPermission"]>> {
     return this.handlePartyAction(workspacePath, name, "permission", permission, windowId) as Promise<ReturnType<PartyApplicationService["setMemberPermission"]>>;
+  }
+
+  /** Persists and applies model controls by member name, including before a session exists. */
+  setMemberRuntime(workspacePath: string, name: string, runtime: MemberRuntimeInput, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberRuntime"]>> {
+    return this.handlePartyAction(workspacePath, name, "runtime", runtime, windowId) as Promise<ReturnType<PartyApplicationService["setMemberRuntime"]>>;
   }
 
   /** Persists a member's Message Gate override (mode/rule/reviewer patch). UI + HTTP + agent share this path. */

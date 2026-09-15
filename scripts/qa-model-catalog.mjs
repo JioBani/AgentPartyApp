@@ -29,6 +29,7 @@ const { PROVIDER_LABELS } = await load("src/renderer/workbench/modelCatalog.ts",
 const { groupByProvider } = await load("src/renderer/workbench/modelMeters.tsx", "model-meters.mjs");
 const { modelMarkForModel } = await load("src/renderer/workbench/modelMark.ts", "model-mark.mjs");
 const { claudeRuntimeModelFor } = await load("src/core/claudeAdapter.ts", "claude-adapter.mjs");
+const { matchingCapabilityOption, seedCapabilityOption } = await load("src/shared/modelOptions.ts", "model-options.mjs");
 
 const failures = [];
 const assert = (cond, msg) => { console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) failures.push(msg); };
@@ -45,6 +46,9 @@ assert(liveAstraRoute?.label === "GPT-6 Astra", "live Astra discovery keeps the 
 assert(liveAstraRoute?.capabilities.effort.options.at(-1)?.id === "ultra", "live Astra discovery preserves Codex-only ultra effort");
 assert(liveAstraRoute?.capabilities.serviceTier?.options.some((option) => option.id === "priority"), "live Astra discovery preserves the Fast tier");
 assert(PROVIDER_LABELS.anthropic === "Claude" && PROVIDER_LABELS.openai === "Codex" && PROVIDER_LABELS.cursor === "Cursor" && PROVIDER_LABELS.openrouter === "OpenRouter", "model groups use the same provider names as Authentication");
+const baiEffort = routes.find((route) => route.harnessId === "codex" && route.providerId === "bai")?.capabilities.effort;
+assert(matchingCapabilityOption(baiEffort, "MAX") === "max", "effort matching returns the catalog's canonical id");
+assert(seedCapabilityOption(baiEffort, "medium") === "high", "an incompatible Codex harness default seeds the B.AI model default");
 for (const harnessId of ["claude-code", "codex"]) {
   for (const providerId of ["anthropic", "openai", "cursor", "openrouter"]) {
     assert(routes.some((route) => route.harnessId === harnessId && route.providerId === providerId), `${harnessId} exposes a separate ${PROVIDER_LABELS[providerId]} model group`);

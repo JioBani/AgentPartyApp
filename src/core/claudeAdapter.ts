@@ -154,6 +154,8 @@ export class ClaudeAdapter extends EventEmitter {
   private query: Query | undefined;
   private abortController: AbortController | undefined;
   private started = false;
+  /** Invalidates an older async SDK startup/stream after a runtime restart. */
+  private runGeneration = 0;
   private currentStatus = "created";
   /**
    * Where a compaction this adapter asked for has got to.
@@ -282,7 +284,8 @@ export class ClaudeAdapter extends EventEmitter {
     this.input = new AsyncInputQueue();
     this.ensureLogger();
 
-    void this.run();
+    const generation = ++this.runGeneration;
+    void this.run(generation);
   }
 
   sendUserTurn(text: string, attachments?: ImageAttachment[]): void {
@@ -708,6 +711,7 @@ export class ClaudeAdapter extends EventEmitter {
   }
 
   dispose(): void {
+    this.runGeneration += 1;
     this.stopUsagePolling();
     this.input.close();
     this.abortController?.abort();
@@ -719,7 +723,7 @@ export class ClaudeAdapter extends EventEmitter {
     this.logger?.close();
   }
 
-  private async run(): Promise<void> {
+  private async run(generation: number): Promise<void> {
     let activeQuery: Query | undefined;
     try {
       if (!this.usesRouterBackend() && (!this.options.sdkLoader || this.options.nativeAuthProbe)) {
@@ -727,6 +731,7 @@ export class ClaudeAdapter extends EventEmitter {
           workspacePath: this.options.cwd,
           executablePath: this.options.executablePath,
         }));
+        if (generation !== this.runGeneration) return;
         if (auth.status === "auth_required") {
           this.currentStatus = "auth_required";
           this.lastError = auth.detail;
@@ -748,6 +753,7 @@ export class ClaudeAdapter extends EventEmitter {
         }
       }
       const sdk = await (this.options.sdkLoader ?? loadSdk)();
+      if (generation !== this.runGeneration) return;
       const executable = resolveClaudeExecutable(this.options.executablePath);
       if (this.usesRouterBackend() && !isRoutableRouterModel(this.runtimeModel)) {
         throw new Error(`No explicit AgentParty router mapping for '${this.model}' (${this.runtimeModel}). Refusing to fall back to another model.`);
@@ -755,6 +761,7 @@ export class ClaudeAdapter extends EventEmitter {
       if (this.usesRouterBackend()) {
         this.emitEvent({ type: "status", status: "router-check", detail: this.options.routerBaseUrl, at: now() });
         await assertRouterReachable(this.options.routerBaseUrl, this.runtimeModel);
+        if (generation !== this.runGeneration) return;
       }
       const env = {
         ...process.env,
@@ -860,6 +867,7 @@ export class ClaudeAdapter extends EventEmitter {
         resume: this.resumeSessionId,
         router: this.usesRouterBackend() ? { baseUrl: this.options.routerBaseUrl } : undefined,
       });
+      if (generation !== this.runGeneration) return;
       this.query = sdk.query({ prompt: this.input, options });
       activeQuery = this.query;
       this.currentStatus = "spawned";
@@ -870,13 +878,16 @@ export class ClaudeAdapter extends EventEmitter {
 
       void this.initializeQueryMetadata();
       for await (const message of this.query) {
+        if (generation !== this.runGeneration) return;
         this.log("sdk_message", message);
         await this.normalize(message);
       }
+      if (generation !== this.runGeneration) return;
       this.currentStatus = "closed";
       this.emitEvent({ type: "status", status: "closed", at: now() });
       this.clearInFlightTurn(activeQuery);
     } catch (error) {
+      if (generation !== this.runGeneration) return;
       // A throw before the query came up is a FAILED START, so the open card
       // has to reach its terminal state rather than sit on "시작 중" forever.
       // After it is up, the same throw is an ordinary turn error and the card
@@ -887,9 +898,11 @@ export class ClaudeAdapter extends EventEmitter {
       this.emitError(error);
       this.clearInFlightTurn(activeQuery);
     } finally {
-      this.stopUsagePolling();
-      this.started = false;
-      this.logger?.close();
+      if (generation === this.runGeneration) {
+        this.stopUsagePolling();
+        this.started = false;
+        this.logger?.close();
+      }
     }
   }
 

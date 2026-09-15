@@ -328,6 +328,7 @@ export function createFakeAgentParty(): FakeAgentParty {
     wakePartyMember: () => Promise.resolve(refusedParty()),
     compactPartyMember: () => Promise.resolve(refusedParty()),
     setMemberPermission: () => Promise.resolve(refusedParty()),
+    setMemberRuntime: () => Promise.resolve(refusedParty()),
     setMemberGate: () => Promise.resolve(refusedParty()),
     setMemberOutboundInterrupt: () => Promise.resolve(refusedParty()),
     setPartyGate: () => Promise.resolve(refusedParty()),

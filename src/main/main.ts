@@ -20,7 +20,7 @@ import { setUserDataDir } from "./userDataDir";
 import { startRemoteModelCatalog } from "./remoteModelCatalog";
 import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceArgFromArgv } from "../shared/workspaceLocation";
 import { WindowRegistry } from "./windowRegistry";
-import type { MemberPermissionInput, SessionView, StartPartyMemberInput, TranscriptSave, WindowInfo } from "../shared/types";
+import type { MemberPermissionInput, MemberRuntimeInput, SessionView, StartPartyMemberInput, TranscriptSave, WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
 import { sessionsForWindow } from "./sessionListRouting";
 import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
@@ -1307,6 +1307,7 @@ function registerIpc(): void {
   // Member-scoped permission: persists AND applies to the live adapter, so a
   // change made while the member's session is down is not dropped.
   handle("party:permission", async (event, name: string, permission: MemberPermissionInput) => controller().setMemberPermission(senderWorkspace(event), name, permission || {}, senderWindowId(event)));
+  handle("party:runtime", async (event, name: string, runtime: MemberRuntimeInput) => controller().setMemberRuntime(senderWorkspace(event), name, runtime || {}, senderWindowId(event)));
   handle("party:gate", async (event, name: string, gate: unknown) => controller().setMemberGate(senderWorkspace(event), name, gate, senderWindowId(event)));
   handle("party:outbound-interrupt", async (event, name: string, outboundInterrupt: boolean | null) => controller().setMemberOutboundInterrupt(senderWorkspace(event), name, outboundInterrupt, senderWindowId(event)));
   handle("party:partyGate", async (event, partyId: string, gate: unknown) => controller().setPartyGate(senderWorkspace(event), partyId, gate, senderWindowId(event)));

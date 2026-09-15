@@ -109,8 +109,10 @@ const overlapping = new CodexAdapter({
   debugEnabled: false,
 });
 assert(overlapping.currentProvider()?.id === "deepseek", "shared V4 Pro slug starts on the explicit DeepSeek provider");
+assert(overlapping.serviceTierParam() === undefined, "DeepSeek preserves an inherited service-tier setting");
 overlapping.setModel("deepseek-v4-pro", "bai");
 assert(overlapping.currentProvider()?.id === "bai", "same V4 Pro slug switches to B.AI when route metadata changes");
+assert(overlapping.serviceTierParam() === null, "B.AI explicitly clears a user-level Fast/priority service tier");
 overlapping.setModel("gpt-5.5");
 assert(overlapping.currentProvider() === undefined, "switching to an account model clears the prior custom provider");
 overlapping.dispose();
