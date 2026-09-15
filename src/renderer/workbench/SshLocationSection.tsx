@@ -45,6 +45,7 @@ export interface SshBrowsing {
 
 const PATH_PROBLEM_TEXT: Record<Extract<SshRemotePathCheck, { ok: false }>["problem"], string> = {
   "missing": "폴더 없음",
+  "denied": "권한 없음",
   "not-absolute": "절대 경로 아님",
   "unreachable": "서버에 연결할 수 없음",
   "auth-failed": "서버에 연결할 수 없음",

@@ -65,7 +65,7 @@ export interface SshConnectAttempt {
   error?: SshAttemptError;
 }
 
-export type SshRemotePathProblem = "missing" | "not-absolute" | "unreachable" | "auth-failed" | "fingerprint-changed" | "server-missing";
+export type SshRemotePathProblem = "missing" | "denied" | "not-absolute" | "unreachable" | "auth-failed" | "fingerprint-changed" | "server-missing";
 export type SshRemotePathCheck = { ok: true } | { ok: false; problem: SshRemotePathProblem };
 
 export interface SshRemoteDirectory {
