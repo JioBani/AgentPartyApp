@@ -145,6 +145,8 @@ export interface PartyExecutionLocationPort {
   remember(location: MemberExecutionLocation): void;
   /** Synchronous status guard used immediately before handing over a message. */
   sshUnavailable(location: MemberExecutionLocation): SshMessageUnavailable | undefined;
+  /** Connects a stored SSH server on first use, then returns any refusal. */
+  ensureSshAvailable(location: MemberExecutionLocation): Promise<SshMessageUnavailable | undefined>;
 }
 
 /**
@@ -1226,12 +1228,12 @@ export class PartyApplicationService {
    * it (#23). The compaction exception mirrors {@link sendMessage}: never tear
    * down a compaction half-way; the message still parks at the front and waits.
    */
-  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): PartyCommandResult {
+  async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): Promise<PartyCommandResult> {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
     this.assertNotOwnedByExternalCli(member, "send a message");
-    const unavailable = this.sshMessageUnavailable(member);
+    const unavailable = await this.ensureSshMessageAvailable(member);
     if (unavailable) {
       const detail = this.sshMessageUnavailableError(member, unavailable);
       log("warn", "party", "user message refused: SSH server unavailable", {
@@ -2522,6 +2524,13 @@ export class PartyApplicationService {
       ? state.members.find((member) => member.partyId === targetPartyId && member.name === normalizeMemberName(from))
       : undefined;
 
+    // A newly loaded app has no runtime connection state yet. Resolve that
+    // uncertainty with one real SSH connection before gate review or delivery;
+    // otherwise treating the UI's default "disconnected" label as a failure
+    // blocks the first valid message, while blindly allowing it can strand the
+    // message in a remote adapter that never connected.
+    await this.ensureSshMessageAvailable(target);
+
     if (sender && this.deps.reviewGate) {
       const party = state.parties.find((item) => item.id === targetPartyId);
       const plan = resolveGateReviewPlan(sender.gate, target.gate, party?.gate, getSettings().gateDefaults);
@@ -2788,6 +2797,12 @@ export class PartyApplicationService {
     if (!member.location || !this.deps.executionLocations) return undefined;
     const location = parseMemberLocation(member.location);
     return location.env === "ssh" ? this.deps.executionLocations.sshUnavailable(location) : undefined;
+  }
+
+  private async ensureSshMessageAvailable(member: PartyMember): Promise<SshMessageUnavailable | undefined> {
+    if (!member.location || !this.deps.executionLocations) return undefined;
+    const location = parseMemberLocation(member.location);
+    return location.env === "ssh" ? this.deps.executionLocations.ensureSshAvailable(location) : undefined;
   }
 
   private sshMessageUnavailableError(member: PartyMember, unavailable: SshMessageUnavailable): string {

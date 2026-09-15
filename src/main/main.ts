@@ -527,6 +527,12 @@ ${body}
           ? sshServerService.messageUnavailable(location.server)
           : { server: location.server, problem: "unreachable" };
       },
+      ensureSshAvailable: async (location) => {
+        if (location.env !== "ssh" || !location.server) return undefined;
+        return sshServerService
+          ? sshServerService.ensureMessageAvailable(location.server)
+          : { server: location.server, problem: "unreachable" };
+      },
     },
     // Desktop only: a remote workspace is served by an engine spawned in its host.
     createRemoteEngine: (location, serialized) => {

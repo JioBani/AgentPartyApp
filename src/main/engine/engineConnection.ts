@@ -158,7 +158,7 @@ export interface EngineConnection {
   /** Discovers tools through that same host-local stdio MCP relay. */
   listPartyMcpTools(member: string, partyId: string): Promise<PartyMcpToolSpec[]>;
   /** User turn to a member (auto-starts its session); the shared UI+API send path. */
-  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>>;
+  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): ReturnType<PartyApplicationService["sendUserMessage"]>;
   /** Messages addressed to a busy member that it has not been handed yet (shared/messageQueue.ts). */
   getMemberQueue(name: string, partyId?: string): Promise<ReturnType<PartyApplicationService["getMemberQueue"]>>;
   /** Every queue mutation — send / cancel / edit / move / mergeUp / clear / preference. */

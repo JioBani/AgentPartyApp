@@ -2611,7 +2611,7 @@ export class AppController {
   }
 
   /** The shared "user sends a message to a member" path (UI, HTTP, and Discord). */
-  sendMemberMessage(workspacePath: string, name: string, text: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }, partyId?: string): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>> {
+  sendMemberMessage(workspacePath: string, name: string, text: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }, partyId?: string): ReturnType<PartyApplicationService["sendUserMessage"]> {
     return this.mutateParty(workspacePath, (engine) => engine.sendUserMessage(name, text, attachments, partyId || this.partyForWindow(windowId), options));
   }
 

@@ -116,11 +116,34 @@ export class SshServerService extends EventEmitter {
    */
   messageUnavailable(serverName: string): SshMessageUnavailable | undefined {
     if (!this.deps.store.get(serverName)) return { server: serverName, problem: "server-missing" };
-    const connection = this.connectionStates.get(serverName) || "disconnected";
+    const connection = this.connectionStates.get(serverName);
+    // No runtime state means this app process has not tried the stored server
+    // yet. Let the member start perform that first connection; only an explicit
+    // disconnected/failure state is a known refusal.
+    if (!connection || connection === "connecting" || connection === "reconnecting") return undefined;
     if (connection === "connected") return undefined;
     if (connection === "fingerprint-changed") return { server: serverName, problem: "fingerprint-changed" };
     if (connection === "auth-failed") return { server: serverName, problem: "auth-failed" };
     return { server: serverName, problem: "unreachable" };
+  }
+
+  async ensureMessageAvailable(serverName: string): Promise<SshMessageUnavailable | undefined> {
+    const server = this.deps.store.get(serverName);
+    if (!server) return { server: serverName, problem: "server-missing" };
+    const known = this.connectionStates.get(serverName);
+    if (known && known !== "connecting" && known !== "reconnecting") {
+      return this.messageUnavailable(serverName);
+    }
+    try {
+      await this.connectStored(server);
+      return undefined;
+    } catch (error) {
+      const problem = problemOf(error);
+      return {
+        server: serverName,
+        problem: problem === "auth-failed" || problem === "fingerprint-changed" ? problem : "unreachable",
+      };
+    }
   }
 
   connectDraft(draft: SshServerDraft): { attemptId: string } {
