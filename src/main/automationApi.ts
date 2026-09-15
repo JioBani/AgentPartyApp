@@ -100,9 +100,10 @@ export class AutomationApiServer {
     for (const [key, value] of url.searchParams) {
       params[key] = value;
     }
-    // POST only: GET and DELETE routes take no body here, and reading one would
-    // turn a client that sends a stray non-JSON payload into a 500.
-    if (req.method === "POST") {
+    // Mutating routes accept one JSON parameter object. DELETE used to ignore
+    // its body entirely, so `ssh.deleteServer` silently dropped the checked
+    // `removeAutoLoginKey` option while still deleting the local server row.
+    if (req.method === "POST" || req.method === "DELETE") {
       Object.assign(params, await readJson(req));
     }
     return Object.assign(params, pathParams);
