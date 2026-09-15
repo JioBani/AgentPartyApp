@@ -599,6 +599,7 @@
       "reasoning": {
         "effort": {
           "options": [
+            "none",
             "low",
             "high",
             "max"
@@ -1052,6 +1053,7 @@
       "reasoning": {
         "effort": {
           "options": [
+            "none",
             "low",
             "high",
             "max"
@@ -1088,6 +1090,7 @@
       "reasoning": {
         "effort": {
           "options": [
+            "none",
             "low",
             "high",
             "max"
@@ -1454,7 +1457,7 @@
       "baiModel": "deepseek-v4.1-flash",
       "baiResponsesApi": true,
       "subscription": false,
-      "description": "DeepSeek V4.1 Flash on B.AI's unified API, billed to B.AI credits. Busy-hour list price (idle is half; UTC+8 time-of-day pricing). Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
+      "description": "DeepSeek V4.1 Flash on B.AI's unified API, billed to B.AI credits. Busy-hour list price (idle is half; UTC+8 time-of-day pricing). Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-16, including none to disable reasoning.",
       "context": "1M",
       "costTier": 1,
       "inPerM": 0.3,
@@ -1481,7 +1484,7 @@
       "baiModel": "deepseek-v4-pro",
       "baiResponsesApi": true,
       "subscription": false,
-      "description": "DeepSeek V4 Pro on B.AI's unified API, billed to B.AI credits. Busy-hour list price (idle is half; UTC+8 time-of-day pricing). Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
+      "description": "DeepSeek V4 Pro on B.AI's unified API, billed to B.AI credits. Busy-hour list price (idle is half; UTC+8 time-of-day pricing). Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-16, including none to disable reasoning.",
       "context": "1M",
       "perf": 2,
       "costTier": 3,
@@ -1509,7 +1512,7 @@
       "baiModel": "deepseek-v4-flash-vision-exp",
       "baiResponsesApi": true,
       "subscription": false,
-      "description": "DeepSeek V4 Flash Vision Exp on B.AI's unified API, billed to B.AI credits. Experimental vision variant (served but not listed by GET /v1/models); medium/xhigh map to high. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-14.",
+      "description": "DeepSeek V4 Flash Vision Exp on B.AI's unified API, billed to B.AI credits. Experimental vision variant (served but not listed by GET /v1/models); none disables reasoning, and the verified selectable efforts are none/low/high/max. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-16.",
       "context": "1M",
       "costTier": 1,
       "inPerM": 0.3,

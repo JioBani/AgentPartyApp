@@ -451,7 +451,7 @@ export function codexDeepseekRoute(model: CatalogModel): ModelRoute {
 export function codexBaiRoute(model: CatalogModel): ModelRoute {
   // Product policy for the verified B.AI Responses set. Keep this authoritative
   // over a stale remote catalog that may still advertise reasoning: null.
-  const effort = { options: ["low", "high", "max"] as const, default: "high" as const };
+  const effort = { options: ["none", "low", "high", "max"] as const, default: "high" as const };
   const slug = model.baiModel || model.id;
   const served = model.baiResponsesApi === true;
   return {

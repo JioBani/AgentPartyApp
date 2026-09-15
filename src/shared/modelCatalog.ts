@@ -16,8 +16,8 @@ import catalog from "./modelCatalog.json";
 
 export type CatalogProvider = "anthropic" | "openai" | "openrouter" | "cursor" | "deepseek" | "xai" | "bai";
 
-/** Effort levels transportable to the harness (SDK `effort`). */
-export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+/** Effort levels transportable to a harness; each model advertises its subset. */
+export type EffortLevel = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 /** Thinking modes transportable to the harness (SDK `thinking.type`). */
 export type ThinkingMode = "adaptive" | "enabled" | "disabled";
 

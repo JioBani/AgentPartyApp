@@ -171,6 +171,8 @@ assert(svc.list().members.find((m) => m.name === "cx")?.effort === "high", "an i
 await bridge.setRuntime("cx", { effort: "medium" });
 const baiRuntime = await bridge.setRuntime("cx", { model: "DeepSeek V4.1 Flash B.AI" });
 assert(baiRuntime.ok && svc.list().members.find((m) => m.name === "cx")?.effort === "high", "changing to B.AI without effort seeds its catalog default instead of carrying incompatible medium");
+const baiNone = await bridge.setRuntime("cx", { effort: "none" });
+assert(baiNone.ok && svc.list().members.find((m) => m.name === "cx")?.effort === "none", "member-runtime accepts the verified B.AI none effort");
 const selfRuntime = await bridge.setRuntime("main", { effort: "high" });
 assert(!selfRuntime.ok && /calling member/i.test(selfRuntime.error || ""), "member-runtime refuses to restart or mutate the caller during its own tool call");
 const emptyRuntime = await invokePartyTool(bridge, mainBinding.identity, `${PARTY_TOOL_PREFIX}member-runtime`, { name: "cx" });
@@ -181,7 +183,7 @@ assert(!malformedRuntime.ok && /fast must be a boolean/i.test(malformedRuntime.e
 const baiCreated = await bridge.createMember({ name: "bai-default", role: "B.AI default QA", harness: "codex", model: "DeepSeek V4.1 Flash B.AI" });
 assert(baiCreated.ok && svc.list().members.find((m) => m.name === "bai-default")?.effort === "high", "member-create seeds the B.AI model default when the Codex harness default is incompatible");
 const invalidBaiCreate = await bridge.createMember({ name: "bai-invalid", role: "must fail", harness: "codex", model: "DeepSeek V4.1 Flash B.AI", effort: "medium" });
-assert(!invalidBaiCreate.ok && /Use: low, high, max/.test(invalidBaiCreate.error || ""), "member-create rejects an explicit effort the selected B.AI model does not advertise");
+assert(!invalidBaiCreate.ok && /Use: none, low, high, max/.test(invalidBaiCreate.error || ""), "member-create rejects an explicit effort the selected B.AI model does not advertise");
 assert(!svc.list().members.some((member) => member.name === "bai-invalid"), "invalid member-create leaves no partial member behind");
 svc.createMember({ name: "runtime-race", requirement: "latest runtime wins", runtime: "codex", model: "gpt-5.4", effort: "medium", partyId });
 await bridge.setRuntime("runtime-race", { model: "DeepSeek V4.1 Flash B.AI", effort: "max" });

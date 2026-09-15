@@ -771,12 +771,15 @@ export class ClaudeAdapter extends EventEmitter {
       if (this.usesRouterBackend()) {
         Object.assign(env, this.routerEnv());
       }
-      const options: Parameters<SdkModule["query"]>[0]["options"] = {
+      const options: NonNullable<Parameters<SdkModule["query"]>[0]["options"]> = {
         cwd: this.options.cwd,
         pathToClaudeCodeExecutable: executable,
         env,
         model: this.runtimeModel,
-        effort: this.effort,
+        // `none` is a verified Codex/B.AI transport value, not a Claude SDK
+        // effort. Claude routes never advertise it; keep the SDK contract
+        // explicit even though the shared session snapshot can display it.
+        effort: this.effort === "none" ? undefined : this.effort,
         thinking: this.resolveThinking(),
         permissionMode: this.permissionMode,
         // Always launch bypass-CAPABLE (this only grants the ability; the active

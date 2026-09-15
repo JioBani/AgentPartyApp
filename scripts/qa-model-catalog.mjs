@@ -48,6 +48,7 @@ assert(liveAstraRoute?.capabilities.serviceTier?.options.some((option) => option
 assert(PROVIDER_LABELS.anthropic === "Claude" && PROVIDER_LABELS.openai === "Codex" && PROVIDER_LABELS.cursor === "Cursor" && PROVIDER_LABELS.openrouter === "OpenRouter", "model groups use the same provider names as Authentication");
 const baiEffort = routes.find((route) => route.harnessId === "codex" && route.providerId === "bai")?.capabilities.effort;
 assert(matchingCapabilityOption(baiEffort, "MAX") === "max", "effort matching returns the catalog's canonical id");
+assert(matchingCapabilityOption(baiEffort, "NONE") === "none", "verified B.AI none effort is selectable through the catalog");
 assert(seedCapabilityOption(baiEffort, "medium") === "high", "an incompatible Codex harness default seeds the B.AI model default");
 for (const harnessId of ["claude-code", "codex"]) {
   for (const providerId of ["anthropic", "openai", "cursor", "openrouter"]) {
@@ -217,7 +218,7 @@ for (const m of baiModels()) {
   assert(!routes.some((r) => r.harnessId !== "codex" && r.providerId === "bai"), "B.AI has no non-Codex route");
   const codexRoute = routes.find((r) => r.harnessId === "codex" && r.modelProvider === "bai" && r.model === m.id);
   assert(codexRoute?.enabled === true && codexRoute.runtimeModel === m.baiModel, `${m.id} has an enabled Codex route with runtime slug '${m.baiModel}'`);
-  assert(codexRoute?.capabilities.effort.options.map((o) => o.id).join() === "low,high,max" && codexRoute.capabilities.effort.defaultValue === "high", `${m.id} exposes low/high/max effort with high default`);
+  assert(codexRoute?.capabilities.effort.options.map((o) => o.id).join() === "none,low,high,max" && codexRoute.capabilities.effort.defaultValue === "high", `${m.id} exposes none/low/high/max effort with high default`);
   assert(codexDirectBaiModel(m.baiModel)?.id === m.id, `${m.baiModel} is accepted on B.AI Responses`);
 }
 assert(codexProviderForModel("deepseek-v4-pro")?.id === "deepseek", "shared V4 Pro slug keeps DeepSeek direct as the legacy/default inference");

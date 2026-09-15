@@ -31,7 +31,7 @@ export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
 export function isPermissionModeSetting(value: unknown): value is PermissionModeSetting {
   return typeof value === "string" && (PERMISSION_MODE_SETTINGS as readonly string[]).includes(value);
 }
-export type EffortSetting = "low" | "medium" | "high" | "xhigh" | "max";
+export type EffortSetting = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
 export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
 
