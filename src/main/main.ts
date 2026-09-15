@@ -47,11 +47,10 @@ import { GuideChatHost, requireChatKind } from "./guideChat";
 import { SshServerStore } from "./ssh/sshServerStore";
 import { SshServerService } from "./ssh/sshServerService";
 import { Ssh2Transport } from "./ssh/ssh2Transport";
-import { cwdProblem, parseMemberLocation, serializeMemberLocation } from "../shared/memberLocation";
+import { parseMemberLocation, serializeMemberLocation } from "../shared/memberLocation";
 import { renameSshRecentServer } from "./cwdPreferencesStore";
 import { memberExecutionLocationCatalog } from "../shared/memberLocation";
 import { getCheckedCwdPreferences, rememberCwd } from "./cwdPreferencesStore";
-import { checkCwd } from "./cwdService";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -509,13 +508,14 @@ ${body}
     executionLocations: {
       list: async () => memberExecutionLocationCatalog(await getCheckedCwdPreferences()),
       check: async (location) => {
-        if (location.env !== "ssh") return checkCwd(location);
         const serialized = serializeMemberLocation(location);
-        const remote = await (sshServerService || (() => { throw new Error("SSH server service is not ready."); })())
-          .checkRemotePath(location.server || "", location.cwd);
-        return remote.ok
+        // Party MCP and the visible member wizard must ask the same controller
+        // question. In particular, SSH paths are checked on their registered
+        // server rather than falling through to the desktop filesystem.
+        const checked = await controller().checkCwd(location);
+        return checked.usable
           ? { location, serialized }
-          : { location, serialized, problem: cwdProblem(remote.problem) };
+          : { location, serialized, problem: checked.problem };
       },
       remember: (location) => {
         rememberCwd(location);
