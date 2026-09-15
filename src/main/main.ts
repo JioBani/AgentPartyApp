@@ -47,7 +47,7 @@ import { GuideChatHost, requireChatKind } from "./guideChat";
 import { SshServerStore } from "./ssh/sshServerStore";
 import { SshServerService } from "./ssh/sshServerService";
 import { Ssh2Transport } from "./ssh/ssh2Transport";
-import { parseMemberLocation } from "../shared/memberLocation";
+import { cwdProblem, parseMemberLocation, serializeMemberLocation } from "../shared/memberLocation";
 import { renameSshRecentServer } from "./cwdPreferencesStore";
 import { memberExecutionLocationCatalog } from "../shared/memberLocation";
 import { getCheckedCwdPreferences, rememberCwd } from "./cwdPreferencesStore";
@@ -508,7 +508,15 @@ ${body}
     discord: discordBridge,
     executionLocations: {
       list: async () => memberExecutionLocationCatalog(await getCheckedCwdPreferences()),
-      check: (location) => checkCwd(location),
+      check: async (location) => {
+        if (location.env !== "ssh") return checkCwd(location);
+        const serialized = serializeMemberLocation(location);
+        const remote = await (sshServerService || (() => { throw new Error("SSH server service is not ready."); })())
+          .checkRemotePath(location.server || "", location.cwd);
+        return remote.ok
+          ? { location, serialized }
+          : { location, serialized, problem: cwdProblem(remote.problem) };
+      },
       remember: (location) => {
         rememberCwd(location);
         applyRuntimeSettings();
