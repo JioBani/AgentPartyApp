@@ -224,7 +224,10 @@ export class SshServerService extends EventEmitter {
     const server = this.requireServer(name);
     let keyRemoval: SshDeleteResult["keyRemoval"] = "not-requested";
     let detail: string | undefined;
-    if (removeAutoLoginKey && server.auth === "auto" && server.autoLoginPublicKey) {
+    if (removeAutoLoginKey && server.auth === "auto" && !server.autoLoginPublicKey) {
+      keyRemoval = "failed";
+      detail = "등록한 자동 로그인 키 정보가 없습니다";
+    } else if (removeAutoLoginKey && server.auth === "auto" && server.autoLoginPublicKey) {
       try {
         const connection = await this.connectStored(server);
         await removeAuthorizedKey(connection, server.autoLoginPublicKey);
