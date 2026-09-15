@@ -7,7 +7,7 @@
  * run's leftovers would read as this run's state.
  */
 import { build } from "esbuild";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { qaRunDir } from "./lib/qaTemp.mjs";
@@ -80,6 +80,22 @@ svc.createMember({
   tabGroup: initialLayout?.focusedPanelId,
 });
 assert(svc.getPartyLayout(partyId)?.panels[0]?.tabs.includes("idle-open"), "member-create accepts the visible initial tab group");
+
+console.log("\nLegacy party without a stored layout:");
+const legacyCreated = svc.createParty({ name: "legacy-no-layout" });
+const legacyPartyId = legacyCreated.member?.partyId || legacyCreated.currentPartyId;
+unlinkSync(svc.repository.layoutPath(workspace, legacyPartyId));
+const provisionalPanelId = "panel-renderer-provisional";
+svc.createMember({
+  partyId: legacyPartyId,
+  name: "legacy-first-create",
+  requirement: "adopt visible provisional tab",
+  runtime: "claude-code",
+  tabGroup: provisionalPanelId,
+});
+const repairedLayout = svc.getPartyLayout(legacyPartyId);
+assert(repairedLayout?.focusedPanelId === provisionalPanelId, "legacy party adopts the renderer's visible panel id");
+assert(repairedLayout?.panels[0]?.tabs.join(",") === "main,legacy-first-create", "legacy member lands beside the visible main tab on its first attempt");
 const opened = svc.openMember("idle-open", partyId);
 assert(opened.member?.status === "opened" && !opened.member?.sessionId, "open tab has no session yet");
 
