@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, FolderPlus, Pin, Plus, SquareStack, Star, type LucideIcon } from "lucide-react";
-import { isFavoriteGroupId } from "../../shared/favoriteParties";
+import { FAVORITE_PARTY_GROUP_ID, isFavoriteGroupId } from "../../shared/favoriteParties";
 import type { PartyGroupView, PartySummary } from "../../shared/partyGroups";
 import { partySummaryLine } from "../../shared/partyGroups";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
@@ -60,6 +60,8 @@ export interface PartyGroupListProps {
   onDropParty?: (partyId: string, groupId: string) => void;
   /** The whole new order, first to last, after a group was dragged. */
   onReorderGroups?: (order: string[]) => void;
+  /** The whole new order of the parties filed in one real group. */
+  onReorderParties?: (groupId: string, order: string[]) => void;
   onCreateGroup: () => void;
   /** Opens the existing new-party flow with this group preselected. */
   onCreateParty?: (groupId: string) => void;
@@ -79,7 +81,7 @@ export interface PartyGroupListProps {
 
 export function PartyGroupList({
   groups, activePartyId, openGroupIds, now, onToggleGroup, onSelectParty,
-  onPartyContextMenu, onGroupContextMenu, onDropParty, onReorderGroups, onCreateGroup, onCreateParty,
+  onPartyContextMenu, onGroupContextMenu, onDropParty, onReorderGroups, onReorderParties, onCreateGroup, onCreateParty,
   createPartyDisabled = false, menuPartyId, menuGroupId, groupIcon: GroupIcon = PARTY_GROUP_ICON,
 }: PartyGroupListProps) {
   /** The group under the pointer during a drag, for the drop outline. */
@@ -89,6 +91,7 @@ export function PartyGroupList({
   /** The group being dragged, and where it would land, for the insertion line. */
   const [draggingGroupId, setDraggingGroupId] = useState<string | undefined>(undefined);
   const [reorderTarget, setReorderTarget] = useState<{ groupId: string; after: boolean } | undefined>(undefined);
+  const [partyReorderTarget, setPartyReorderTarget] = useState<{ partyId: string; after: boolean } | undefined>(undefined);
 
   /**
    * A group created while the list was scrolled down lands at the top, out of
@@ -103,6 +106,8 @@ export function PartyGroupList({
   const dragPointerY = useRef<number | undefined>(undefined);
   const dragScrollFrame = useRef<number | undefined>(undefined);
   const seenGroupIds = useRef<Set<string> | undefined>(undefined);
+  /** Last party + rendered location already revealed; status refreshes must not yank the list. */
+  const revealedPartyLocation = useRef<string | undefined>(undefined);
   const [hasMoreBelow, setHasMoreBelow] = useState(false);
 
   function updateMoreBelow() {
@@ -189,6 +194,36 @@ export function PartyGroupList({
   }, [groups]);
 
   /**
+   * Reveals the selected party without pinning the list to it forever.
+   *
+   * A favourite has two rows. DOM order alone currently puts its mirror first,
+   * but choosing it explicitly makes that product rule survive a later layout
+   * refactor. The location key prevents live status/group refreshes from
+   * repeatedly stealing the user's scroll after the selection was revealed.
+   */
+  useLayoutEffect(() => {
+    const box = scrollRef.current;
+    if (!box || !activePartyId) return;
+    const rows = [...box.querySelectorAll<HTMLButtonElement>(".wb-party-row[data-party-id]")]
+      .filter((row) => row.dataset.partyId === activePartyId);
+    const favorite = rows.find((row) => row.closest<HTMLElement>(".wb-party-group")?.dataset.groupId === FAVORITE_PARTY_GROUP_ID);
+    const target = favorite ?? rows[0];
+    if (!target || target.offsetParent === null) return;
+    const groupId = target.closest<HTMLElement>(".wb-party-group")?.dataset.groupId ?? "";
+    const location = `${groupId}:${activePartyId}`;
+    if (revealedPartyLocation.current === location) return;
+
+    const viewport = box.getBoundingClientRect();
+    const row = target.getBoundingClientRect();
+    if (row.top < viewport.top || row.bottom > viewport.bottom) {
+      box.scrollTop += row.top - viewport.top - Math.max(0, (box.clientHeight - row.height) / 2);
+      lastScrollTop.current = box.scrollTop;
+      updateMoreBelow();
+    }
+    revealedPartyLocation.current = location;
+  }, [activePartyId, groups, openGroupIds]);
+
+  /**
    * Puts the scroll position back after a reorder.
    *
    * Nothing scrolls the box — the BROWSER drops the position when the group
@@ -223,6 +258,15 @@ export function PartyGroupList({
     // The virtual 즐겨찾기 group is not stored and is always first, so it never
     // appears in an order the group store is asked to save.
     const ids = groups.map(({ group }) => group.id).filter((id) => id !== dragged && !isFavoriteGroupId(id));
+    const at = ids.indexOf(target);
+    ids.splice(at < 0 ? ids.length : at + (after ? 1 : 0), 0, dragged);
+    return ids;
+  }
+
+  function partyOrderAfterDrop(groupId: string, dragged: string, target: string, after: boolean): string[] {
+    const ids = groups.find(({ group }) => group.id === groupId)?.parties
+      .map((party) => party.id)
+      .filter((id) => id !== dragged) ?? [];
     const at = ids.indexOf(target);
     ids.splice(at < 0 ? ids.length : at + (after ? 1 : 0), 0, dragged);
     return ids;
@@ -265,6 +309,7 @@ export function PartyGroupList({
         return (
           <div
             key={group.id}
+            data-group-id={group.id}
             className={
               "wb-party-group"
               + (open ? " is-open" : "")
@@ -283,6 +328,7 @@ export function PartyGroupList({
                 }
                 event.preventDefault();
                 event.dataTransfer.dropEffect = "move";
+                setPartyReorderTarget(undefined);
                 const box = event.currentTarget.getBoundingClientRect();
                 setReorderTarget({ groupId: group.id, after: event.clientY > box.top + box.height / 2 });
                 return;
@@ -295,6 +341,7 @@ export function PartyGroupList({
               // Without preventDefault the browser refuses the drop entirely.
               event.preventDefault();
               event.dataTransfer.dropEffect = "move";
+              setPartyReorderTarget(undefined);
               setDropGroupId(group.id);
             }}
             onDragLeave={(event) => {
@@ -321,6 +368,7 @@ export function PartyGroupList({
               }
               const partyId = event.dataTransfer.getData(PARTY_DRAG_TYPE);
               setDropGroupId(undefined);
+              setPartyReorderTarget(undefined);
               // Now the id IS readable, so "already here" is answered for real
               // rather than from whatever the drag state happened to hold.
               if (!partyId || !onDropParty || groupOf(partyId) === group.id) {
@@ -384,14 +432,56 @@ export function PartyGroupList({
                     + (party.id === activePartyId ? " is-active" : "")
                     + (party.id === menuPartyId ? " is-menu" : "")
                     + (party.id === draggingPartyId ? " is-dragging" : "")
+                    + (partyReorderTarget?.partyId === party.id ? (partyReorderTarget.after ? " is-insert-after" : " is-insert-before") : "")
                   }
-                  draggable={Boolean(onDropParty)}
+                  draggable={Boolean(onDropParty || onReorderParties)}
                   onDragStart={(event) => {
                     event.dataTransfer.setData(PARTY_DRAG_TYPE, party.id);
                     event.dataTransfer.effectAllowed = "move";
                     setDraggingPartyId(party.id);
                   }}
-                  onDragEnd={() => { stopDragScroll(); setDraggingPartyId(undefined); setDropGroupId(undefined); }}
+                  onDragOver={(event) => {
+                    if (
+                      !onReorderParties
+                      || isFavoriteGroupId(group.id)
+                      || !draggingPartyId
+                      || draggingPartyId === party.id
+                      || groupOf(draggingPartyId) !== group.id
+                      || !event.dataTransfer.types.includes(PARTY_DRAG_TYPE)
+                    ) {
+                      return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.dataTransfer.dropEffect = "move";
+                    const box = event.currentTarget.getBoundingClientRect();
+                    setDropGroupId(undefined);
+                    setPartyReorderTarget({ partyId: party.id, after: event.clientY > box.top + box.height / 2 });
+                  }}
+                  onDragLeave={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                      setPartyReorderTarget((current) => (current?.partyId === party.id ? undefined : current));
+                    }
+                  }}
+                  onDrop={(event) => {
+                    const dragged = event.dataTransfer.getData(PARTY_DRAG_TYPE);
+                    if (!dragged || !onReorderParties || isFavoriteGroupId(group.id) || groupOf(dragged) !== group.id) {
+                      return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const target = partyReorderTarget;
+                    setPartyReorderTarget(undefined);
+                    if (dragged !== party.id) {
+                      onReorderParties(group.id, partyOrderAfterDrop(group.id, dragged, party.id, Boolean(target?.after)));
+                    }
+                  }}
+                  onDragEnd={() => {
+                    stopDragScroll();
+                    setDraggingPartyId(undefined);
+                    setDropGroupId(undefined);
+                    setPartyReorderTarget(undefined);
+                  }}
                   onClick={() => onSelectParty(party.id)}
                   onContextMenu={(event) => {
                     if (!onPartyContextMenu) {

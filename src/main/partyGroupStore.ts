@@ -181,6 +181,47 @@ export class PartyGroupStore {
   }
 
   /**
+   * Reorders the parties filed in one group without disturbing any other
+   * group's relative order.
+   *
+   * The registry's party array is already the display-order source used by the
+   * shared grouping helper; keeping the order there avoids a second rank field
+   * that reconciliation would have to merge. Callers may omit a party that was
+   * added concurrently — unmentioned parties remain after the requested ones.
+   */
+  reorderParties(groupId: string, order: string[]): PartyGroupState {
+    const state = this.read();
+    if (!state.groups.some((group) => group.id === groupId)) {
+      throw new Error(`그룹 '${groupId}' 을 찾을 수 없습니다.`);
+    }
+
+    const requested = new Set<string>();
+    for (const id of order) {
+      if (requested.has(id)) {
+        throw new Error(`Party order contains duplicate id '${id}'.`);
+      }
+      requested.add(id);
+    }
+
+    const current = state.parties.filter((party) => party.groupId === groupId);
+    const byId = new Map(current.map((party) => [party.id, party] as const));
+    for (const id of order) {
+      if (!byId.has(id)) {
+        throw new Error(`Party '${id}' is not in group '${groupId}'.`);
+      }
+    }
+    const ordered = order.map((id) => byId.get(id)).filter((party): party is RegisteredParty => Boolean(party));
+    const appended = current.filter((party) => !requested.has(party.id));
+    const nextInGroup = [...ordered, ...appended];
+    let cursor = 0;
+    const parties = state.parties.map((party) => (
+      party.groupId === groupId ? nextInGroup[cursor++] : party
+    ));
+    log("info", "party", "parties reordered within group", { groupId, partyCount: nextInGroup.length });
+    return this.write({ ...state, parties });
+  }
+
+  /**
    * Deletes a group and moves its parties to the default one.
    *
    * Deleting a FOLDER must never delete what is filed in it: the parties keep

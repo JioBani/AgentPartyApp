@@ -95,6 +95,7 @@
     "test:e2e:compact": "npm run build && node scripts/e2e-compact.mjs",
     "test:e2e:usage-limits": "npm run build && node scripts/e2e-usage-limits.mjs",
     "test:e2e:sidebar-overflow": "npm run build && node scripts/e2e-sidebar-overflow.mjs",
+    "test:e2e:party-order-scroll": "npm run build && node scripts/e2e-party-order-scroll.mjs",
     "qa:party-location-preview": "npm run build && node scripts/qa-party-location-preview.mjs",
     "test:e2e:usage-unpriced": "npm run build && node scripts/e2e-usage-unpriced.mjs",
     "test:usage-cost": "npm run build && node scripts/qa-usage-costing.mjs",

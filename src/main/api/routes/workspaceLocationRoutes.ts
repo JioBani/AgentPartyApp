@@ -52,6 +52,11 @@ export const workspaceLocationRoutes: MethodRoute[] = [
     handler: (p, ctx) => ctx.controller.reorderPartyGroups(Array.isArray(p.order) ? p.order.map(String) : []),
   },
   {
+    name: "partyGroups.reorderParties",
+    http: "POST /api/party-groups/:id/parties/reorder",
+    handler: (p, ctx) => ctx.controller.reorderPartiesInGroup(text(p.id), Array.isArray(p.order) ? p.order.map(String) : []),
+  },
+  {
     name: "partyGroups.rename",
     http: "POST /api/party-groups/:id/rename",
     handler: (p, ctx) => ctx.controller.renamePartyGroup(text(p.id), required(p.name, "name")),

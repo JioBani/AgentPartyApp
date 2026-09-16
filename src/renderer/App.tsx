@@ -496,6 +496,15 @@ export function App() {
     }
   }
 
+  async function reorderPartiesInGroup(groupId: string, order: string[]) {
+    try {
+      const result = await window.agentParty.reorderPartiesInGroup(groupId, order);
+      setGroupState({ groups: result.groups || [], parties: result.parties || [] });
+    } catch (error) {
+      noticeOnFailure("파티 순서를 바꾸지 못했습니다")(error);
+    }
+  }
+
   /**
    * Deletes a group; its parties land in the default one.
    *
@@ -2311,6 +2320,7 @@ export function App() {
                 onRenameGroup={(groupId, name) => void renamePartyGroup(groupId, name)}
                 onRemoveGroup={(groupId) => void removePartyGroup(groupId)}
                 onReorderGroups={(order) => void reorderPartyGroups(order)}
+                onReorderParties={(groupId, order) => void reorderPartiesInGroup(groupId, order)}
                 onBrowseCwd={browseCwd}
                 wsl={wslBrowsing}
                 onCreateMember={(input) => createMemberInline(input)}

@@ -2487,6 +2487,14 @@ mid-drag) keeps its place at the end rather than being dropped. Repeating an id
 is rejected visibly; older registries containing duplicates are de-duplicated
 on read and repaired on the next write.
 
+### `POST /api/party-groups/:id/parties/reorder`
+
+`{ order: [partyId, …] }` — the whole new order for the parties inside one
+group. Parties in every other group keep their relative order. A party added to
+the group in another window while the drag is in flight is kept at the end;
+duplicate ids and ids that do not belong to the group are rejected visibly.
+The desktop's party-row drag uses this same controller path.
+
 ### `POST /api/party-groups/:id/rename`
 
 Renames a group. Duplicate names are refused; the default group is renamable

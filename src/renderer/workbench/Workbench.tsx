@@ -82,6 +82,7 @@ interface WorkbenchProps {
   onRenameGroup: (groupId: string, name: string) => void;
   onRemoveGroup: (groupId: string) => void;
   onReorderGroups: (order: string[]) => void;
+  onReorderParties: (groupId: string, order: string[]) => void;
   /** Opens the platform folder picker; resolves null when the user cancelled. */
   onBrowseCwd: (env: ExecutionEnv, distro?: string) => Promise<MemberExecutionLocation | null>;
   wsl?: WslBrowsing;
@@ -262,7 +263,7 @@ function loadSubagentUi(): SubagentUiState {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, appWorkspaceRoot, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, onOpenUsage } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onReorderParties, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, appWorkspaceRoot, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, onOpenUsage } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -909,6 +910,7 @@ export function Workbench(props: WorkbenchProps) {
         onRenameGroup={onRenameGroup}
         onRemoveGroup={onRemoveGroup}
         onReorderGroups={onReorderGroups}
+        onReorderParties={onReorderParties}
         onBrowseCwd={onBrowseCwd}
         wsl={wsl}
         onCreateMember={handleCreateMember}

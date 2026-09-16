@@ -2048,6 +2048,14 @@ export class AppController {
     return { ok: true, groups: state.groups, parties: this.visibleRegisteredParties(state) };
   }
 
+  /** Full new order for the parties in one group; other groups are untouched. */
+  reorderPartiesInGroup(groupId: string, order: string[]): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[] } {
+    const state = this.partyGroups.reorderParties(groupId, order);
+    this.deps.onSettingsChanged();
+    this.deps.onPartyGroupsChanged?.();
+    return { ok: true, groups: state.groups, parties: this.visibleRegisteredParties(state) };
+  }
+
   async movePartyToGroup(partyId: string, groupId: string): Promise<{ ok: true; groups: PartyGroup[]; parties: RegisteredParty[] }> {
     const isVisible = () => this.visibleRegisteredParties(this.partyGroups.read()).some((party) => party.id === partyId);
     if (!isVisible()) {

@@ -176,6 +176,7 @@ export function createFakeAgentParty(): FakeAgentParty {
     movePartyToGroup: () => refused(),
     renamePartyGroup: () => refused(),
     reorderPartyGroups: () => refused(),
+    reorderPartiesInGroup: () => refused(),
     removePartyGroup: () => refused(),
     getCwdPreferences: () => Promise.resolve({ ok: true as const, preferences: { windowsRecent: [], wslRecent: [] } }),
     setDefaultCwd: () => refused(),

@@ -10608,6 +10608,8 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   border-color: transparent;
   box-shadow: inset 3px 0 0 var(--accent);
 }
+.wb-party-row.is-insert-before { box-shadow: inset 0 2px 0 0 var(--accent); }
+.wb-party-row.is-insert-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
 
 /* Outlined rather than filled: a solid block of the accent sat inside a card
    already tinted with it, so the badge read as a button on top of a selection. */
