@@ -692,6 +692,7 @@ export function buildCodexPartyCoreInstructions(): string {
     "## Codex Party Core — already loaded",
     `AgentParty's frequent controls are first-class eager tools: ${aliases.map((name) => `\`${name}\``).join(", ")}. Use them directly; never scan \`ALL_TOOLS\` to find them.`,
     "In code mode call them through the `tools` object, for example `await tools.party_send({to: \"impl\", content: \"Check this\"})` or `await tools.party_status({name: \"impl\"})`.",
+    "The host's `collaboration.*` tools control separate Codex sub-agents and are never a substitute for AgentParty. Do not infer that party messaging is unavailable because the duplicate `mcp__agentparty-app__send` name is absent; use `party_send`.",
     "For a less-common canonical tool named below, its code-mode property is `tools.mcp__agentparty_app__<tool_name_with_hyphens_changed_to_underscores>`; inspect only that exact tool if its schema is needed.",
   ].join("\n");
 }

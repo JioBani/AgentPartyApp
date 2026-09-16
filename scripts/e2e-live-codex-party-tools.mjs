@@ -26,7 +26,7 @@ const codexJs = process.env.AGENTPARTY_CODEX_JS || path.join(
   "bin",
   "codex.js",
 );
-const model = process.env.AGENTPARTY_LIVE_CODEX_MODEL || "gpt-5.4-mini";
+const model = process.env.AGENTPARTY_LIVE_CODEX_MODEL || "gpt-5.6-luna";
 const memberName = "codexparty";
 const targetName = "permission-target";
 const createdName = "agent-created-codex";
@@ -91,7 +91,7 @@ async function main() {
       permissionMode: "plan",
       codexPolicy: { sandbox: "read-only", approval: "on-request", guardian: false },
     });
-    const sessionId = await waitForMemberSession(started.session?.id);
+    let sessionId = await waitForMemberSession(started.session?.id);
     assert(sessionId, `live Codex party member session started (${sessionId})`);
 
     const mcp = await waitForPartyMcp(sessionId);
@@ -110,6 +110,28 @@ async function main() {
     });
     await waitForEagerCoreCall(sessionId);
     assert(!readCallLog().some((call) => call.member === memberName && call.name === "member-status"), "Party Core status bypassed the deferred MCP catalog and stdio relay");
+
+    await post(`/api/party/members/${memberName}/close`, {});
+    const resumed = await post(`/api/party/members/${memberName}/start`, {
+      model,
+      effort: "low",
+      serviceTier: "standard",
+      permissionMode: "plan",
+      codexPolicy: { sandbox: "read-only", approval: "on-request", guardian: false },
+    });
+    const resumedSessionId = await waitForMemberSession(resumed.session?.id);
+    assert(resumedSessionId && resumedSessionId !== sessionId, `existing conversation reopened in a new app session (${resumedSessionId})`);
+    await waitForThreadResume(resumedSessionId);
+    await waitForPartyMcp(resumedSessionId);
+    sessionId = resumedSessionId;
+    await post(`/api/party/members/${memberName}/message`, {
+      text: [
+        `Use \`functions.exec\` and call \`await tools.party_status({name: ${JSON.stringify(memberName)}})\` exactly once.`,
+        "This conversation was resumed. Do not inspect `ALL_TOOLS` and do not use an MCP-named tool.",
+        "After the tool result arrives, reply with exactly LIVE_CODEX_PARTY_RESUME_OK.",
+      ].join(" "),
+    });
+    await waitForEagerCoreCall(sessionId);
 
     await post(`/api/party/members/${memberName}/message`, {
       text: [
@@ -173,6 +195,28 @@ async function waitForPartyMcp(sessionId) {
     await delay(1000);
   }
   throw new Error(`agentparty-app MCP tools did not become ready: ${JSON.stringify(last)}`);
+}
+
+async function waitForThreadResume(sessionId) {
+  const started = Date.now();
+  while (Date.now() - started < 30000) {
+    const state = await getJson("/api/state");
+    const session = state.sessions.find((item) => item.id === sessionId);
+    const logPath = session?.snapshot?.logPath;
+    if (logPath && fs.existsSync(logPath)) {
+      const resumed = fs.readFileSync(logPath, "utf8")
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+        .some((frame) => frame.direction === "out" && frame.payload?.method === "thread/resume");
+      if (resumed) {
+        assert(true, "member reopen uses Codex thread/resume instead of starting a blank conversation");
+        return;
+      }
+    }
+    await delay(500);
+  }
+  throw new Error("Reopened Codex member did not resume its existing thread within 30s.");
 }
 
 async function waitForPartyTools(sessionId) {

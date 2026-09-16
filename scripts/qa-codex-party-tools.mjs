@@ -118,8 +118,9 @@ try {
       && threadStart.params.developerInstructions.includes("team-qa")
       && threadStart.params.developerInstructions.includes("main")
       && threadStart.params.developerInstructions.includes("tools.party_send")
+      && threadStart.params.developerInstructions.includes("`collaboration.*` tools control separate Codex sub-agents")
       && threadStart.params.developerInstructions.includes("never scan `ALL_TOOLS`"),
-    "Codex installs the eager Party Core calling convention before the shared party primer",
+    "Codex installs the eager Party Core calling convention and distinguishes it from collaboration sub-agents",
   );
   assert(
     turnStart?.params?.input?.[0]?.text === "KIND=partyTool call list",
@@ -127,6 +128,44 @@ try {
   );
 } finally {
   adapter.dispose();
+}
+
+const resumedEvents = [];
+const resumedAdapter = new CodexAdapter({
+  id: "codex-party-tools-resume",
+  cwd: workspace,
+  model: "gpt-5.4-mini",
+  effort: "low",
+  permissionMode: "default",
+  policy: { sandbox: "read-only", approval: "on-request", guardian: false },
+  debugEnabled: true,
+  storageDir: workspace,
+  resumeSessionId: "thr-existing",
+  partyBridge: bridge,
+  partyIdentity: { party: "team-qa", member: "main", role: "qa" },
+});
+resumedAdapter.on("event", (event) => resumedEvents.push(event));
+try {
+  resumedAdapter.start();
+  await waitFor(() => resumedEvents.some((event) => event.type === "session" && event.sessionId === "thr-fake"), "resumed session start");
+  const frames = readFileSync(resumedAdapter.getSnapshot().logPath, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  const threadResume = frames
+    .filter((frame) => frame.direction === "out")
+    .map((frame) => frame.payload)
+    .find((message) => message.method === "thread/resume");
+  const dynamicTools = threadResume?.params?.dynamicTools || [];
+  assert(threadResume?.params?.threadId === "thr-existing", "existing Codex conversations use thread/resume");
+  assert(
+    dynamicTools.filter((tool) => tool.type === "function" && tool.deferLoading === false).length === 5,
+    "resumed Codex conversations re-register every eager Party Core tool",
+  );
+  assert(
+    threadResume?.params?.developerInstructions?.includes("tools.party_send")
+      && threadResume.params.developerInstructions.includes("`collaboration.*` tools control separate Codex sub-agents"),
+    "resumed Codex conversations restore the Party Core instructions",
+  );
+} finally {
+  resumedAdapter.dispose();
 }
 
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nCODEX PARTY TOOLS PASSED");
