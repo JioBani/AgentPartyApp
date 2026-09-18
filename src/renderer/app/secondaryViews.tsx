@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FileText, FlaskConical, FolderOpen, FoldVertical, HardDrive, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Server, Settings2, ShieldCheck, SlidersHorizontal, Smartphone, SquareTerminal, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FileText, FlaskConical, FolderOpen, FoldVertical, HardDrive, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Server, Settings2, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
 import { formatDiagnosticsReport, type DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentCheck, EnvironmentReport, EnvironmentStatus } from "../../shared/environment";
 import { EnvironmentProbeSteps, EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "../workbench/EnvironmentRemedies";
@@ -18,7 +18,6 @@ import type { GateReviewer } from "../../shared/messageGate";
 import type { AgentTabId, SettingsTabId } from "../../shared/runtimeTabs";
 import { HARNESS_IDS, normalizeServiceTierSelection } from "../../shared/types";
 import { MessageGateIcon } from "../workbench/MessageGateIcon";
-import { MobileLinkCard } from "./MobileLinkTab";
 import { HarnessIcon } from "../workbench/HarnessIcon";
 import { Markdown } from "../workbench/Markdown";
 import { HarnessPermissionControl } from "../workbench/HarnessPermissionControl";
@@ -1810,7 +1809,6 @@ const SETTINGS_TABS: Array<{ id: SettingsTabId; label: MessageKey; icon: ReactNo
   { id: "environment", label: "runtime.tab.environment", icon: <ShieldCheck size={14} /> },
   { id: "workspace", label: "runtime.tab.workspace", icon: <HardDrive size={14} /> },
   { id: "ssh", label: "runtime.tab.ssh", icon: <Server size={14} /> },
-  { id: "mobile", label: "runtime.tab.mobile", icon: <Smartphone size={14} /> },
   { id: "versions", label: "runtime.tab.versions", icon: <PackageCheck size={14} /> },
   { id: "diagnostics", label: "runtime.tab.diagnostics", icon: <ClipboardList size={14} /> },
   { id: "automation", label: "settings.tab.automation", icon: <FlaskConical size={14} /> },
@@ -1843,15 +1841,11 @@ export function SettingsView({ automationApi, logs, router, settings, onToggleDe
   const preference = normalizeThemePreference(settings.theme);
   const [tab, setTab] = useState<SettingsTabId>("general");
   const [copied, setCopied] = useState(false);
-  const mobileEnabled = settings.mobile?.enabled === true;
-  const visibleTabs = mobileEnabled ? SETTINGS_TABS : SETTINGS_TABS.filter((entry) => entry.id !== "mobile");
+  const visibleTabs = SETTINGS_TABS;
   useEffect(() => {
     if (!tabRequest || tabRequest.seq <= 0) return;
-    setTab(tabRequest.tab === "mobile" && !mobileEnabled ? "general" : tabRequest.tab);
-  }, [tabRequest?.seq, mobileEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!mobileEnabled && tab === "mobile") setTab("general");
-  }, [mobileEnabled, tab]);
+    setTab(tabRequest.tab);
+  }, [tabRequest?.seq]); // eslint-disable-line react-hooks/exhaustive-deps
   // Re-ask the feed whenever this screen mounts so the titlebar pill and the
   // 버전 tab are not stuck on the startup / 6-hour result. Quiet: do not flash
   // `checking` (that hides an already-visible pill) and skip a check that just
@@ -1920,7 +1914,6 @@ export function SettingsView({ automationApi, logs, router, settings, onToggleDe
           <SshServersTab now={now} />
         </SubtreeVisibility></div>
 
-        {mobileEnabled && <div className="set-tab-panel" hidden={tab !== "mobile"}><SubtreeVisibility visible={tab === "mobile"}><MobileLinkCard active={tab === "mobile"} /></SubtreeVisibility></div>}
         <div className="set-tab-panel" hidden={tab !== "versions"}><SubtreeVisibility visible={tab === "versions"}><VersionsCard active={tab === "versions"} /></SubtreeVisibility></div>
         <div className="set-tab-panel" hidden={tab !== "diagnostics"}><SubtreeVisibility visible={tab === "diagnostics"}><DiagnosticsCard active={tab === "diagnostics"} /></SubtreeVisibility></div>
 

@@ -26,8 +26,8 @@ export interface AutomationApiDeps {
  * The local automation HTTP server. It owns transport concerns only — resolving
  * the window/party scope, merging parameters, and mapping results to status
  * codes. What each endpoint DOES lives in the capability table
- * (`src/main/api/methodRoutes.ts`), which the mobile link dispatches too, so
- * neither transport can drift from the other.
+ * (`src/main/api/methodRoutes.ts`), keeping the HTTP contract and controller
+ * behavior in one place.
  */
 export class AutomationApiServer {
   private server: http.Server | undefined;

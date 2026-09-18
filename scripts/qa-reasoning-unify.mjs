@@ -4,7 +4,7 @@
  * Proves:
  *   1. HarnessDefaultsCard opens the catalog with effort+thinking+serviceTier
  *      enabled (no empty config, no outer duplicate segments).
- *   2. Panel header no longer hosts a separate Effort dropdown.
+ *   2. Panel header model and effort pills both open the one Runtime surface.
  *   3. HarnessDefaults storage for budget + Cursor speed is reachable via
  *      buildPartyMember (the path new members inherit).
  *   4. ModelCatalogModal still exposes every axis when those flags are on.
@@ -42,7 +42,12 @@ assert(!(cardSrc.match(/function HarnessDefaultsCard[\s\S]*?export function Sett
 assert(!(cardSrc.match(/function HarnessDefaultsCard[\s\S]*?export function SettingsView/)?.[0] || "").includes('set-field-label">추론 모드'), "outer thinking-mode segment removed from harness defaults");
 assert(cardSrc.includes("reasoningBudget") && cardSrc.includes("serviceTier: serviceTier || undefined"), "save patch persists thinking budget + Cursor speed");
 assert(!panelSrc.includes('title="Effort"') && !panelSrc.includes("actions.setEffort"), "Panel header Effort dropdown is gone");
-assert(panelSrc.includes("모델 · 추론 설정"), "model pill is the single header entry for runtime reasoning");
+assert(
+  panelSrc.includes('className="wb-pill wb-model-pill"') &&
+    panelSrc.includes("view.effortOptions.length > 0") &&
+    (panelSrc.match(/onClick=\{\(\) => onOpenRuntime\(view\.name\)\}/g) || []).length >= 2,
+  "model and effort pills both open the unified Runtime surface",
+);
 assert(svcSrc.includes("defaults.reasoningBudget") && svcSrc.includes("defaults.serviceTier"), "session start falls back to harness-default budget + speed");
 
 console.log("\nbuildPartyMember inherits the previously-dead defaults:");

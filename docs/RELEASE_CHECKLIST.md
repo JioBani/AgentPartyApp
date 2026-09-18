@@ -91,9 +91,9 @@ Windows 설치본과 포터블 실행 파일을 만든다.
 npm run package:win
 ```
 
-`package:win`은 빌드와 `electron-builder --win --x64`를 실행한다. 선택 사항인 로컬
-`@agentparty/protocol` 패키지 링크가 끊어진 경우 이를 명시적으로 알리고 정리한 뒤
-모바일 프로토콜 없이 패키징한다. 다른 의존성 누락이나 빌드 오류는 실패로 처리한다.
+`package:win`은 빌드와 `electron-builder --win --x64`를 실행한다. 선언된 의존성
+누락이나 빌드 오류는 실패로 처리한다. Mobile Link는 데스크톱 패키지에서 분리되어
+있으므로 이 과정은 AgentPartyServer checkout이나 프로토콜 정션을 수정하지 않는다.
 
 `release/`에 다음 파일이 생겼는지 확인한다.
 

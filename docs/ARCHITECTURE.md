@@ -35,7 +35,7 @@ IPC and HTTP both call this controller. If a feature can be triggered from the U
 - `src/main/main.ts`: Electron lifecycle, menu, window creation, IPC channel registration.
 - `src/main/api`: the capability table — one `(method, params) → handler` list, grouped by domain under `api/routes/`, that the local HTTP server and a paired phone's RPC both dispatch. A capability registered here cannot behave differently on the two transports because there is only one handler.
 - `src/main/automationApi.ts`: local HTTP transport — window/party scope resolution, parameter merging, and status codes.
-- `src/main/automation`: shared HTTP mechanics and the QA-only route adapter (QA scaffolding fabricates state for tests, so it stays out of the capability table and off the mobile link).
+- `src/main/automation`: shared HTTP mechanics and the QA-only route adapter (QA scaffolding fabricates state for tests, so it stays out of the capability table).
 - `src/main/sessionManager.ts`: live harness process/session ownership.
 - `src/main/settings.ts`, `src/main/authService.ts`, `src/main/partyRepository.ts`, `src/main/logger.ts`: local persistence and app infrastructure.
 - `src/main/application/partyApplicationService.ts`: internal AgentParty party/member/message orchestration. `Party` is the aggregate root. Creating a party creates `main` and immediately init-starts its session so slash commands and skills can be discovered for the palette. Opening non-main members does not start a harness; their first chat message starts the member session at the project root before sending input.
@@ -58,7 +58,7 @@ Renderer code should not duplicate business behavior. It requests state or comma
 
 1. Add or modify the application method in `AppController`.
 2. Expose the capability through IPC in `main.ts` if the renderer needs it.
-3. Add one entry to the capability table under `src/main/api/routes/` if the capability is user-visible or automation-relevant. That single entry serves the HTTP endpoint, its `GET /api/spec` declaration, and the mobile-link RPC method; set `remote: false` on it for desktop-local surfaces (window chrome, screen capture) that make no sense from a phone.
+3. Add one entry to the capability table under `src/main/api/routes/` if the capability is user-visible or automation-relevant. That single entry serves the HTTP endpoint and its `GET /api/spec` declaration; set `remote: false` on desktop-local surfaces so they cannot accidentally enter a future remote transport.
 4. Document the endpoint in `docs/API.md`.
 5. If the capability pushes state to the renderer, register the push channel in `main.ts` and subscribe in `preload.ts` + `App.tsx` (see `update:status`).
 6. Add focused E2E coverage in `scripts/e2e-smoke.js` or a more specific test.

@@ -6,7 +6,6 @@ import type { InitialAppState, NativeCliAuthHost, NativeCliAuthProgress, NativeC
 import type { QueueCommand } from "../shared/messageQueue";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
 import type { ReleaseSummary, UpdateChannel, UpdateStatus } from "../shared/appUpdate";
-import type { GatewayStatus, MobileConnectionLockKind, MobileConnectionLockStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../shared/mobileProtocol";
 import type { ApprovalDelivery, ApprovalResponseResult } from "../shared/approvals";
 import type { CliContinuationAction, CliContinuationResult } from "../shared/cliContinuation";
 import type { GuideScreenInfo } from "../shared/guide";
@@ -106,33 +105,6 @@ const api = {
   disconnectSubscription: (provider: "codex" | "claude" | "cursor") => ipcRenderer.invoke("auth:disconnectSubscription", provider),
   listModels: () => ipcRenderer.invoke("models:list"),
   refreshCodexModels: () => ipcRenderer.invoke("models:refreshCodex"),
-  // Mobile link (설정 → 모바일 연결). Reads are cheap and synchronous inside the
-  // main process; `onMobileStatus` keeps the tab live between them.
-  getMobileStatus: (): Promise<{ ok: true; status: GatewayStatus }> => ipcRenderer.invoke("mobile:status"),
-  getMobileSettings: (): Promise<{ ok: true; settings: MobileSettings }> => ipcRenderer.invoke("mobile:settings"),
-  updateMobileSettings: (patch: Partial<MobileSettings>): Promise<{ ok: true; settings: MobileSettings }> =>
-    ipcRenderer.invoke("mobile:updateSettings", patch),
-  listMobileDevices: (): Promise<{ ok: true; devices: TrustedDevice[] }> => ipcRenderer.invoke("mobile:devices"),
-  /** Opens a pairing QR; the confirmation code arrives on the status stream. */
-  openMobilePairing: (): Promise<{ ok: true; qr: string; expiresAt: number }> => ipcRenderer.invoke("mobile:pairOpen"),
-  confirmMobilePairing: (): Promise<{ ok: true; status: GatewayStatus }> => ipcRenderer.invoke("mobile:pairConfirm"),
-  cancelMobilePairing: (): Promise<{ ok: true; status: GatewayStatus }> => ipcRenderer.invoke("mobile:pairCancel"),
-  revokeMobileDevice: (deviceId: string): Promise<{ ok: true; devices: TrustedDevice[] }> =>
-    ipcRenderer.invoke("mobile:revokeDevice", deviceId),
-  renameMobileDevice: (deviceId: string, name: string): Promise<{ ok: true; devices: TrustedDevice[] }> =>
-    ipcRenderer.invoke("mobile:renameDevice", deviceId, name),
-  /** Cuts one phone session now; the pairing survives. */
-  disconnectMobileSession: (sessionId: string): Promise<{ ok: true; status: GatewayStatus }> =>
-    ipcRenderer.invoke("mobile:disconnectSession", sessionId),
-  runMobileDiagnostics: (): Promise<{ ok: true; diagnostics: NatDiagnostics }> => ipcRenderer.invoke("mobile:diagnostics"),
-  getMobileConnectionLock: (): Promise<{ ok: true; lock: MobileConnectionLockStatus }> =>
-    ipcRenderer.invoke("mobile:lockStatus"),
-  configureMobileConnectionLock: (
-    kind: MobileConnectionLockKind,
-    secret: string,
-  ): Promise<{ ok: true; lock: MobileConnectionLockStatus }> => ipcRenderer.invoke("mobile:lockSet", kind, secret),
-  clearMobileConnectionLock: (): Promise<{ ok: true; lock: MobileConnectionLockStatus }> =>
-    ipcRenderer.invoke("mobile:lockClear"),
   getDiscordStatus: () => ipcRenderer.invoke("discord:get"),
   updateDiscordSettings: (patch: unknown) => ipcRenderer.invoke("discord:update", patch),
   getUsageLimits: () => ipcRenderer.invoke("usage:get"),
@@ -323,11 +295,6 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("discord:update", listener);
     return () => ipcRenderer.off("discord:update", listener);
-  },
-  onMobileStatus: (callback: (payload: GatewayStatus) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, payload: GatewayStatus) => callback(payload);
-    ipcRenderer.on("mobile:status", listener);
-    return () => ipcRenderer.off("mobile:status", listener);
   },
   onUsageUpdate: (callback: (payload: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

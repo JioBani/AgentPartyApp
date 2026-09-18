@@ -599,7 +599,6 @@
       "reasoning": {
         "effort": {
           "options": [
-            "none",
             "low",
             "high",
             "max"
@@ -1053,7 +1052,6 @@
       "reasoning": {
         "effort": {
           "options": [
-            "none",
             "low",
             "high",
             "max"
@@ -1090,7 +1088,6 @@
       "reasoning": {
         "effort": {
           "options": [
-            "none",
             "low",
             "high",
             "max"
@@ -1466,6 +1463,7 @@
       "reasoning": {
         "effort": {
           "options": [
+            "none",
             "low",
             "high",
             "max"
@@ -1494,6 +1492,7 @@
       "reasoning": {
         "effort": {
           "options": [
+            "none",
             "low",
             "high",
             "max"
@@ -1521,6 +1520,7 @@
       "reasoning": {
         "effort": {
           "options": [
+            "none",
             "low",
             "high",
             "max"

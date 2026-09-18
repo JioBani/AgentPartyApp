@@ -37,7 +37,6 @@ import { providerOfRuntime, type UsageLimitsSnapshot, type UsageProviderId } fro
 import { UsageLimitPill } from "./workbench/UsageLimitPill";
 import type { UpdateStatus } from "../shared/appUpdate";
 import { UpdatePill } from "./workbench/UpdatePill";
-import { MobileDrivingPill } from "./workbench/MobileDrivingPill";
 import { UpdateModal } from "./workbench/UpdateModal";
 import { useTheme } from "./theme/ThemeProvider";
 import { cachedRendererTheme } from "./theme/firstPaint";
@@ -2289,8 +2288,6 @@ export function App() {
         pills={<>
           {/* Renders only when an update is actually pending — see UpdatePill. */}
           <span className="no-drag"><UpdatePill status={updateStatus} onOpen={() => setUpdateModalOpen(true)} /></span>
-          {/* Renders only while a phone is connected — see MobileDrivingPill. */}
-          {state.settings.mobile?.enabled === true && <span className="no-drag"><MobileDrivingPill /></span>}
         </>}
         onMinimize={() => window.agentParty.minimizeWindow()}
         onMaximize={() => window.agentParty.maximizeWindow()}

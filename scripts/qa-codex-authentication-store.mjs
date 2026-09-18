@@ -13,12 +13,19 @@ const sourceFiles = [
   "src/main/engine/transport/remoteEngineClient.ts",
 ];
 const source = sourceFiles.map((file) => fs.readFileSync(path.join(root, file), "utf8")).join("\n");
+const nativeEngineSource = sourceFiles
+  .filter((file) => file !== "src/main/subscriptionProxyService.ts")
+  .map((file) => fs.readFileSync(path.join(root, file), "utf8"))
+  .join("\n");
 
 assert(!fs.existsSync(path.join(root, "src/main/codexAuthenticationStore.ts")), "AgentParty no longer owns a native Codex credential store");
 assert(!fs.existsSync(path.join(root, "src/shared/codexAuthentication.ts")), "OAuth token DTOs are removed from the desktop-to-engine protocol");
 assert(!source.includes("getCodexAuthentication"), "the subscription bridge cannot export Codex OAuth tokens");
 assert(!source.includes("setCodexAuthentication"), "desktop and WSL engines have no credential-copy RPC");
-assert(!source.includes("refreshToken") && !source.includes("refresh_token"), "native engine code does not read or propagate Codex refresh tokens");
+// The subscription bridge may inspect CLI-owned credential metadata to report
+// whether a non-Codex subscription is usable. The native Codex engine boundary
+// must still never read or propagate refresh tokens.
+assert(!nativeEngineSource.includes("refreshToken") && !nativeEngineSource.includes("refresh_token"), "native engine code does not read or propagate Codex refresh tokens");
 
 console.log("CODEX AUTHENTICATION OWNERSHIP QA PASSED");
 

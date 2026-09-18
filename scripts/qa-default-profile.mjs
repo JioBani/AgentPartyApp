@@ -78,7 +78,8 @@ function render(view) {
   return document.body;
 }
 const codexRow = (host) => [...host.querySelectorAll(".wb-model-row")].find((b) => (b.textContent || "").includes("GPT-5"));
-const codexSegment = (host) => [...host.querySelectorAll(".wb-segment")].find((b) => (b.textContent || "") === "Codex");
+const codexSegment = (host) => [...host.querySelectorAll(".wb-harness-tab, .wb-harness-menu-item")]
+  .find((button) => (button.textContent || "").trim().startsWith("Codex"));
 const click = (el) => el?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 
 console.log("\nRuntimeModal single-harness list + harness lock:");

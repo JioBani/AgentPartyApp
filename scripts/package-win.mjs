@@ -12,13 +12,6 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  MOBILE_PIPE_PACKAGE,
-  mainTsconfig,
-  mobilePipeNotice,
-  pruneBrokenPipeLink,
-  pruneExternalPipeLinkForPackaging,
-} from "./mobile-pipe.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isWin = process.platform === "win32";
@@ -27,14 +20,6 @@ const localTool = (name) =>
   path.join(projectRoot, "node_modules", ".bin", isWin ? `${name}.cmd` : name);
 
 const requiredBuildTools = ["tsc", "vite", "electron-builder"];
-
-/**
- * Dependencies a build is allowed to be missing. `@agentparty/protocol` is a
- * local-path package from the AgentPartyServer repo, so npm cannot fetch it and
- * a machine without that checkout builds the app without the mobile pipe (see
- * `mobile-pipe.mjs`). Announced, never silent — but not a reason to stop.
- */
-const optionalPackages = new Set([MOBILE_PIPE_PACKAGE]);
 
 /**
  * What counts as installed: every required package.json dependency resolves to
@@ -50,7 +35,7 @@ function missingInstalls() {
   const pkg = JSON.parse(readFileSync(path.join(projectRoot, "package.json"), "utf8"));
   const declared = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
   const missingPackages = declared.filter(
-    (name) => !optionalPackages.has(name) && !existsSync(path.join(projectRoot, "node_modules", ...name.split("/"))),
+    (name) => !existsSync(path.join(projectRoot, "node_modules", ...name.split("/"))),
   );
   const missingTools = requiredBuildTools.filter((name) => !existsSync(localTool(name)));
   return [...new Set([...missingPackages, ...missingTools])];
@@ -76,9 +61,9 @@ function localPathHints(names) {
 const buildSteps = () => [
   { name: "테마 카탈로그 검증", weight: 1, cmd: process.execPath, args: ["scripts/validate-theme-catalog.mjs"] },
   { name: "타입 체크 (renderer)", weight: 2, cmd: localTool("tsc"), args: ["-p", "tsconfig.json", "--noEmit"] },
-  { name: "타입 체크 (main)", weight: 1, cmd: localTool("tsc"), args: ["-p", mainTsconfig(), "--noEmit"] },
+  { name: "타입 체크 (main)", weight: 1, cmd: localTool("tsc"), args: ["-p", "tsconfig.main.json", "--noEmit"] },
   { name: "렌더러 빌드 (vite)", weight: 3, cmd: localTool("vite"), args: ["build"] },
-  { name: "메인 프로세스 컴파일 (tsc)", weight: 2, cmd: localTool("tsc"), args: ["-p", mainTsconfig()] },
+  { name: "메인 프로세스 컴파일 (tsc)", weight: 2, cmd: localTool("tsc"), args: ["-p", "tsconfig.main.json"] },
   { name: "엔진 서버 번들", weight: 1, cmd: process.execPath, args: ["scripts/build-engine-server.mjs"] },
   { name: "Windows 패키징 (electron-builder)", weight: 6, cmd: localTool("electron-builder"), args: ["--win", "--x64"] },
 ];
@@ -146,19 +131,9 @@ function runStep(step, baseFraction, stepFraction) {
 async function main() {
   console.log(bold("\n  AgentParty · Windows 패키징\n"));
 
-  const externalPipe = pruneExternalPipeLinkForPackaging();
-  if (externalPipe) {
-    console.log(dim(`  외부 로컬 패키지 링크 제외: ${externalPipe.link} → ${externalPipe.target}`));
-    console.log(dim("  electron-builder는 앱 루트 밖의 파일을 패키징할 수 없어 모바일 연결을 뺀 배포본으로 진행합니다.\n"));
-  }
-
   // node_modules can exist while empty, stale, or only partially installed.
   // Verify what package.json actually declares instead of treating the
   // directory as sufficient.
-  // A reduced build must never be a quiet one: say so before the bar starts.
-  const pipeNotice = mobilePipeNotice();
-  if (pipeNotice) console.log(dim(`  ${pipeNotice}\n`));
-
   const missing = missingInstalls();
   if (missing.length > 0) {
     console.log(dim(`  의존성 누락 (${summarize(missing)}) → npm install 실행 중...\n`));
@@ -173,14 +148,6 @@ async function main() {
           (hints.length > 0 ? `\n${hints.join("\n")}` : ""),
       );
     }
-  }
-
-  // After the install (which recreates it) and before electron-builder, whose
-  // `@electron/rebuild` stats every node_modules entry and cannot survive a link
-  // that points at nothing.
-  const pruned = pruneBrokenPipeLink();
-  if (pruned) {
-    console.log(dim(`  끊어진 링크 정리: ${pruned}\n`));
   }
 
   const steps = buildSteps();

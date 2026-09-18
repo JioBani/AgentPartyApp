@@ -41,6 +41,7 @@ const sessionManager = {
   emitGateBadge: () => undefined,
   on: () => undefined,
   listSessions: () => [],
+  getCodexModelState: () => ({ status: "ready", models: [] }),
 };
 
 function serviceWith(reviewGate) {

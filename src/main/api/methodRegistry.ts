@@ -1,13 +1,9 @@
 import type { AppController } from "../application/appController";
 
 /**
- * One capability table, two transports.
- *
- * `src/main/automationApi.ts` (local HTTP) and `src/main/mobile` (phone RPC)
- * both dispatch THIS table, so a capability registered once is reachable from
- * an agent's HTTP call, the desktop UI's IPC path, and a paired phone without
- * anyone hand-maintaining a second mapping. See
- * `AgentPartyMobile/docs/아키텍처/04-데스크톱-확장.md` §붙이는 지점 1.
+ * One capability table for the local automation HTTP surface. Route names and
+ * remote metadata remain transport-neutral so a future remote client can be
+ * restored without inventing a second controller path.
  */
 
 export type HttpVerb = "GET" | "POST" | "DELETE";
@@ -17,9 +13,9 @@ const HTTP_VERBS: readonly HttpVerb[] = ["GET", "POST", "DELETE"];
 /** Ambient request scope: everything a handler needs that is not a parameter. */
 export interface MethodContext {
   controller: AppController;
-  /** Workspace the call acts on. HTTP resolves it from the window; RPC from `workspacePath`. */
+  /** Workspace the call acts on. HTTP resolves it from the target window. */
   workspace: string;
-  /** Desktop window scope. Undefined for phone calls — they own no window. */
+  /** Desktop window scope. Undefined for calls that do not target a window. */
   windowId?: string;
   /** Party pin carried by an agent's identity header. */
   partyId?: string;
@@ -28,9 +24,8 @@ export interface MethodContext {
   /** Base URL of the local automation server, for the spec route. */
   apiBaseUrl: string;
   /**
-   * The phone's event-stream position, for a handler that reads state the phone
-   * also receives as events. Present only on the mobile transport — an HTTP
-   * caller receives no events, so there is no position to report.
+   * Reserved event-stream position hook for a future remote transport. Local
+   * HTTP callers receive no events, so there is no position to report.
    *
    * Call it BEFORE reading, never after. The read lands somewhere inside the
    * await; a seq taken afterwards makes the phone skip events the answer does
@@ -41,21 +36,19 @@ export interface MethodContext {
 }
 
 /**
- * Request parameters. HTTP merges query + body + path segments into one object;
- * mobile RPC passes its `p` object straight through. Typed loosely on purpose —
- * this is the untyped wire edge, exactly as the parsed HTTP body always was.
+ * Request parameters. HTTP merges query + body + path segments into one object.
+ * Typed loosely on purpose: this is the untyped wire edge.
  */
 export type MethodParams = Record<string, any>;
 
 export interface MethodRoute {
-  /** `<domain>.<verb>` — the mobile RPC name and the catalog key (문서 08). */
+  /** `<domain>.<verb>` — stable capability name for tooling and future transports. */
   name: string;
   /** `"<VERB> /api/path/:param"`. Also the entry published in the API spec. */
   http: string;
   /**
-   * `false` keeps the route off the phone: it drives desktop-local surfaces
-   * (this window's screenshot, this window's chrome) that mean nothing remotely.
-   * Defaults to exposed — a new capability reaches the phone unless it opts out.
+   * `false` marks a desktop-local surface that must stay out of any future
+   * remote transport (for example window chrome or screen capture).
    */
   remote?: boolean;
   handler(params: MethodParams, ctx: MethodContext): unknown | Promise<unknown>;

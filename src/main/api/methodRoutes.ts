@@ -6,7 +6,6 @@ import { approvalRoutes } from "./routes/approvalRoutes";
 import { authRoutes } from "./routes/authRoutes";
 import { discordRoutes } from "./routes/discordRoutes";
 import { guideRoutes } from "./routes/guideRoutes";
-import { mobileRoutes } from "./routes/mobileRoutes";
 import { modelRoutes } from "./routes/modelRoutes";
 import { partyRoutes } from "./routes/partyRoutes";
 import { perfRoutes } from "./routes/perfRoutes";
@@ -16,12 +15,10 @@ import { sessionRoutes } from "./routes/sessionRoutes";
 import { windowRoutes } from "./routes/windowRoutes";
 
 /**
- * The app's capability table — the single list HTTP and mobile RPC both
- * dispatch. Declaration order is HTTP matching order.
+ * The app's capability table. Declaration order is HTTP matching order.
  *
  * Adding a capability means adding ONE entry here (or in a routes/ file): the
- * endpoint appears in `GET /api/spec`, and a paired phone can call it by name
- * unless the entry sets `remote: false`.
+ * endpoint appears in `GET /api/spec` and uses the shared controller handler.
  */
 const routes: MethodRoute[] = [
   {
@@ -37,7 +34,6 @@ const routes: MethodRoute[] = [
   ...authRoutes,
   ...discordRoutes,
   ...guideRoutes,
-  ...mobileRoutes,
   ...modelRoutes,
   ...perfRoutes,
   ...sessionRoutes,

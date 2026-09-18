@@ -1,22 +1,18 @@
 /*
- * `tsc -p <the right main tsconfig>` — with or without the optional mobile
- * pipe, decided by `mobile-pipe.mjs`. Extra arguments are passed through, so
- * this stands in for the plain tsc call everywhere: `--noEmit` for the type
- * check, nothing for the build, `--watch` for dev.
+ * Runs the desktop main-process compiler with its single authoritative config.
+ * Mobile Link is intentionally excluded there while the feature is detached.
+ * Extra arguments are passed through: `--noEmit` for type checks, nothing for
+ * builds, and `--watch` for development.
  */
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mainTsconfig, mobilePipeNotice } from "./mobile-pipe.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isWin = process.platform === "win32";
 const tsc = path.join(projectRoot, "node_modules", ".bin", isWin ? "tsc.cmd" : "tsc");
 
-const notice = mobilePipeNotice();
-if (notice) console.log(notice);
-
-const child = spawn(tsc, ["-p", mainTsconfig(), ...process.argv.slice(2)], {
+const child = spawn(tsc, ["-p", "tsconfig.main.json", ...process.argv.slice(2)], {
   cwd: projectRoot,
   shell: isWin,
   stdio: "inherit",

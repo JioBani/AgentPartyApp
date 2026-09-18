@@ -6,8 +6,7 @@ import type { MethodRoute } from "../methodRegistry";
  * through the same AppController method.
  *
  * Every route here is desktop-only: the guide teaches the person at the desk,
- * and its stage is a picture of the window in front of them. A paired phone
- * has no window to drive, so none of these reach the mobile catalog.
+ * and its stage is a picture of the window in front of them.
  */
 export const guideRoutes: MethodRoute[] = [
   {

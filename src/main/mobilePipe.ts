@@ -2,13 +2,12 @@ import { log } from "./logger";
 import type { CreateMobileGatewayOptions, MobileGateway } from "./mobile/mobileGateway";
 
 /**
- * Loads the mobile pipe, which is an OPTIONAL part of a build.
+ * Dormant Mobile Link adapter retained for a future reactivation.
  *
- * `src/main/mobile/` needs `@agentparty/protocol` — a local-path package from
- * the AgentPartyServer repo. When that repo is not checked out beside this one,
- * the pipe is left out of the build entirely (`tsconfig.main.no-mobile.json`,
- * chosen by `scripts/mobile-pipe.mjs`) and this module is how the app finds
- * out: a `require` that resolves, or a reason it did not.
+ * This file and `src/main/mobile/` are excluded by `tsconfig.main.json` while
+ * the feature is detached. Reactivation must restore the dependency, build,
+ * runtime, API, and UI boundaries together; see
+ * `docs/MOBILE_LINK_REACTIVATION.md`.
  *
  * Deliberately a runtime `require` rather than an `import`. An import would put
  * the pipe — and through it the protocol package — back into the type graph,

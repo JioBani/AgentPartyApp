@@ -382,26 +382,11 @@ export function createFakeAgentParty(): FakeAgentParty {
     onNewSession: (callback) => subscribe(callback),
 
     // Methods the real bridge gained after this fake was first written. The
-    // stage demo never reaches them (mobile pairing, party primer, approvals,
-    // and CLI continuation all talk to a real main process), so each refuses or
+    // stage demo never reaches them (party primer, approvals, and CLI
+    // continuation all talk to a real main process), so each refuses or
     // no-ops instead of faking a result — the same rule as every other call here.
     savePartyPrimerSection: () => refused(),
     translatePartyPrimerSection: () => refused(),
-    getMobileStatus: () => refused(),
-    getMobileSettings: () => refused(),
-    updateMobileSettings: () => refused(),
-    listMobileDevices: () => refused(),
-    openMobilePairing: () => refused(),
-    confirmMobilePairing: () => refused(),
-    cancelMobilePairing: () => refused(),
-    revokeMobileDevice: () => refused(),
-    renameMobileDevice: () => refused(),
-    disconnectMobileSession: () => refused(),
-    runMobileDiagnostics: () => refused(),
-    getMobileConnectionLock: () => refused(),
-    configureMobileConnectionLock: () => refused(),
-    clearMobileConnectionLock: () => refused(),
-    onMobileStatus: () => () => NOOP_IPC,
     respondToApproval: () => refused(),
     continueMemberInCli: () => refused(),
   };

@@ -73,8 +73,9 @@ const mount = (density) => {
   const host = document.createElement("div");
   document.body.appendChild(host);
   reactDom.createRoot(host).render(React.createElement(TabStrip, {
-    panel, views, density, width: 900, draggingMember: null, canAdd: true,
-    onSelect: noop, onClose: noop, onAdd: noop, onSplit: noop, onTabPointerDown: noop,
+    panel, views, density, width: 900, draggingMember: null, dropAt: null,
+    chrome: { toolbar: false, composer: false },
+    onSelect: noop, onClose: noop, onPromote: noop, onToggleChrome: noop, onTabPointerDown: noop,
   }));
   return host;
 };

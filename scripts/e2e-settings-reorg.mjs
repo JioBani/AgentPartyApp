@@ -38,19 +38,20 @@ async function capture(name, theme) {
 
 fs.rmSync(workspace, { recursive: true, force: true }); fs.rmSync(userData, { recursive: true, force: true }); fs.rmSync(shots, { recursive: true, force: true });
 fs.mkdirSync(workspace, { recursive: true }); fs.mkdirSync(shots, { recursive: true });
-const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start"], { cwd: root, stdio: ["ignore", "ignore", "inherit"], windowsHide: true, env: { ...process.env, AGENTPARTY_QA: "1", AGENTPARTY_AUTOMATION_PORT: String(port), AGENTPARTY_USER_DATA: userData, AGENTPARTY_MOBILE_LINK: "1" } });
+const child = spawn(process.env.ComSpec || "cmd.exe", ["/c", "npm", "run", "start"], { cwd: root, stdio: ["ignore", "ignore", "inherit"], windowsHide: true, env: { ...process.env, AGENTPARTY_QA: "1", AGENTPARTY_AUTOMATION_PORT: String(port), AGENTPARTY_USER_DATA: userData } });
 
 try {
   await waitForApi();
   const initialState = await request("GET", "/api/state");
   const appRoot = String(initialState.payload?.runtime?.appRoot || "");
-  const mobileEnabled = initialState.payload?.settings?.mobile?.enabled === true;
   assert((appRoot + path.sep).toLowerCase().startsWith(root.toLowerCase() + path.sep), "E2E is driving the build from this feature worktree");
   const appPid = Number(execFileSync("powershell", ["-NoProfile", "-Command", `(Get-NetTCPConnection -State Listen -LocalPort ${port} | Select-Object -First 1 -ExpandProperty OwningProcess)`], { encoding: "utf8" }).trim());
   assert(Number.isInteger(appPid) && appPid > 0, "real Electron API listener PID is discoverable");
   const spec = await request("GET", "/api/spec");
   assert(spec.payload?.navigation?.tabs?.agent?.join(",") === "general,defaults,primer,gate,discord", "API spec declares the exact five Agent tabs");
-  assert(spec.payload?.navigation?.tabs?.settings?.join(",") === "general,environment,workspace,mobile,versions,diagnostics,automation", "API spec declares every Settings tab");
+  assert(spec.payload?.navigation?.tabs?.settings?.join(",") === "general,environment,workspace,ssh,versions,diagnostics,automation", "API spec declares every Settings tab");
+  assert(!spec.payload?.endpoints?.some((endpoint) => String(endpoint).includes("/api/mobile")), "API spec publishes no Mobile Link endpoints");
+  assert(!Object.prototype.hasOwnProperty.call(initialState.payload?.settings || {}, "mobile"), "public settings expose no detached Mobile Link configuration");
   const dismissShot = path.join(shots, "dismiss-guide-offer.png");
   await request("POST", "/api/capture", { path: dismissShot, click: "[data-guide-offer] .ghost-btn" });
   fs.rmSync(dismissShot, { force: true });
@@ -64,12 +65,12 @@ try {
   for (const tab of ["general", "defaults", "primer", "gate", "discord"]) { await navigate("agent", tab, tab === "defaults" ? "codex" : undefined); await capture(`1440-agent-${tab}`, "light"); }
   await navigate("settings", "general");
   const settingsTabs = await request("POST", "/api/measure", { selector: ".set-tab", limit: 20 });
-  assert(settingsTabs.payload?.count === (mobileEnabled ? 7 : 6), `Settings ${mobileEnabled ? "shows" : "hides"} Mobile Link according to its feature flag`);
-  for (const tab of ["general", "environment", "workspace", ...(mobileEnabled ? ["mobile"] : []), "versions", "diagnostics", "automation"]) { await navigate("settings", tab); await capture(`1440-settings-${tab}`, "light"); }
-  if (!mobileEnabled) {
-    const unavailableMobile = await request("POST", "/api/navigation", { view: "settings", tab: "mobile" });
-    assert(unavailableMobile.status >= 400 && /disabled/i.test(unavailableMobile.payload?.error || ""), "disabled Mobile Link navigation fails visibly instead of reporting a no-op");
-  }
+  assert(settingsTabs.payload?.count === 7, "Settings shows exactly the shipped tabs");
+  for (const tab of ["general", "environment", "workspace", "ssh", "versions", "diagnostics", "automation"]) { await navigate("settings", tab); await capture(`1440-settings-${tab}`, "light"); }
+  const unavailableMobile = await request("POST", "/api/navigation", { view: "settings", tab: "mobile" });
+  assert(unavailableMobile.status >= 400 && /unknown settings tab/i.test(unavailableMobile.payload?.error || ""), "detached Mobile Link navigation fails as an unknown tab");
+  const unavailableMobileSetting = await request("POST", "/api/settings", { mobile: { enabled: true } });
+  assert(unavailableMobileSetting.status >= 400 && /분리/.test(unavailableMobileSetting.payload?.error || ""), "generic settings API refuses detached Mobile Link changes visibly");
 
   const legacyHarness = await request("POST", "/api/navigation", { view: "runtime", tab: "harness", harness: "cursor" });
   assert(legacyHarness.payload?.view === "agent" && legacyHarness.payload?.tab === "defaults" && legacyHarness.payload?.harness === "cursor", "legacy runtime/harness normalizes to agent/defaults");

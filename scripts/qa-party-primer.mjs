@@ -100,7 +100,7 @@ const codexInstructions = codex.partyDeveloperInstructions();
 assert(codexInstructions.startsWith("## Codex Party Core — already loaded"), "Codex puts its eager Party Core calling convention first");
 assert(codexInstructions.includes("tools.party_send") && codexInstructions.includes("never scan `ALL_TOOLS`"), "Codex names the native-style core alias without catalog search");
 const adaptedPrimer = adaptPartyPrimerForCodex(primer);
-assert(!codexInstructions.includes("mcp__agentparty-app__send") && codexInstructions.includes("mcp__agentparty-app__member-create"), "Codex rewrites only core references and keeps long-tail canonical names");
+assert(!adaptedPrimer.includes("mcp__agentparty-app__send") && adaptedPrimer.includes("mcp__agentparty-app__member-create"), "Codex rewrites only core references and keeps long-tail canonical names");
 assert(codexInstructions.endsWith(adaptedPrimer), "Codex keeps the adapted cross-harness primer after its calling convention");
 assert.equal((codexInstructions.match(/# AgentParty — party member session/g) || []).length, 1, "Codex installs the canonical primer exactly once");
 

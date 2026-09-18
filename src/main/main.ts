@@ -38,10 +38,6 @@ import { DiscordControlService } from "./discordControl";
 import { loadDotEnv } from "./dotenv";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { BAI_API_KEY_ENV } from "../shared/baiDefaults";
-import { MOBILE_SETTINGS_DEFAULTS } from "../shared/mobileProtocol";
-import type { CreateMobileGatewayOptions } from "./mobile/mobileGateway";
-import { isMobilePipe, loadMobilePipe } from "./mobilePipe";
-import { MobileLinkService } from "./mobileLink";
 import { ApprovalIndex } from "./approvalIndex";
 import { GuideScreenHost } from "./guideScreen";
 import { GuideChatHost, requireChatKind } from "./guideChat";
@@ -115,7 +111,6 @@ let discordBridge: DiscordBridgeService | undefined;
 let engineRegistry: EngineRegistry | undefined;
 let subscriptionProxyService: SubscriptionProxyService | undefined;
 let updateService: UpdateService | undefined;
-let mobileLink: MobileLinkService | undefined;
 let sshServerService: SshServerService | undefined;
 /** Internal Windows directory whose engine is the party-state source of truth. */
 let partyStorageWorkspace: string | undefined;
@@ -438,7 +433,6 @@ ${body}
       for (const entry of registry().all()) {
         entry.window.webContents.send("discord:update", status);
       }
-      mobileLink?.publish("discord:update", status);
     },
     log: (message) => log("info", "discord", message),
     // Identifies this process run on a machine where several instances share
@@ -660,13 +654,6 @@ ${body}
     for (const entry of windows) {
       pushSessionList(entry, "local", sessionsForAppWindow(sessions, entry.workspacePath));
     }
-    // A phone subscribes by WORKSPACE, not by window, so emit once per distinct
-    // workspace — two windows on one workspace would otherwise send it twice.
-    if (mobileLink?.hasSessions()) {
-      for (const workspacePath of new Set(windows.map((entry) => entry.workspacePath))) {
-        mobileLink.publish("session:list", sessionsForAppWindow(sessions, workspacePath), workspacePath);
-      }
-    }
   });
   // A member drove a party tool in-process (member-create / send / remove);
   // global party events are broadcast to every window by broadcastToWorkspace.
@@ -698,8 +685,6 @@ ${body}
     for (const entry of registry().all()) {
       entry.window.webContents.send("usage:update", snapshot);
     }
-    // Account-global, so no workspace scope: every phone session gets it.
-    mobileLink?.publish("usage:update", snapshot);
   });
 
   // The installed build is ONE per machine, so update status — like provider
@@ -714,38 +699,7 @@ ${body}
     for (const entry of registry().all()) {
       entry.window.webContents.send("update:status", status);
     }
-    mobileLink?.publish("update:status", status);
   });
-
-  // The mobile link. Built before the controller (which takes it as a
-  // dependency) and handed the controller straight after, the same two-step the
-  // Discord bridge uses.
-  //
-  // The pipe is optional: a build without `@agentparty/protocol` leaves it out
-  // entirely. Then there is no link at all, every mobile route answers with the
-  // reason, and the rest of the app runs — rather than the whole process
-  // failing to start over a feature the user may not be using.
-  const pipe = loadMobilePipe();
-  if (!isMobilePipe(pipe)) {
-    log("warn", "mobile", "mobile link unavailable in this build", { reason: pipe.reason });
-  } else {
-    mobileLink = new MobileLinkService({
-      gateway: pipe.createMobileGateway(mobilePipeOptions()),
-      // QA points the link at a locally running signaling server without editing
-      // code. A per-run override: the pipe does not write it back to settings.
-      startOptions: () => (process.env.AGENTPARTY_MOBILE_SIGNALING_URL
-        ? { signalingUrl: process.env.AGENTPARTY_MOBILE_SIGNALING_URL }
-        : undefined),
-      defaultWorkspace: () => registry().resolve()?.workspacePath || defaultWorkspace(),
-      automationBaseUrl: () => automationApi?.baseUrl || `http://127.0.0.1:${getSettings().automationApiPort}`,
-      onStatus: (status) => {
-        for (const entry of registry().all()) {
-          entry.window.webContents.send("mobile:status", status);
-        }
-      },
-      persistSettings: (mobile) => { updateSettings({ mobile }); },
-    });
-  }
 
   sshServerService = new SshServerService({
     store: new SshServerStore(app.getPath("userData"), safeStorage),
@@ -811,7 +765,6 @@ ${body}
     onWorkspacesChanged: () => reconcileDiscovery(),
     discord: discordBridge,
     updater: updateService,
-    mobileLink,
     approvals,
     sshServers: sshServerService,
     pickSshKeyFile: async (windowId) => {
@@ -850,7 +803,6 @@ ${body}
       compact: (kind) => requireGuideChat().compact(kind),
     },
   });
-  mobileLink?.setController(appController);
   // Remote model catalog: cached copy applies synchronously, then the published
   // catalog is fetched (and re-fetched periodically). Whenever a different
   // catalog lands, rebuilt model routes are pushed to every window through the
@@ -883,12 +835,6 @@ ${body}
   // Re-open the Discord gateway for members bridged in an earlier run, so a
   // restart does not silently stop delivering what the user types there.
   discordBridge.resume();
-  // After the automation API binds: the link publishes the same capability
-  // table, and `app.spec` reports the live base URL. A failure here is surfaced,
-  // not swallowed — a phone that cannot pair must not look merely idle.
-  await mobileLink?.start().catch((error: unknown) => {
-    log("error", "mobile", "mobile link failed to start", { error: error instanceof Error ? error.message : String(error) });
-  });
   // Only now — the first check pushes a status, and before a window exists it
   // would have nowhere to land.
   updateService.start();
@@ -907,47 +853,6 @@ const advertisedWorkspaces = new Map<string, string>();
  * Replaces the old machine-global `<userData>/automation.json` (which a second
  * process, even on a different cwd, overwrote — see docs/FEEDBACK.md).
  */
-/**
- * How the mobile pipe is constructed: the REAL gateway by default.
- *
- * The mock is opt-in through `AGENTPARTY_MOBILE_PIPE=mock`, and only QA asks
- * for it — `scripts/e2e-mobile-link.mjs` drives the phone simulator through
- * `/api/qa/mobile/*`, which the real gateway has no equivalent of. It is never
- * a fallback: if the real pipe cannot start, that must surface as a broken link
- * rather than a mock quietly making the UI look connected (AGENTS.md).
- *
- * `start()` honours the `enabled` setting, so a user who has not turned the
- * mobile link on gets no sockets from this.
- */
-function mobilePipeOptions(): CreateMobileGatewayOptions {
-  if (process.env.AGENTPARTY_MOBILE_PIPE === "mock") {
-    log("warn", "mobile", "using the MOCK mobile pipe (AGENTPARTY_MOBILE_PIPE=mock) — no phone can really connect");
-    return { implementation: "mock", mock: { settings: getSettings().mobile || MOBILE_SETTINGS_DEFAULTS } };
-  }
-  return {
-    implementation: "real",
-    deps: {
-      userDataPath: app.getPath("userData"),
-      secretCipher: safeStorage,
-      log: (level, message, detail) => log(level, "mobile", message, detail),
-      onSecurityWarning: (warning) => {
-        // Logged as well as pushed. The renderer may have no window open when
-        // the pipe starts, and a degraded-security condition that only ever
-        // existed as a dropped IPC message would be exactly the silent failure
-        // this callback exists to prevent.
-        log("warn", "mobile", `security warning: ${warning.code}`, { message: warning.message });
-        for (const entry of registry().all()) {
-          entry.window.webContents.send("mobile:warning", warning);
-        }
-      },
-      readSettings: () => getSettings().mobile || MOBILE_SETTINGS_DEFAULTS,
-      writeSettings: (mobile) => { updateSettings({ mobile }); },
-      defaultDeviceName: os.hostname(),
-      appVersion: app.getVersion(),
-    },
-  };
-}
-
 function reconcileDiscovery(): void {
   const baseUrl = automationApi?.baseUrl;
   // The API binds an ephemeral port; before it starts, baseUrl reads `:0`. Skip
@@ -1017,17 +922,6 @@ function broadcastToWorkspace(workspacePath: string, channel: string, payload: u
   for (const entry of windows) {
     entry.window.webContents.send(channel, payload);
   }
-  // A paired phone sees the same workspace-scoped stream the windows do, under
-  // the same channel names. `forwardRemoteEvent` (WSL engines) also lands here,
-  // so local and remote engines reach the phone through one tap. The gateway
-  // returns immediately when no phone is connected.
-  if (globalPartyEvent) {
-    for (const target of new Set(windows.map((entry) => entry.workspacePath))) {
-      mobileLink?.publish(channel, payload, target);
-    }
-  } else {
-    mobileLink?.publish(channel, payload, workspacePath);
-  }
   // Same stream, second reader. The index knows which channel carries approvals,
   // so this stays one unconditional line rather than a channel test here.
   approvals.note(workspacePath, channel, payload);
@@ -1046,9 +940,6 @@ function forwardRemoteEvent(workspacePath: string, channel: string, payload: any
     for (const entry of registry().forWorkspace(workspacePath)) {
       pushSessionList(entry, "remote", combined);
     }
-    // This branch returns before `broadcastToWorkspace`, so the phone needs its
-    // own emit here — the WSL channel name maps to the renderer's `session:list`.
-    mobileLink?.publish("session:list", combined, workspacePath);
     return;
   }
   if (channel === "party:changed") {
@@ -1261,26 +1152,6 @@ function registerIpc(): void {
 
   handle("models:list", async (event) => controller().listModels(senderWorkspace(event)));
   handle("models:refreshCodex", async (event) => controller().refreshCodexModels(senderWorkspace(event)));
-
-  // 설정 → 모바일 연결. The same controller methods as `/api/mobile/*`, so a
-  // click in the tab and an agent's HTTP call take one path.
-  handle("mobile:status", async () => controller().getMobileStatus());
-  handle("mobile:settings", async () => controller().getMobileSettings());
-  handle("mobile:updateSettings", async (_event, patch) => controller().updateMobileSettings(patch as any));
-  handle("mobile:devices", async () => controller().listMobileDevices());
-  handle("mobile:pairOpen", async () => controller().openMobilePairing());
-  handle("mobile:pairConfirm", async () => controller().confirmMobilePairing());
-  handle("mobile:pairCancel", async () => controller().cancelMobilePairing());
-  handle("mobile:revokeDevice", async (_event, deviceId: string) => controller().revokeMobileDevice(String(deviceId || "")));
-  handle("mobile:renameDevice", async (_event, deviceId: string, name: string) => controller().renameMobileDevice(String(deviceId || ""), String(name || "")));
-  handle("mobile:disconnectSession", async (_event, sessionId: string) => controller().disconnectMobileSession(String(sessionId || ""), "desktop"));
-  handle("mobile:diagnostics", async () => controller().getMobileDiagnostics());
-  // Connection-lock setup is intentionally IPC-only in release builds. The
-  // HTTP equivalent exists exclusively under /api/qa/mobile/* when QA is on.
-  handle("mobile:lockStatus", async () => controller().getMobileConnectionLock());
-  handle("mobile:lockSet", async (_event, kind: "pin" | "pattern", secret: string) =>
-    controller().configureMobileConnectionLock(kind, String(secret ?? "")), { redactArgs: [1] });
-  handle("mobile:lockClear", async () => controller().clearMobileConnectionLock());
 
   handle("discord:get", async () => controller().discordStatus());
   handle("discord:update", async (_event, patch) => controller().updateDiscordSettings(patch as any));
@@ -1605,7 +1476,6 @@ app.on("before-quit", () => {
   sessionManager?.dispose();
   router?.dispose();
   automationApi?.dispose();
-  void mobileLink?.stop();
   subscriptionProxyService?.dispose();
 });
 
