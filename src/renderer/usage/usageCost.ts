@@ -76,13 +76,13 @@ export function tierBars(model: string | undefined): string {
 }
 
 /** effort → mini-bar fill height (% of cell) — the design's EFF_H. */
-const EFF_H: Record<string, number> = { min: 22, low: 40, med: 60, medium: 60, high: 80, max: 100 };
+const EFF_H: Record<string, number> = { none: 22, min: 22, low: 40, med: 60, medium: 60, high: 80, max: 100 };
 export function effortHeight(effort: string | undefined): number {
   return EFF_H[(effort || "med").toLowerCase()] ?? 60;
 }
 
 /** effort → density (% of member color) for the model·effort timeline rane. */
-const EFF_MIX: Record<string, number> = { min: 38, low: 52, med: 66, medium: 66, high: 82, max: 100 };
+const EFF_MIX: Record<string, number> = { none: 38, min: 38, low: 52, med: 66, medium: 66, high: 82, max: 100 };
 export function effortMix(color: string, effort: string | undefined): string {
   const pct = EFF_MIX[(effort || "med").toLowerCase()] ?? 66;
   return `color-mix(in srgb, ${color} ${pct}%, var(--bg-2))`;

@@ -245,10 +245,24 @@
       "cacheReadPerM": 1,
       "cacheWritePerM": 12.5,
       "serviceTierPricing": {
-        "priority": { "inPerM": 20, "cacheReadPerM": 2, "cacheWritePerM": 25, "outPerM": 100 },
-        "fast": { "inPerM": 20, "cacheReadPerM": 2, "cacheWritePerM": 25, "outPerM": 100 }
+        "priority": {
+          "inPerM": 20,
+          "cacheReadPerM": 2,
+          "cacheWritePerM": 25,
+          "outPerM": 100
+        },
+        "fast": {
+          "inPerM": 20,
+          "cacheReadPerM": 2,
+          "cacheWritePerM": 25,
+          "outPerM": 100
+        }
       },
-      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
       "reasoning": {
         "effort": {
           "options": [
@@ -284,10 +298,24 @@
       "cacheReadPerM": 0.4,
       "cacheWritePerM": 5,
       "serviceTierPricing": {
-        "priority": { "inPerM": 8, "cacheReadPerM": 0.8, "cacheWritePerM": 10, "outPerM": 40 },
-        "fast": { "inPerM": 8, "cacheReadPerM": 0.8, "cacheWritePerM": 10, "outPerM": 40 }
+        "priority": {
+          "inPerM": 8,
+          "cacheReadPerM": 0.8,
+          "cacheWritePerM": 10,
+          "outPerM": 40
+        },
+        "fast": {
+          "inPerM": 8,
+          "cacheReadPerM": 0.8,
+          "cacheWritePerM": 10,
+          "outPerM": 40
+        }
       },
-      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
       "reasoning": {
         "effort": {
           "options": [
@@ -323,10 +351,24 @@
       "cacheReadPerM": 0.2,
       "cacheWritePerM": 2.5,
       "serviceTierPricing": {
-        "priority": { "inPerM": 4, "cacheReadPerM": 0.4, "cacheWritePerM": 5, "outPerM": 24 },
-        "fast": { "inPerM": 4, "cacheReadPerM": 0.4, "cacheWritePerM": 5, "outPerM": 24 }
+        "priority": {
+          "inPerM": 4,
+          "cacheReadPerM": 0.4,
+          "cacheWritePerM": 5,
+          "outPerM": 24
+        },
+        "fast": {
+          "inPerM": 4,
+          "cacheReadPerM": 0.4,
+          "cacheWritePerM": 5,
+          "outPerM": 24
+        }
       },
-      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
       "reasoning": {
         "effort": {
           "options": [
@@ -362,10 +404,24 @@
       "cacheReadPerM": 0.02,
       "cacheWritePerM": 0.25,
       "serviceTierPricing": {
-        "priority": { "inPerM": 0.4, "cacheReadPerM": 0.04, "cacheWritePerM": 0.5, "outPerM": 2.4 },
-        "fast": { "inPerM": 0.4, "cacheReadPerM": 0.04, "cacheWritePerM": 0.5, "outPerM": 2.4 }
+        "priority": {
+          "inPerM": 0.4,
+          "cacheReadPerM": 0.04,
+          "cacheWritePerM": 0.5,
+          "outPerM": 2.4
+        },
+        "fast": {
+          "inPerM": 0.4,
+          "cacheReadPerM": 0.04,
+          "cacheWritePerM": 0.5,
+          "outPerM": 2.4
+        }
       },
-      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
       "reasoning": {
         "effort": {
           "options": [
@@ -400,10 +456,22 @@
       "outPerM": 30,
       "ioPerM": 11.25,
       "serviceTierPricing": {
-        "priority": { "inPerM": 12.5, "cacheReadPerM": 1.25, "outPerM": 75 },
-        "fast": { "inPerM": 12.5, "cacheReadPerM": 1.25, "outPerM": 75 }
+        "priority": {
+          "inPerM": 12.5,
+          "cacheReadPerM": 1.25,
+          "outPerM": 75
+        },
+        "fast": {
+          "inPerM": 12.5,
+          "cacheReadPerM": 1.25,
+          "outPerM": 75
+        }
       },
-      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
       "reasoning": {
         "effort": {
           "options": [
@@ -437,10 +505,22 @@
       "outPerM": 15,
       "ioPerM": 5.63,
       "serviceTierPricing": {
-        "priority": { "inPerM": 5, "cacheReadPerM": 0.5, "outPerM": 30 },
-        "fast": { "inPerM": 5, "cacheReadPerM": 0.5, "outPerM": 30 }
+        "priority": {
+          "inPerM": 5,
+          "cacheReadPerM": 0.5,
+          "outPerM": 30
+        },
+        "fast": {
+          "inPerM": 5,
+          "cacheReadPerM": 0.5,
+          "outPerM": 30
+        }
       },
-      "longContextPricing": { "thresholdTokens": 272000, "inputMultiplier": 2, "outputMultiplier": 1.5 },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
       "reasoning": {
         "effort": {
           "options": [
@@ -474,8 +554,16 @@
       "outPerM": 4.5,
       "ioPerM": 1.69,
       "serviceTierPricing": {
-        "priority": { "inPerM": 1.5, "cacheReadPerM": 0.15, "outPerM": 9 },
-        "fast": { "inPerM": 1.5, "cacheReadPerM": 0.15, "outPerM": 9 }
+        "priority": {
+          "inPerM": 1.5,
+          "cacheReadPerM": 0.15,
+          "outPerM": 9
+        },
+        "fast": {
+          "inPerM": 1.5,
+          "cacheReadPerM": 0.15,
+          "outPerM": 9
+        }
       },
       "reasoning": {
         "effort": {
@@ -511,6 +599,7 @@
       "reasoning": {
         "effort": {
           "options": [
+            "none",
             "low",
             "high",
             "max"
@@ -964,6 +1053,7 @@
       "reasoning": {
         "effort": {
           "options": [
+            "none",
             "low",
             "high",
             "max"
@@ -1000,6 +1090,7 @@
       "reasoning": {
         "effort": {
           "options": [
+            "none",
             "low",
             "high",
             "max"
@@ -1357,6 +1448,88 @@
         "image": true,
         "maxImages": 20,
         "maxBytesPerImage": 5242880
+      }
+    },
+    {
+      "id": "DeepSeek V4.1 Flash B.AI",
+      "label": "DeepSeek V4.1 Flash (B.AI)",
+      "provider": "bai",
+      "baiModel": "deepseek-v4.1-flash",
+      "baiResponsesApi": true,
+      "subscription": false,
+      "description": "DeepSeek V4.1 Flash on B.AI's unified API, billed to B.AI credits. Busy-hour list price (idle is half; UTC+8 time-of-day pricing). Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-16, including none to disable reasoning.",
+      "context": "1M",
+      "costTier": 1,
+      "inPerM": 0.3,
+      "outPerM": 1.2,
+      "ioPerM": 0.525,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "high",
+            "max"
+          ],
+          "default": "high"
+        }
+      },
+      "vision": {
+        "image": true
+      }
+    },
+    {
+      "id": "DeepSeek V4 Pro B.AI",
+      "label": "DeepSeek V4 Pro (B.AI)",
+      "provider": "bai",
+      "baiModel": "deepseek-v4-pro",
+      "baiResponsesApi": true,
+      "subscription": false,
+      "description": "DeepSeek V4 Pro on B.AI's unified API, billed to B.AI credits. Busy-hour list price (idle is half; UTC+8 time-of-day pricing). Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-16, including none to disable reasoning.",
+      "context": "1M",
+      "perf": 2,
+      "costTier": 3,
+      "inPerM": 1.32,
+      "outPerM": 3.96,
+      "ioPerM": 1.98,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "high",
+            "max"
+          ],
+          "default": "high"
+        }
+      },
+      "vision": {
+        "image": false
+      }
+    },
+    {
+      "id": "DeepSeek V4 Flash Vision Exp B.AI",
+      "label": "DeepSeek V4 Flash Vision Exp (B.AI)",
+      "provider": "bai",
+      "baiModel": "deepseek-v4-flash-vision-exp",
+      "baiResponsesApi": true,
+      "subscription": false,
+      "description": "DeepSeek V4 Flash Vision Exp on B.AI's unified API, billed to B.AI credits. Experimental vision variant (served but not listed by GET /v1/models); none disables reasoning, and the verified selectable efforts are none/low/high/max. Prices from docs.b.ai; reachability and reasoning controls measured with real calls 2026-09-16.",
+      "context": "1M",
+      "costTier": 1,
+      "inPerM": 0.3,
+      "outPerM": 1.2,
+      "ioPerM": 0.525,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "high",
+            "max"
+          ],
+          "default": "high"
+        }
+      },
+      "vision": {
+        "image": true
       }
     }
   ]

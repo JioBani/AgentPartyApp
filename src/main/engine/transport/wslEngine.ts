@@ -2,6 +2,7 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { log } from "../../logger";
 import type { RemoteTransport } from "./remoteEngineClient";
 import { DEEPSEEK_API_KEY_ENV } from "../../../shared/deepseekDefaults";
+import { BAI_API_KEY_ENV } from "../../../shared/baiDefaults";
 import { claudeAgentSdkSpec } from "../../claudeSdkVersion";
 
 export interface WslEngineOptions {
@@ -17,6 +18,7 @@ export interface WslEngineOptions {
   /** Forwarded to the distro engine's router for router-backed models. */
   openRouterApiKey?: string;
   deepseekApiKey?: string;
+  baiApiKey?: string;
 }
 
 export interface WslEngineHandle {
@@ -58,6 +60,10 @@ export function spawnWslEngine(options: WslEngineOptions): WslEngineHandle {
     const env = { ...process.env };
     if (options.deepseekApiKey) {
       env[DEEPSEEK_API_KEY_ENV] = options.deepseekApiKey;
+    }
+    if (options.baiApiKey) {
+      env[BAI_API_KEY_ENV] = options.baiApiKey;
+      env.WSLENV = appendWslEnv(env.WSLENV, BAI_API_KEY_ENV);
     }
     if (options.openRouterApiKey) {
       env.OPENROUTER_API_KEY = options.openRouterApiKey;

@@ -82,6 +82,7 @@ import { invokePartyTool, type PartyBridge, type PartyModelQuery, type PartyTool
 import { IMAGE_MEDIA_TYPES, readImageFile } from "../../core/imageFile";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { buildModelRoutes, type ModelRoute } from "../../core/modelRegistry";
+import { matchingCapabilityOption, seedCapabilityOption } from "../../shared/modelOptions";
 import { resolveCatalogModel } from "../../shared/modelCatalog";
 import { harnesses } from "../harness/types";
 import { DEFAULT_CODEX_POLICY, isCodexPolicy, requireCodexPolicy, type CodexPolicy } from "../../shared/codexPolicy";
@@ -707,6 +708,15 @@ export class PartyApplicationService {
     // that member would have run before locations existed. An empty location
     // would instead read as "the user chose nowhere".
     const member = buildPartyMember({ ...input, partyId: party.id, location: input.location || workspace }, getSettings());
+    const controls = this.resolveMemberModelControls(
+      normalizeHarnessId(member.runtime),
+      member.model,
+      input.effort,
+      member.effort,
+      member.name,
+    );
+    member.model = controls.route.model;
+    member.effort = controls.effort;
     this.assertNotBetaLocked(normalizeHarnessId(member.runtime), member.model);
     this.assertSshHarnessSupported(member, normalizeHarnessId(member.runtime));
     if (state.members.some((item) => item.partyId === party.id && item.name === member.name)) {
@@ -899,28 +909,18 @@ export class PartyApplicationService {
     }
     const harnessId = normalizeHarnessId(member.runtime);
     const defaults = harnessDefaultsOf(getSettings(), harnessId);
-    const routes = buildModelRoutes(
-      member.model || defaults.model,
-      [],
-      [],
-      this.deps.sessionManager.getCodexModelState()?.models,
-    ).filter((route) => route.harnessId === harnessId);
-    const wantedModel = (input.model || member.model || defaults.model).trim();
-    const route = resolveMemberRuntimeRoute(routes, wantedModel, harnessId);
+    const controls = this.resolveMemberModelControls(
+      harnessId,
+      input.model || member.model || defaults.model,
+      input.effort,
+      member.effort,
+      member.name,
+    );
+    const route = controls.route;
     this.assertNotBetaLocked(harnessId, route.model);
 
     const currentEffort = member.effort;
-    const nextEffort = input.effort?.trim() || currentEffort;
-    const effortOptions = route.capabilities.effort.options.map((option) => option.id);
-    if (input.effort !== undefined && !route.capabilities.effort.supported) {
-      throw new Error(`Model '${route.model}' on ${harnessId} does not support an effort setting.`);
-    }
-    if (nextEffort && route.capabilities.effort.supported && !effortOptions.some((option) => option.toLowerCase() === nextEffort.toLowerCase())) {
-      throw new Error(`Effort '${nextEffort}' is not available for '${route.model}' on ${harnessId}. Use: ${effortOptions.join(", ")}.`);
-    }
-    const resolvedEffort = nextEffort && route.capabilities.effort.supported
-      ? effortOptions.find((option) => option.toLowerCase() === nextEffort.toLowerCase())
-      : undefined;
+    const resolvedEffort = controls.effort;
 
     const currentTier = normalizeServiceTierSelection(member.serviceTier);
     const tierCapability = route.capabilities.serviceTier;
@@ -1141,8 +1141,13 @@ export class PartyApplicationService {
       log("warn", "party", "member start blocked by its execution location", { workspace, partyId: member.partyId, member: member.name, location: member.location });
       return this.result(runtimeCwd.blocked, state, member);
     }
-    this.applyRuntimeDefaults(member, input);
-    const session = this.createMemberSession(workspace, member, input, options, runtimeCwd);
+    // Auto-prewarm may have been scheduled from a renderer snapshot that is
+    // already stale because the user changed model/effort immediately after
+    // creation. Its runtime fields are hints, never authority: start from the
+    // member's latest persisted controls so the later user change wins.
+    const effectiveInput: StartPartyMemberInput = input.auto ? { auto: true } : input;
+    this.applyRuntimeDefaults(member, effectiveInput);
+    const session = this.createMemberSession(workspace, member, effectiveInput, options, runtimeCwd);
     member.sessionId = session.id;
     member.sessionBootId = SESSION_BOOT_ID;
     member.status = "running";
@@ -3011,6 +3016,61 @@ export class PartyApplicationService {
     return Boolean(view && BUSY_SESSION_STATUSES.has(String(view.snapshot.status)));
   }
 
+  /**
+   * Resolves a model and effort as one catalog-owned setting. Explicit invalid
+   * input is rejected. An incompatible inherited/default effort is replaced by
+   * the model's declared default and logged, so persisted state never claims an
+   * effort the harness will ignore.
+   */
+  private resolveMemberModelControls(
+    harnessId: HarnessId,
+    model: string | undefined,
+    explicitEffort: string | undefined,
+    inheritedEffort: string | undefined,
+    memberName: string,
+  ): { route: ModelRoute; effort?: string } {
+    const wantedModel = model?.trim();
+    if (!wantedModel) {
+      throw new Error(`Member '${memberName}' has no model configured for ${harnessId}.`);
+    }
+    const routes = buildModelRoutes(
+      wantedModel,
+      [],
+      [],
+      this.deps.sessionManager.getCodexModelState()?.models,
+    ).filter((route) => route.harnessId === harnessId);
+    const route = resolveMemberRuntimeRoute(routes, wantedModel, harnessId);
+    const capability = route.capabilities.effort;
+    const optionIds = capability.options.map((option) => option.id);
+
+    if (explicitEffort !== undefined) {
+      if (!capability.supported) {
+        throw new Error(`Model '${route.model}' on ${harnessId} does not support an effort setting.`);
+      }
+      const effort = matchingCapabilityOption(capability, explicitEffort);
+      if (!effort) {
+        throw new Error(`Effort '${explicitEffort.trim()}' is not available for '${route.model}' on ${harnessId}. Use: ${optionIds.join(", ")}.`);
+      }
+      return { route, effort };
+    }
+
+    const effort = seedCapabilityOption(capability, inheritedEffort);
+    if (capability.supported && !effort) {
+      throw new Error(`Model '${route.model}' on ${harnessId} advertises effort support but has no selectable effort options.`);
+    }
+    if (inheritedEffort && matchingCapabilityOption(capability, inheritedEffort) === undefined) {
+      log("warn", "party", "incompatible inherited effort replaced by model default", {
+        member: memberName,
+        harnessId,
+        model: route.model,
+        inheritedEffort,
+        effort,
+        available: optionIds,
+      });
+    }
+    return { route, effort };
+  }
+
   private applyRuntimeDefaults(member: PartyMember, input: StartPartyMemberInput): void {
     if (input.permissionMode !== undefined && !isPermissionModeSetting(input.permissionMode)) {
       throw new Error(`Unknown Claude permission mode '${input.permissionMode}'.`);
@@ -3029,9 +3089,17 @@ export class PartyApplicationService {
     }
     // Fill unset fields from the member's own harness defaults (not one global).
     const defaults = harnessDefaultsOf(getSettings(), normalizeHarnessId(member.runtime));
-    member.model = input.model || member.model || defaults.model;
-    member.effort = input.effort || member.effort || defaults.effort;
     const harnessId = normalizeHarnessId(member.runtime);
+    const controls = this.resolveMemberModelControls(
+      harnessId,
+      input.model || member.model || defaults.model,
+      input.effort,
+      member.effort || defaults.effort,
+      member.name,
+    );
+    member.model = controls.route.model;
+    member.effort = controls.effort;
+    this.assertNotBetaLocked(harnessId, member.model);
     if (harnessId === "cursor") {
       member.cursorPolicy = cursorPolicyOf(
         requestedCursorPolicy || member.cursorPolicy || defaults.cursorPolicy,

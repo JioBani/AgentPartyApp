@@ -45,6 +45,7 @@ function catalogMakerText(entry: CatalogModel): string {
     entry.orModelId,
     entry.deepseekModel,
     entry.xaiModel,
+    entry.baiModel,
   ].filter(Boolean).join(" ");
 }
 

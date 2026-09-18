@@ -40,6 +40,7 @@ export type Backend =
   | { kind: "codex-account"; slug: string } // Codex built-in account model
   | { kind: "codex-claude-subscription"; model: string } // Codex app-server through local Claude OAuth
   | { kind: "codex-deepseek"; slug: string } // Codex routed through DeepSeek's own Responses API
+  | { kind: "codex-bai"; slug: string } // Codex routed through B.AI's Responses API
   | { kind: "codex-openrouter"; orModelId: string } // Codex routed through the OpenRouter custom provider
   | { kind: "cursor-agent"; slug: string }; // Cursor Agent named model
 
@@ -108,6 +109,9 @@ export function backendFor(model: string, harnessId: HarnessId): Backend | undef
     // straight through to the Codex account backend and 400'd there; only the
     // raw slug happened to work because codexProviderForModel matches slugs.
     return { kind: "codex-deepseek", slug: entry.deepseekModel };
+  }
+  if (entry.provider === "bai" && entry.baiResponsesApi === true && entry.baiModel) {
+    return { kind: "codex-bai", slug: entry.baiModel };
   }
   if (entry.provider === "openrouter" && entry.orModelId) {
     return { kind: "codex-openrouter", orModelId: entry.orModelId };
@@ -196,6 +200,7 @@ export function backendSlug(backend: Backend): string {
     case "codex-claude-subscription":
       return backend.model;
     case "codex-deepseek":
+    case "codex-bai":
       return backend.slug;
     case "codex-openrouter":
       return backend.orModelId;

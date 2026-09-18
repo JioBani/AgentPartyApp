@@ -11,7 +11,7 @@ import {
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import { invokePartyToolFromExecutionHost, partyToolNameOf, type PartyToolResult } from "../../core/partyBridge";
-import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
+import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, MemberRuntimeInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
@@ -35,7 +35,7 @@ import { migratePartyGroups, type MigrationReport } from "../partyGroupMigration
 import { cwdProblem, parseMemberLocation, type CwdPreferences, type CwdProblem, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../../shared/memberLocation";
 import { clearDefaultCwd, getCheckedCwdPreferences, getCwdPreferences, rememberCwd, removeRecentCwd, setDefaultCwd } from "../cwdPreferencesStore";
 import { appWorkspaceRoot, checkCwd, locationFromPickedFolder, wslDistros, wslHome } from "../cwdService";
-import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withClaudeNativeAuth, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
+import { clearBaiKey, clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setBaiKey, setDeepseekKey, setOpenRouterKey, testBaiKey, testDeepseekKey, testOpenRouterKey, withClaudeNativeAuth, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
@@ -1338,6 +1338,22 @@ export class AppController {
 
   async testDeepseekKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, await testDeepseekKey()), await this.getSubscriptionStatus()));
+  }
+
+  async setBaiKey(key: string, workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    const state = setBaiKey(key || "");
+    this.deps.onSettingsChanged();
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
+  }
+
+  async clearBaiKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    const state = clearBaiKey();
+    this.deps.onSettingsChanged();
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
+  }
+
+  async testBaiKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, await testBaiKey()), await this.getSubscriptionStatus()));
   }
 
   /** The full provider list, for the automation API's GET /api/auth. */
@@ -2771,6 +2787,11 @@ export class AppController {
    */
   setMemberPermission(workspacePath: string, name: string, permission: MemberPermissionInput, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberPermission"]>> {
     return this.handlePartyAction(workspacePath, name, "permission", permission, windowId) as Promise<ReturnType<PartyApplicationService["setMemberPermission"]>>;
+  }
+
+  /** Persists and applies model controls by member name, including before a session exists. */
+  setMemberRuntime(workspacePath: string, name: string, runtime: MemberRuntimeInput, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberRuntime"]>> {
+    return this.handlePartyAction(workspacePath, name, "runtime", runtime, windowId) as Promise<ReturnType<PartyApplicationService["setMemberRuntime"]>>;
   }
 
   /** Persists a member's Message Gate override (mode/rule/reviewer patch). UI + HTTP + agent share this path. */

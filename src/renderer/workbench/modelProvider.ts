@@ -21,7 +21,7 @@ import { findRoute, type RouteLike } from "./routes";
 /** The provider vocabulary is the catalog's own — one list, not a second one. */
 export type ModelProvider = CatalogProvider;
 
-const KNOWN: readonly string[] = ["anthropic", "openai", "openrouter", "cursor", "deepseek", "xai"];
+const KNOWN: readonly string[] = ["anthropic", "openai", "openrouter", "cursor", "deepseek", "xai", "bai"];
 
 /**
  * The provider behind a model string, or undefined when nothing can say.
@@ -62,6 +62,7 @@ const PROVIDER_LABEL: Record<ModelProvider, string> = {
   openai: "OpenAI",
   xai: "xAI",
   deepseek: "DeepSeek",
+  bai: "B.AI",
   openrouter: "OpenRouter",
   cursor: "Cursor",
 };

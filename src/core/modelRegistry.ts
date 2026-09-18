@@ -1,4 +1,5 @@
 import {
+  baiModels,
   catalogModelById,
   catalogModelByRuntime,
   claudeSubscriptionModels,
@@ -12,12 +13,12 @@ import {
 } from "../shared/modelCatalog";
 import type { CodexModelInfo } from "../shared/codexModels";
 import { SERVICE_TIER_INHERIT } from "../shared/types";
-import { CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_DEEPSEEK_PROVIDER, CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
+import { CODEX_BAI_PROVIDER, CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_DEEPSEEK_PROVIDER, CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
 import { crossHarnessLockReason } from "../shared/modelIdentity";
 import { grokReasoningEfforts } from "./grokAgentCli";
 
 export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
-export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "deepseek" | "xai" | "custom";
+export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "deepseek" | "xai" | "bai" | "custom";
 
 export interface HarnessDescriptor {
   id: HarnessId;
@@ -196,10 +197,11 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   for (const model of codexAccountModels()) {
     addRoute(routes, seen, codexRouteFromCatalog(model));
   }
-  // The catalog is authoritative for the claude-code model list. OpenAI models
+  // The catalog is authoritative for the claude-code model list. B.AI is
+  // Codex-only because its Messages endpoint discards reasoning controls.
   // retain the Claude SDK process while the embedded router forwards them to
   // the local Codex/ChatGPT subscription proxy.
-  for (const model of modelCatalog()) {
+  for (const model of modelCatalog().filter((entry) => entry.provider !== "bai")) {
     addRoute(routes, seen, routeFromCatalog(model));
   }
   // True OpenRouter catalog models stay token-billed on the OpenRouter custom
@@ -216,18 +218,21 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   for (const model of deepseekModels()) {
     addRoute(routes, seen, codexDeepseekRoute(model));
   }
+  for (const model of baiModels()) {
+    addRoute(routes, seen, codexBaiRoute(model));
+  }
   for (const route of grokHarnessRoutes()) {
     addRoute(routes, seen, route);
   }
   addRoute(routes, seen, cursorAutoRoute());
-  for (const model of modelCatalog().filter((entry) => Boolean(entry.cursorModel))) {
+  for (const model of modelCatalog().filter((entry) => entry.provider !== "bai" && Boolean(entry.cursorModel))) {
     addRoute(routes, seen, cursorRouteFromCatalog(model));
   }
   // Catalog completeness is independent from executable protocol support.
   // Cursor is an agent runtime, not an Anthropic/OpenAI-compatible model
   // endpoint, so unsupported combinations remain visible with an explicit
   // reason instead of disappearing or silently switching harnesses.
-  for (const model of modelCatalog().filter((entry) => !entry.cursorModel)) {
+  for (const model of modelCatalog().filter((entry) => entry.provider !== "bai" && !entry.cursorModel)) {
     addRoute(routes, seen, unavailableCursorHarnessRoute(model));
   }
   // The claude-code placeholder ("Cursor is an agent runtime, not an endpoint")
@@ -433,6 +438,54 @@ export function codexDeepseekRoute(model: CatalogModel): ModelRoute {
           unavailableReason:
             "DeepSeek does not serve this model on the OpenAI Responses API, which is the only wire the Codex harness speaks. No fallback will be attempted.",
         }),
+  };
+}
+
+/**
+ * A B.AI model on the codex harness, over B.AI's Responses surface.
+ *
+ * Every catalogued B.AI model is explicitly verified for Responses support.
+ * The route keeps the catalog id as its identity and the API slug as its
+ * runtime model so overlapping provider slugs remain unambiguous.
+ */
+export function codexBaiRoute(model: CatalogModel): ModelRoute {
+  // Product policy for the verified B.AI Responses set. Keep this authoritative
+  // over a stale remote catalog that may still advertise reasoning: null.
+  const effort = { options: ["none", "low", "high", "max"] as const, default: "high" as const };
+  const slug = model.baiModel || model.id;
+  const served = model.baiResponsesApi === true;
+  return {
+    harnessId: "codex",
+    providerId: model.provider,
+    model: model.id,
+    runtimeModel: slug,
+    modelProvider: CODEX_BAI_PROVIDER.id,
+    label: model.label,
+    description: `${model.description || ""} Runs on the Codex harness against B.AI's Responses API (billed to your B.AI credits).`.trim(),
+    pricing: { ...pricingFromCatalog(model), billing: "token" },
+    capabilities: {
+      effort: effort
+        ? {
+            supported: true,
+            mutableDuringSession: true,
+            defaultValue: effort.default,
+            options: effort.options.map((level) => ({ id: level, label: effortLabel(level) })),
+          }
+        : { supported: false, mutableDuringSession: false, options: [] },
+      thinking: { supported: false, mutableDuringSession: false },
+      permission: { supported: false, mutableDuringSession: false, options: [] },
+      vision: visionFromCatalog(model),
+    },
+    meta: {
+      perf: model.perf,
+      costTier: model.costTier,
+      inPerM: model.inPerM,
+      outPerM: model.outPerM,
+      ioPerM: model.ioPerM,
+      context: model.context,
+    },
+    enabled: served,
+    ...(served ? {} : { unavailableReason: "B.AI does not serve this model on the Responses API required by Codex. No fallback will be attempted." }),
   };
 }
 
@@ -696,6 +749,7 @@ function routeFromCatalog(model: CatalogModel): ModelRoute {
   const subscriptionRouted = model.provider === "openai" && Boolean(model.codexModel);
   const cursorRouted = model.provider === "cursor" && Boolean(model.cursorAcpModelId);
   const xaiRouted = model.provider === "xai" && Boolean(model.xaiModel);
+  const baiRouted = model.provider === "bai" && Boolean(model.baiModel);
   return {
     harnessId: "claude-code",
     providerId: model.provider,
@@ -709,7 +763,9 @@ function routeFromCatalog(model: CatalogModel): ModelRoute {
           ? `${model.description || ""} Runs on the Claude Code harness through your Cursor subscription (local ACP bridge).`.trim()
           : xaiRouted
             ? `${model.description || ""} Runs on the Claude Code harness through your Grok subscription (xAI's Anthropic-compatible API, signed in with \`grok login\`).`.trim()
-            : `${model.description || ""} Runs on the Claude Code harness via OpenRouter (billed to your OpenRouter key).`.trim()
+            : baiRouted
+              ? `${model.description || ""} Runs on the Claude Code harness against B.AI's Anthropic-compatible API (billed to your B.AI credits).`.trim()
+              : `${model.description || ""} Runs on the Claude Code harness via OpenRouter (billed to your OpenRouter key).`.trim()
       : model.description,
     pricing: subscriptionRouted
       ? { billing: "subscription", directPrice: "Codex subscription", context: model.context }

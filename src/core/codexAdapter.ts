@@ -20,6 +20,7 @@ import type { CodexPolicy, SandboxMode } from "../shared/codexPolicy";
 import { codexPolicyFromPermissionMode } from "../shared/codexPolicy";
 import {
   CODEX_CLAUDE_SUBSCRIPTION_PROVIDER,
+  CODEX_BAI_PROVIDER,
   CODEX_DEEPSEEK_PROVIDER,
   CODEX_OPENROUTER_PROVIDER,
   codexProviderConfigArgs,
@@ -55,6 +56,8 @@ export interface CodexAdapterOptions {
   id: string;
   cwd: string;
   model: string;
+  /** Explicit custom provider from the selected route; required for overlapping slugs. */
+  modelProvider?: string;
   effort: ClaudeEffort;
   /** Native Codex serving tier id from model/list (for example `priority` / Fast). */
   serviceTier?: string;
@@ -93,11 +96,14 @@ export interface CodexAdapterOptions {
    */
   openRouterApiKey?: string;
   deepseekApiKey?: string;
+  baiApiKey?: string;
   /** Local CLIProxyAPI connection used for Claude OAuth cross-routing. */
   subscriptionProxyBaseUrl?: string;
   subscriptionProxyApiKey?: string;
   /** Authentication generation already present before this process starts. */
   authenticationGeneration?: string;
+  /** Main-process timing sink for each pre-thread startup stage. */
+  onStartupStage?: (stage: string, elapsedMs: number) => void;
 }
 
 type JsonRpcId = string;
@@ -131,6 +137,8 @@ export class CodexAdapter extends EventEmitter {
   private started = false;
   private disposed = false;
   private initializing: Promise<void> | undefined;
+  /** Invalidates an older async startup when a runtime change restarts it. */
+  private startupGeneration = 0;
   private status = "created";
   private turnState: string | undefined;
   private sessionId = "";
@@ -200,6 +208,10 @@ export class CodexAdapter extends EventEmitter {
    * the config says Fast; any other id (`priority`) is forwarded verbatim.
    */
   private serviceTierParam(): string | null | undefined {
+    // B.AI does not advertise serving tiers. Explicitly clear a user-level
+    // Codex Fast/priority default so app-server does not warn and omit it for
+    // every B.AI thread/turn.
+    if (this.currentProvider()?.id === CODEX_BAI_PROVIDER.id) return null;
     const tier = normalizeServiceTierSelection(this.options.serviceTier);
     if (!tier) return undefined;
     return tier === "standard" || tier === "default" ? null : tier;
@@ -208,11 +220,11 @@ export class CodexAdapter extends EventEmitter {
   /**
    * The custom provider the current model routes through (OpenRouter etc.), or
    * undefined for the built-in openai account catalog. Derived from the model
-   * slug via the shared catalog so no extra plumbing is threaded through the
-   * session layers. See codexProviders.ts.
+   * selected route. Slug inference remains for legacy callers, but route data
+   * wins because two providers may legitimately serve the same model id.
    */
   private currentProvider(): CodexCustomProvider | undefined {
-    const provider = codexProviderForModel(this.options.model);
+    const provider = codexProviderForModel(this.options.model, this.options.modelProvider);
     if (provider?.id !== CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id) {
       return provider;
     }
@@ -234,9 +246,13 @@ export class CodexAdapter extends EventEmitter {
       slashCommands: this.inventory,
       at: now(),
     });
-    this.initializing = this.ensureThreadWithSqliteRetry();
-    this.initializing.catch((error) => {
-      if (!this.disposed) this.finishWithError(error);
+    const generation = ++this.startupGeneration;
+    const initializing = this.ensureThreadWithSqliteRetry(generation);
+    this.initializing = initializing;
+    initializing.catch((error) => {
+      if (!this.disposed && generation === this.startupGeneration && this.initializing === initializing) {
+        this.finishWithError(error);
+      }
     });
     this.emit("snapshot", this.getSnapshot());
   }
@@ -428,6 +444,7 @@ export class CodexAdapter extends EventEmitter {
 
   dispose(): void {
     this.disposed = true;
+    this.startupGeneration += 1;
     this.stopUsagePolling();
     this.logger?.close();
     this.logger = undefined;
@@ -485,9 +502,10 @@ export class CodexAdapter extends EventEmitter {
     this.emit("snapshot", this.getSnapshot());
   }
 
-  setModel(model: string): void {
+  setModel(model: string, modelProvider?: string): void {
     const previousProvider = this.currentProvider()?.id;
-    (this.options as { model: string }).model = model;
+    (this.options as { model: string; modelProvider?: string }).model = model;
+    (this.options as { model: string; modelProvider?: string }).modelProvider = modelProvider;
     const nextProvider = this.currentProvider()?.id;
     if (previousProvider !== nextProvider && this.started) {
       this.emitEvent({
@@ -647,22 +665,34 @@ export class CodexAdapter extends EventEmitter {
    */
   private spawnState: "starting" | "running" | "failed" = "starting";
 
-  private async ensureThread(): Promise<void> {
-    if (this.currentProvider()?.id === CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id) {
-      await assertSubscriptionModelAvailable(this.options.model, "claude", this.subscriptionProxy());
-    }
-    await withAgentPartyCodexStartup(async () => {
-      if (this.disposed) {
-        throw new Error("Codex session was stopped before startup initialization.");
+  private async ensureThread(generation: number): Promise<void> {
+    const totalStarted = Date.now();
+    try {
+      if (this.currentProvider()?.id === CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id) {
+        await this.measureStartupStage("provider-preflight", () => assertSubscriptionModelAvailable(this.options.model, "claude", this.subscriptionProxy()));
+        this.assertCurrentStartup(generation);
       }
-      this.ensureProcess();
-      await this.initializeServer();
-    });
-    await this.resolveUnsupportedHostSkills();
-    if (this.sessionId) {
-      await this.resumeThread();
-    } else {
-      await this.startThread();
+      const lockStarted = Date.now();
+      await withAgentPartyCodexStartup(async () => {
+        this.reportStartupStage("startup-lock", Date.now() - lockStarted);
+        this.assertCurrentStartup(generation);
+        const spawnStarted = Date.now();
+        this.ensureProcess();
+        this.reportStartupStage("process-spawn", Date.now() - spawnStarted);
+        await this.measureStartupStage("initialize", () => this.initializeServer());
+        this.assertCurrentStartup(generation);
+      });
+      this.assertCurrentStartup(generation);
+      await this.measureStartupStage("skills-list", () => this.resolveUnsupportedHostSkills());
+      this.assertCurrentStartup(generation);
+      if (this.sessionId) {
+        await this.measureStartupStage("thread-resume", () => this.resumeThread());
+      } else {
+        await this.measureStartupStage("thread-start", () => this.startThread());
+      }
+      this.assertCurrentStartup(generation);
+    } finally {
+      this.reportStartupStage("total", Date.now() - totalStarted);
     }
   }
 
@@ -673,14 +703,14 @@ export class CodexAdapter extends EventEmitter {
    * retry only the concrete transient startup failure instead of asking the
    * user to click restart again or deleting databases.
    */
-  private async ensureThreadWithSqliteRetry(): Promise<void> {
+  private async ensureThreadWithSqliteRetry(generation: number): Promise<void> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        await this.ensureThread();
+        await this.ensureThread(generation);
         return;
       } catch (error) {
         const delayMs = CodexAdapter.SQLITE_STARTUP_RETRY_DELAYS_MS[attempt];
-        if (delayMs === undefined || this.disposed || !isSqliteStateRuntimeStartupError(error)) {
+        if (delayMs === undefined || this.disposed || generation !== this.startupGeneration || !isSqliteStateRuntimeStartupError(error)) {
           throw error;
         }
         if (this.options.sqliteHome && isStalledSqliteBackfillError(error)) {
@@ -693,7 +723,32 @@ export class CodexAdapter extends EventEmitter {
         this.status = "starting";
         this.turnState = "sqlite-retry";
         await new Promise((resolve) => setTimeout(resolve, delayMs));
+        this.assertCurrentStartup(generation);
       }
+    }
+  }
+
+  private assertCurrentStartup(generation: number): void {
+    if (this.disposed || generation !== this.startupGeneration) {
+      throw new Error("Codex startup was superseded by a newer runtime configuration.");
+    }
+  }
+
+  private async measureStartupStage<T>(stage: string, task: () => Promise<T>): Promise<T> {
+    const started = Date.now();
+    try {
+      return await task();
+    } finally {
+      this.reportStartupStage(stage, Date.now() - started);
+    }
+  }
+
+  private reportStartupStage(stage: string, elapsedMs: number): void {
+    try {
+      this.options.onStartupStage?.(stage, elapsedMs);
+    } catch {
+      // Metrics must never alter harness startup. The main sink is expected to
+      // log, but an injected QA sink may throw.
     }
   }
 
@@ -724,6 +779,9 @@ export class CodexAdapter extends EventEmitter {
         : {}),
       ...(provider?.id === CODEX_DEEPSEEK_PROVIDER.id && this.options.deepseekApiKey
         ? { [CODEX_DEEPSEEK_PROVIDER.envKey]: this.options.deepseekApiKey }
+        : {}),
+      ...(provider?.id === CODEX_BAI_PROVIDER.id && this.options.baiApiKey
+        ? { [CODEX_BAI_PROVIDER.envKey]: this.options.baiApiKey }
         : {}),
       ...(provider?.id === CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id
         ? { [CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.envKey]: this.subscriptionProxy().apiKey }
@@ -885,6 +943,11 @@ export class CodexAdapter extends EventEmitter {
     if (!provider) {
       return undefined;
     }
+    if (provider.id === CODEX_BAI_PROVIDER.id && !this.options.baiApiKey) {
+      throw new Error(
+        `Model '${this.options.model}' routes through B.AI, but no B.AI API key is configured. Add the key in Settings before starting this Codex member.`,
+      );
+    }
     if (provider.id === CODEX_DEEPSEEK_PROVIDER.id && !this.options.deepseekApiKey) {
       throw new Error(
         `Model '${this.options.model}' routes through DeepSeek's own API, but no DeepSeek API key is configured. Add the key in Settings before starting this Codex member.`,
@@ -1041,7 +1104,7 @@ export class CodexAdapter extends EventEmitter {
     this.emitEvent({ type: "status", status: "sent", detail: text, at: now() });
 
     try {
-      await this.initializing;
+      await this.awaitCurrentInitialization();
       if (!this.sessionId) {
         throw new Error("Codex app-server did not provide a thread id.");
       }
@@ -1060,7 +1123,7 @@ export class CodexAdapter extends EventEmitter {
         approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
         sandboxPolicy: sandboxPolicyObject(this.policy.sandbox),
         model: this.options.model,
-        effort: effortFor(this.options.model, this.options.effort),
+        effort: effortFor(this.options.model, this.options.effort, this.currentProvider()?.id),
         // The model catalog owns the wire id (`priority` is labelled Fast).
         // Re-send it per turn because Codex allows this setting to change at
         // turn scope and a resumed thread may have a different prior value.
@@ -1084,6 +1147,21 @@ export class CodexAdapter extends EventEmitter {
     this.log("out", message);
     this.process.stdin.write(`${JSON.stringify(message)}\n`);
     return promise;
+  }
+
+  /** A first turn follows a runtime-triggered restart instead of failing on the superseded startup. */
+  private async awaitCurrentInitialization(): Promise<void> {
+    for (;;) {
+      const initializing = this.initializing;
+      if (!initializing) return;
+      try {
+        await initializing;
+      } catch (error) {
+        if (initializing !== this.initializing) continue;
+        throw error;
+      }
+      if (initializing === this.initializing) return;
+    }
   }
 
   private notify(method: string, params: unknown): void {
@@ -1722,6 +1800,16 @@ export class CodexAdapter extends EventEmitter {
             pricing: pricingForModel(this.options.model),
             usage: this.lastUsage,
           }
+        : provider?.id === CODEX_DEEPSEEK_PROVIDER.id || provider?.id === CODEX_BAI_PROVIDER.id
+          ? {
+              // Own-key providers bill per token; labelling these turns "Codex
+              // subscription" hid a real charge behind a flat-rate label.
+              providerId: provider.id === CODEX_BAI_PROVIDER.id ? "bai" : "deepseek",
+              model: this.options.model,
+              runtimeModel: this.options.model,
+              pricing: pricingForModel(this.options.model),
+              usage: this.lastUsage,
+            }
         : provider?.id === CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id
           ? {
               providerId: "anthropic",
@@ -1819,13 +1907,18 @@ export class CodexAdapter extends EventEmitter {
     this.shutdownProcess();
     this.status = "starting";
     this.turnState = "auth-reconnect";
-    this.initializing = this.ensureThread();
+    const generation = ++this.startupGeneration;
+    const initializing = this.ensureThreadWithSqliteRetry(generation);
+    this.initializing = initializing;
     try {
-      await this.initializing;
+      await initializing;
+      if (generation !== this.startupGeneration || this.initializing !== initializing) return;
       this.emitEvent({ type: "status", status: "auth-reconnected", detail: "Codex authentication reconnected", at: now() });
       this.drainQueuedTurn();
     } catch (error) {
-      this.finishWithError(error);
+      if (generation === this.startupGeneration && this.initializing === initializing) {
+        this.finishWithError(error);
+      }
     }
   }
 
@@ -1932,7 +2025,12 @@ function sandboxPolicyObject(mode: SandboxMode): unknown {
   return { type: "readOnly", networkAccess: false };
 }
 
-function effortFor(model: string, effort: ClaudeEffort): string | null {
+function effortFor(model: string, effort: ClaudeEffort, modelProvider?: string): string | null {
+  // B.AI's supported Codex routes all use Responses reasoning.effort. Keep
+  // sending it even if a stale remote catalog still carries reasoning: null.
+  if (modelProvider === CODEX_BAI_PROVIDER.id) {
+    return effort;
+  }
   const catalogModel = resolveCatalogModel(model);
   if (catalogModel && !catalogModel.reasoning?.effort) {
     return null;

@@ -15,6 +15,7 @@ import { HARNESS_IDS, harnessLabel } from "../../shared/types";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 import { ModelIcon } from "./ModelIcon";
 import { ProviderIcon } from "./ProviderIcon";
+import { seedCapabilityOption } from "../../shared/modelOptions";
 
 /** Which optional sections a given usage of the catalog exposes. */
 export interface ModelCatalogConfig {
@@ -236,10 +237,9 @@ export function ModelCatalogModal({
 
   const baselineEffort = (key: string): string => {
     if (!effortCap?.supported) {
-      return value.effort || "medium";
+      return "";
     }
-    const current = key === currentKey && effortCap.options.some((option) => option.id === value.effort) ? value.effort : "";
-    return current || effortCap.defaultValue || "medium";
+    return seedCapabilityOption(effortCap, key === currentKey ? value.effort : undefined) || "";
   };
   const baselineThinking = (key: string): string => {
     if (!thinkingCap?.supported) {

@@ -84,7 +84,7 @@ export interface PartyCreateMemberRequest {
 export interface PartyModelQuery {
   /** Harness id (`claude-code` | `codex` | `cursor` | `grok`). */
   harness?: string;
-  /** Provider id (`anthropic` | `openai` | `openrouter` | `xai` | `cursor` | `deepseek`). */
+  /** Provider id (`anthropic` | `openai` | `openrouter` | `xai` | `cursor` | `deepseek` | `bai`). */
   provider?: string;
   /** Case-insensitive substring matched against both the model id and its label. */
   query?: string;
@@ -309,7 +309,7 @@ const partyCreateMemberDynamicProperties: Record<string, unknown> = {
   model: { type: "string", description: "Model id from list-models." },
   reasoning: { type: "string", description: "Reasoning/thinking mode: adaptive | enabled | disabled." },
   reasoningBudget: { type: "number", description: "Thinking token budget when applicable." },
-  effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
+  effort: { type: "string", description: "Model-supported effort, e.g. none | low | medium | high | xhigh | max." },
   serviceTier: { type: "string", description: "Optional service tier from list-models. Omit (or pass 'inherit') to follow the harness's own config; 'standard' forces the default speed; a native id like 'priority' forces Fast (higher credit burn)." },
   permissionMode: { type: "string", description: "Initial Claude permission: default | acceptEdits | bypassPermissions | plan | dontAsk | auto." },
   location: {
@@ -456,7 +456,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
         description: "Custom reviewer for this axis (null = no axis-specific reviewer; the other active axis may still select one).",
         properties: {
           model: { type: "string", description: "Model id from list-models." },
-          effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
+          effort: { type: "string", description: "Model-supported effort, e.g. none | low | medium | high | xhigh | max." },
           serviceTier: { type: "string", description: "Concrete serving tier from list-models, for example standard or priority (Fast). Do not pass inherit." },
         },
         required: ["model", "effort"],
@@ -477,7 +477,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
         description: "Party-wide reviewer for this axis (null = no axis-specific reviewer). A member's matching-axis reviewer still wins.",
         properties: {
           model: { type: "string", description: "Model id from list-models." },
-          effort: { type: "string", description: "Effort level: low | medium | high | xhigh | max." },
+          effort: { type: "string", description: "Model-supported effort, e.g. none | low | medium | high | xhigh | max." },
           serviceTier: { type: "string", description: "Concrete serving tier from list-models, for example standard or priority (Fast). Do not pass inherit." },
         },
         required: ["model", "effort"],
@@ -498,7 +498,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     type: "object",
     properties: {
       harness: { type: "string", description: "Only models runnable on this harness: claude-code | codex | cursor | grok." },
-      provider: { type: "string", description: "Only models served by this provider: anthropic | openai | openrouter | xai | cursor | deepseek." },
+      provider: { type: "string", description: "Only models served by this provider: anthropic | openai | openrouter | xai | cursor | deepseek | bai." },
       query: { type: "string", description: "Case-insensitive substring matched against the model id AND its label, e.g. \"grok\" or \"4.6\"." },
       includeUnavailable: { type: "boolean", description: "Include routes that cannot currently be used, each with the reason. Default false; the excluded count is reported either way." },
     },
@@ -970,7 +970,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     model: z.string().optional().describe("Model id from list-models."),
     reasoning: z.string().optional().describe("Reasoning/thinking mode: adaptive | enabled | disabled."),
     reasoningBudget: z.number().optional().describe("Thinking token budget when applicable."),
-    effort: z.string().optional().describe("Effort level: low | medium | high | xhigh | max."),
+    effort: z.string().optional().describe("Model-supported effort, e.g. none | low | medium | high | xhigh | max."),
     serviceTier: z.string().optional().describe("Optional service tier from list-models. Omit (or 'inherit') to follow the harness's own config; 'standard' forces default speed; 'priority' forces Fast."),
     permissionMode: z.string().optional().describe("Initial Claude permission mode."),
     location: z.object({
@@ -1066,7 +1066,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         rule: z.string().nullable().optional().describe("Communication rule the reviewer enforces (null = inherit the party rule)."),
         reviewer: z.object({
           model: z.string().describe("Model id from list-models."),
-          effort: z.string().describe("Effort level: low | medium | high | xhigh | max."),
+          effort: z.string().describe("Model-supported effort, e.g. none | low | medium | high | xhigh | max."),
           serviceTier: z.string().optional().describe("Concrete serving tier from list-models, e.g. standard or priority (Fast). Do not pass inherit."),
         }).nullable().optional().describe("Custom reviewer for this axis (null = no axis-specific reviewer; the other active axis may still select one)."),
       },
@@ -1081,7 +1081,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         rule: z.string().optional().describe("Communication rule enforced party-wide for inheriting members."),
         reviewer: z.object({
           model: z.string().describe("Model id from list-models."),
-          effort: z.string().describe("Effort level: low | medium | high | xhigh | max."),
+          effort: z.string().describe("Model-supported effort, e.g. none | low | medium | high | xhigh | max."),
           serviceTier: z.string().optional().describe("Concrete serving tier from list-models, e.g. standard or priority (Fast). Do not pass inherit."),
         }).nullable().optional().describe("Party-wide reviewer for this axis (null = no axis-specific reviewer). A member's matching-axis reviewer still wins."),
       },
@@ -1099,7 +1099,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       partyDynamicToolDescriptions["list-models"],
       {
         harness: z.string().optional().describe("Only models runnable on this harness: claude-code | codex | cursor | grok."),
-        provider: z.string().optional().describe("Only models served by this provider: anthropic | openai | openrouter | xai | cursor | deepseek."),
+        provider: z.string().optional().describe("Only models served by this provider: anthropic | openai | openrouter | xai | cursor | deepseek | bai."),
         query: z.string().optional().describe("Case-insensitive substring matched against the model id AND its label, e.g. \"grok\" or \"4.6\"."),
         includeUnavailable: z.boolean().optional().describe("Include routes that cannot currently be used, each with the reason. Default false; the excluded count is reported either way."),
       },

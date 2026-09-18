@@ -35,6 +35,7 @@ try {
     members: [
       { name: "main", role: "MCP caller", autoReply: false },
       { name: "worker", role: "runtime target", runtime: "cursor", model: "Grok 4.5", effort: "medium", autoReply: false },
+      { name: "codex-worker", role: "pre-start runtime target", runtime: "codex", model: "gpt-5.4", effort: "medium", autoReply: false },
     ],
   });
   const partyId = seeded.currentPartyId;
@@ -64,6 +65,20 @@ try {
   const httpChange = await post("/api/party/members/worker/runtime", { fast: false, effort: "low" });
   const afterHttp = await member("worker");
   assert(httpChange.ok && afterHttp?.serviceTier === "standard" && afterHttp?.effort === "low", "HTTP runtime action shares the same catalog-validated implementation");
+
+  const codexBefore = await member("codex-worker");
+  const baiChange = await invoke("member-runtime", { name: "codex-worker", model: "DeepSeek V4.1 Flash B.AI" });
+  const codexAfter = await member("codex-worker");
+  assert(baiChange.ok && codexAfter?.model === "DeepSeek V4.1 Flash B.AI" && codexAfter?.effort === "high", "model-only MCP change replaces an incompatible inherited effort with the B.AI default");
+  assert(codexAfter?.sessionId === codexBefore?.sessionId, "same-harness model and effort change is applied without losing the prewarmed session");
+  const noneBaiEffort = await invoke("member-runtime", { name: "codex-worker", effort: "none" });
+  assert(noneBaiEffort.ok && (await member("codex-worker"))?.effort === "none", "B.AI accepts the verified none effort through real stdio MCP");
+  const invalidBaiEffort = await invoke("member-runtime", { name: "codex-worker", effort: "medium" });
+  assert(!invalidBaiEffort.ok && /Use: none, low, high, max/.test(invalidBaiEffort.error || ""), "B.AI rejects a non-advertised effort instead of silently changing it");
+  await post("/api/party/members/codex-worker/close", {});
+  const stoppedBaiChange = await invoke("member-runtime", { name: "codex-worker", effort: "max" });
+  const stoppedCodex = await member("codex-worker");
+  assert(stoppedBaiChange.ok && stoppedCodex?.status === "closed" && stoppedCodex?.effort === "max", "MCP runtime change persists before a member session exists");
 
   const self = await invoke("member-runtime", { name: "main", effort: "high" });
   assert(!self.ok && /calling member/i.test(self.error || ""), "MCP refuses to mutate its own in-flight caller session");

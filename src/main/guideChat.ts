@@ -7,7 +7,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { SessionManager } from "./sessionManager";
-import type { HarnessId } from "../shared/types";
+import type { EffortSetting, HarnessId } from "../shared/types";
 import { getSettings } from "./settings";
 import { getUserDataDir } from "./userDataDir";
 import { log } from "./logger";
@@ -180,7 +180,7 @@ export class GuideChatHost {
     return this.view(kind);
   }
 
-  private ensureSession(kind: GuideChatKind, route: { model: string; effort: "low" | "medium" | "high" | "xhigh" | "max" }): string {
+  private ensureSession(kind: GuideChatKind, route: { model: string; effort: EffortSetting }): string {
     const live = kind === "chatbot" ? this.chatbot : this.slide;
     if (live.sessionId && this.deps.sessionManager.listSessions().some((session) => session.id === live.sessionId)) {
       return live.sessionId;

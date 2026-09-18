@@ -7,6 +7,7 @@ import { DEFAULT_CURSOR_POLICY, cursorPolicyOf } from "../shared/cursorPolicy";
 import { DEFAULT_AUTO_COMPACT, normalizeAutoCompact } from "../shared/autoCompact";
 import { DEFAULT_IDLE_SLEEP, sanitizeIdleSleep } from "../shared/idleSleep";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
+import { BAI_API_KEY_ENV } from "../shared/baiDefaults";
 import { catalogModelById, catalogModelByRuntime } from "../shared/modelCatalog";
 import { normalizeGateReviewer, type GateReviewer } from "../shared/messageGate";
 import { DEFAULT_DISCORD_SETTINGS, normalizeDiscordSettings } from "../shared/discordBridge";
@@ -70,6 +71,7 @@ const defaults: AppSettings = {
   routerAuthToken: "dummy",
   openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
   deepseekApiKey: process.env[DEEPSEEK_API_KEY_ENV] || "",
+  baiApiKey: process.env[BAI_API_KEY_ENV] || "",
   automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 0,
   transcriptFontScale: 1,
   theme: DEFAULT_THEME_PREFERENCE,
@@ -247,6 +249,7 @@ export function getPublicSettings(): AppSettings {
     ...settings,
     openRouterApiKey: settings.openRouterApiKey ? maskSecret(settings.openRouterApiKey) || "" : "",
     deepseekApiKey: settings.deepseekApiKey ? maskSecret(settings.deepseekApiKey) || "" : "",
+    baiApiKey: settings.baiApiKey ? maskSecret(settings.baiApiKey) || "" : "",
     routerAuthToken: settings.routerAuthToken ? "[redacted]" : "",
     // The bot token is a bot credential — never leaves the main process in clear.
     discord: { ...settings.discord!, botToken: settings.discord?.botToken ? maskSecret(settings.discord.botToken) || "" : "" },
