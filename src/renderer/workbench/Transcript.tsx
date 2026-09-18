@@ -76,7 +76,28 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
   // notifications can request the same expensive scrollHeight read again in the
   // same frame, so suppress only those duplicates until the next frame.
   const pinnedThisFrameRef = useRef(false);
+  // A programmatic pin dispatches its scroll event asynchronously. Content can
+  // grow again before that event runs, making the handler see a temporary gap
+  // and incorrectly interpret OUR scroll as the user scrolling up. Remember
+  // the exact scrollTop we assigned so that late event is identified by origin,
+  // rather than by a timing guess that varies with rendering/stream load.
+  const autoPinTargetRef = useRef<number | null>(null);
   const lastText = lastBlockText(view.transcript);
+  const latestOwnTurnId = lastOwnUserTurnId(view.transcript);
+  // Existing history is not a new send. Record every own turn present on the
+  // first render so only a later optimistic/queue-delivered user bubble can
+  // deliberately resume following the bottom.
+  const seenOwnTurnIdsRef = useRef<Set<string> | null>(null);
+  if (seenOwnTurnIdsRef.current === null) {
+    seenOwnTurnIdsRef.current = new Set(
+      view.transcript.filter(isOwnUserTurn).map((block) => block.id),
+    );
+  }
+  // An unpinned view's position, as a fraction of the scroll range, waiting to
+  // be re-applied while font scaling reflows the content. Declared before the
+  // send-follow effect because a deliberate jump to the new turn cancels any
+  // older position restore still inside its bounded window.
+  const pendingRatioRef = useRef<{ ratio: number; until: number } | null>(null);
 
   // The history WINDOW remains 150 blocks. Its DOM mounts progressively: the
   // newest 20 are enough to make the panel useful, while the offscreen prefix
@@ -129,7 +150,9 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
       pendingPinRef.current = true;
       return;
     }
-    node.scrollTop = node.scrollHeight;
+    const target = Math.max(0, node.scrollHeight - node.clientHeight);
+    autoPinTargetRef.current = target;
+    node.scrollTop = target;
     pinnedThisFrameRef.current = true;
     requestAnimationFrame(() => {
       pinnedThisFrameRef.current = false;
@@ -140,17 +163,32 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
     });
   };
 
-  // New content keeps the bottom pinned (only if the user hasn't scrolled up).
+  // New content keeps the bottom pinned if the user hasn't scrolled up. The
+  // user's OWN new turn is different: sending means they have left the older
+  // reading position and now need to see the sent bubble plus its reply, so it
+  // explicitly resumes bottom following. Background/member output still never
+  // steals a deliberately unpinned viewport.
   // Depend on the last block's text LENGTH, not its content: the pin only needs
   // to run when the block grew, and the full string as a dep would make React
   // compare the whole streamed text on every render.
-  useLayoutEffect(stickToBottom, [view.transcript.length, lastText.length]);
+  useLayoutEffect(() => {
+    const seen = seenOwnTurnIdsRef.current!;
+    if (latestOwnTurnId && !seen.has(latestOwnTurnId)) {
+      // Mark the complete current set. If an optimistic queued bubble is later
+      // retracted, falling back to an older own turn must not look like another
+      // new send and cause a second jump.
+      for (const block of view.transcript) {
+        if (isOwnUserTurn(block)) seen.add(block.id);
+      }
+      stickRef.current = true;
+      pendingRatioRef.current = null;
+    }
+    stickToBottom();
+  }, [view.transcript.length, lastText.length, latestOwnTurnId]);
 
-  // An unpinned view's position, as a fraction of the scroll range, waiting to
-  // be re-applied while font scaling reflows the content. content-visibility can
-  // reveal card sizes over several frames, so ResizeObserver reapplies it during
-  // a short bounded window instead of restoring once at a guessed moment.
-  const pendingRatioRef = useRef<{ ratio: number; until: number } | null>(null);
+  // content-visibility can reveal card sizes over several frames, so
+  // ResizeObserver reapplies the pending ratio during a short bounded window
+  // instead of restoring once at a guessed moment.
   // First call of a burst captures the current ratio; calls inside the window
   // only keep the already-captured (earlier, less distorted) ratio alive.
   const holdOrCaptureRatio = (node: HTMLElement) => {
@@ -175,7 +213,10 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
     const node = scrollRef.current;
     if (!node) return;
     const onWheelZoom = (event: WheelEvent) => {
-      if (!event.ctrlKey) return;
+      if (!event.ctrlKey) {
+        autoPinTargetRef.current = null;
+        return;
+      }
       event.preventDefault();
       // An unpinned view's position must be captured BEFORE the scale changes:
       // the new scale reshapes scrollHeight immediately, so a later capture
@@ -238,12 +279,27 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
   const onScroll = () => {
     const node = scrollRef.current;
     if (node) {
-      stickRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+      const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+      const autoTarget = autoPinTargetRef.current;
+      if (stickRef.current && autoTarget !== null && Math.abs(node.scrollTop - autoTarget) < 2) {
+        autoPinTargetRef.current = null;
+        // A resize/text delta raced the scroll event from our previous pin. Its
+        // old target is still recognizable even if the new bottom moved away.
+        if (!atBottom) stickToBottom();
+        return;
+      }
+      autoPinTargetRef.current = null;
+      stickRef.current = atBottom;
     }
   };
 
   return (
-    <div className={"wb-transcript density-" + density} ref={scrollRef} onScroll={onScroll}>
+    <div
+      className={"wb-transcript density-" + density}
+      ref={scrollRef}
+      onScroll={onScroll}
+      onPointerDown={() => { autoPinTargetRef.current = null; }}
+    >
       {/* Layout zoom on the inner wrapper keeps Chromium's glyph rasterization
           sharp. The scroller itself remains unscaled so its viewport geometry
           and compositor scrolling stay stable. */}
@@ -2300,4 +2356,17 @@ function lastBlockText(blocks: TranscriptBlock[]): string {
     return "";
   }
   return "text" in last ? last.text : last.kind;
+}
+
+function isOwnUserTurn(block: TranscriptBlock): boolean {
+  return block.kind === "user" && !block.from;
+}
+
+function lastOwnUserTurnId(blocks: TranscriptBlock[]): string {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    if (isOwnUserTurn(blocks[index])) {
+      return blocks[index].id;
+    }
+  }
+  return "";
 }

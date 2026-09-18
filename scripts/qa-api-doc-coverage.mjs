@@ -1,9 +1,8 @@
 /*
  * Every route in the capability table must be documented in docs/API.md.
  *
- * HTTP↔mobile parity is guaranteed by construction — one table entry serves
- * both transports — but DOCUMENTATION is not, and an undocumented endpoint is
- * invisible to the agents and to the mobile member writing a client against it.
+ * HTTP/controller parity is guaranteed by construction, but DOCUMENTATION is
+ * not, and an undocumented endpoint is invisible to automation clients.
  * Three had already slipped through before this check existed.
  *
  * Run: node scripts/qa-api-doc-coverage.mjs   (after `npm run build`)

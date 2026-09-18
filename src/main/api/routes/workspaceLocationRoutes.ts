@@ -9,9 +9,8 @@ import type { ExecutionEnv, MemberExecutionLocation } from "../../../shared/memb
  * and mixing them into the party table would invite the next reader to add
  * `ctx.workspace` to one of them.
  *
- * Registering here publishes the HTTP endpoint, the `GET /api/spec` entry and
- * the mobile-link method together, so an agent drives exactly what a user does.
- * See `docs/API.md`.
+ * Registering here publishes the HTTP endpoint and `GET /api/spec` entry from
+ * the same controller path the UI uses. See `docs/API.md`.
  */
 
 /** Reads `{env, cwd, distro}` off a request body, refusing anything unusable. */
@@ -54,6 +53,11 @@ export const workspaceLocationRoutes: MethodRoute[] = [
     name: "partyGroups.reorder",
     http: "POST /api/party-groups/reorder",
     handler: (p, ctx) => ctx.controller.reorderPartyGroups(Array.isArray(p.order) ? p.order.map(String) : []),
+  },
+  {
+    name: "partyGroups.reorderParties",
+    http: "POST /api/party-groups/:id/parties/reorder",
+    handler: (p, ctx) => ctx.controller.reorderPartiesInGroup(text(p.id), Array.isArray(p.order) ? p.order.map(String) : []),
   },
   {
     name: "partyGroups.rename",

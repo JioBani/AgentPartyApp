@@ -245,8 +245,11 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
 
 export function getPublicSettings(): AppSettings {
   const settings = getSettings();
+  // Keep the old value on disk for a future reactivation, but do not expose a
+  // setting for a capability that this desktop release does not ship.
+  const { mobile: _detachedMobile, ...publicSettings } = settings;
   return {
-    ...settings,
+    ...publicSettings,
     openRouterApiKey: settings.openRouterApiKey ? maskSecret(settings.openRouterApiKey) || "" : "",
     deepseekApiKey: settings.deepseekApiKey ? maskSecret(settings.deepseekApiKey) || "" : "",
     baiApiKey: settings.baiApiKey ? maskSecret(settings.baiApiKey) || "" : "",

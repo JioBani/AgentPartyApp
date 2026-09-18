@@ -37,7 +37,6 @@ import { providerOfRuntime, type UsageLimitsSnapshot, type UsageProviderId } fro
 import { UsageLimitPill } from "./workbench/UsageLimitPill";
 import type { UpdateStatus } from "../shared/appUpdate";
 import { UpdatePill } from "./workbench/UpdatePill";
-import { MobileDrivingPill } from "./workbench/MobileDrivingPill";
 import { UpdateModal } from "./workbench/UpdateModal";
 import { useTheme } from "./theme/ThemeProvider";
 import { cachedRendererTheme } from "./theme/firstPaint";
@@ -497,6 +496,15 @@ export function App() {
       setGroupState({ groups: result.groups || [], parties: result.parties || [] });
     } catch (error) {
       noticeOnFailure("그룹 순서를 바꾸지 못했습니다")(error);
+    }
+  }
+
+  async function reorderPartiesInGroup(groupId: string, order: string[]) {
+    try {
+      const result = await window.agentParty.reorderPartiesInGroup(groupId, order);
+      setGroupState({ groups: result.groups || [], parties: result.parties || [] });
+    } catch (error) {
+      noticeOnFailure("파티 순서를 바꾸지 못했습니다")(error);
     }
   }
 
@@ -2280,8 +2288,6 @@ export function App() {
         pills={<>
           {/* Renders only when an update is actually pending — see UpdatePill. */}
           <span className="no-drag"><UpdatePill status={updateStatus} onOpen={() => setUpdateModalOpen(true)} /></span>
-          {/* Renders only while a phone is connected — see MobileDrivingPill. */}
-          {state.settings.mobile?.enabled === true && <span className="no-drag"><MobileDrivingPill /></span>}
         </>}
         onMinimize={() => window.agentParty.minimizeWindow()}
         onMaximize={() => window.agentParty.maximizeWindow()}
@@ -2341,6 +2347,7 @@ export function App() {
                 onRenameGroup={(groupId, name) => void renamePartyGroup(groupId, name)}
                 onRemoveGroup={(groupId) => void removePartyGroup(groupId)}
                 onReorderGroups={(order) => void reorderPartyGroups(order)}
+                onReorderParties={(groupId, order) => void reorderPartiesInGroup(groupId, order)}
                 onBrowseCwd={browseCwd}
                 wsl={wslBrowsing}
                 onCreateMember={(input) => createMemberInline(input)}

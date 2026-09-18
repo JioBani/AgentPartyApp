@@ -88,6 +88,7 @@ interface PartySidebarProps {
   onRenameGroup: (groupId: string, name: string) => void;
   onRemoveGroup: (groupId: string) => void;
   onReorderGroups: (order: string[]) => void;
+  onReorderParties: (groupId: string, order: string[]) => void;
   /** Opens the platform folder picker; resolves null when the user cancelled. */
   onBrowseCwd: (env: ExecutionEnv, distro?: string) => Promise<MemberExecutionLocation | null>;
   wsl?: WslBrowsing;
@@ -349,7 +350,7 @@ export function PartySidebar(props: PartySidebarProps) {
   const ssh = useSshServers();
   const [sshReviewing, setSshReviewing] = useState<string | undefined>();
   const sshReview = sshReviewing ? ssh.servers?.find((entry) => entry.name === sshReviewing) : undefined;
-  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, views, openMembers, tabGroups, defaultTabGroupId, drawers, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
+  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, views, openMembers, tabGroups, defaultTabGroupId, drawers, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onReorderParties, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
   /**
    * The width being dragged RIGHT NOW, if any.
    *
@@ -440,6 +441,20 @@ export function PartySidebar(props: PartySidebarProps) {
   );
   /** The group a new party lands in by default: the one being viewed (README §4.2). */
   const activeGroupId = partySummaries.find((party) => party.id === activePartyId)?.groupId ?? groups[0]?.id ?? "";
+
+  // Revealing a selected party follows the same rule as the rendered list:
+  // its 즐겨찾기 mirror wins when present, otherwise its stored group wins.
+  // Open that parent first; a row inside `display:none` has no position for the
+  // list to scroll to.
+  useEffect(() => {
+    if (!activePartyId) return;
+    const hasFavoriteMirror = isFavoriteParty(favoriteParties, activePartyId)
+      && grouped.some(({ group, parties }) => isFavoriteGroupId(group.id) && parties.some((party) => party.id === activePartyId));
+    const revealGroupId = hasFavoriteMirror ? FAVORITE_PARTY_GROUP_ID : activeGroupId;
+    if (revealGroupId && closedGroupIds.has(revealGroupId)) {
+      onToggleGroupFold("party", revealGroupId, false);
+    }
+  }, [activePartyId, activeGroupId, closedGroupIds, favoriteParties, grouped, onToggleGroupFold]);
 
   // Dismiss the context menu on any outside click, scroll, or Escape.
   useEffect(() => {
@@ -584,6 +599,7 @@ export function PartySidebar(props: PartySidebarProps) {
             onMovePartyToGroup(partyId, groupId);
           }}
           onReorderGroups={onReorderGroups}
+          onReorderParties={onReorderParties}
           onPartyContextMenu={(party, event) => {
             setConfirmParty(false);
             setMenu({ kind: "party", partyId: party.id, name: party.name, x: event.clientX, y: event.clientY });

@@ -1,5 +1,9 @@
 # 아이디어
 
+## 최우선
+
+- [IDEA-025 · 기존 파티의 이름을 언제든 수정하기](./IDEA-025-rename-party.md) · **최우선**
+
 ## 우선
 
 - [IDEA-020 · 대화의 특정 지점에서 별도 인스턴스로 분기하고 필요한 결론만 합치기](./IDEA-020-side-conversation.md) · **높음**
@@ -28,3 +32,4 @@
 - [IDEA-021 · 로컬 앱에서 Codex Cloud 작업을 맡기고 결과를 받기](./IDEA-021-cloud-task-delegation.md)
 - [IDEA-022 · 멤버가 브라우저와 화면 작업을 명시적으로 사용하기](./IDEA-022-computer-use.md)
 - [IDEA-023 · 멤버의 목표·기억·성격을 확인하고 조정하기](./IDEA-023-agent-profile-controls.md)
+- [IDEA-024 · 파티의 수신·발신 인터럽트 정책을 한눈에 설정하기](./IDEA-024-party-interrupt-policy.md)

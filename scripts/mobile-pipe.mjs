@@ -1,4 +1,11 @@
 /*
+ * Archived Mobile Link build helpers.
+ *
+ * The desktop build no longer imports this module while Mobile Link is
+ * detached. It remains beside the historical mobile QA runners to make a
+ * future reactivation reviewable; do not wire it back independently of the
+ * checklist in docs/MOBILE_LINK_REACTIVATION.md.
+ *
  * Is the optional mobile pipe part of this build?
  *
  * `src/main/mobile/` needs `@agentparty/protocol`, which package.json points at

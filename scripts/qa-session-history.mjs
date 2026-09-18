@@ -58,6 +58,7 @@ const sessionManager = {
   createSession(input, resumeSessionId, binding) { createCalls.push({ resumeSessionId, member: binding?.identity?.member }); return { id: `session-${++seq}`, title: "", workspace: input.workspacePath, snapshot: {} }; },
   createMockSession() { throw new Error("mock not used"); },
   harnessSessionId() { return "harness-thread-9"; },
+  sessionEventCursor() { return undefined; },
   hasSession() { return true; },
   listSessions() { return []; },
   closeSession() { return true; },
@@ -75,7 +76,7 @@ svc.startMember("cx");
 assert(cxStarts().length === 1 && cxStarts()[0].resumeSessionId === undefined, "first start creates a FRESH thread (no resume id)");
 // The renderer persists the transcript; that call also captures the live thread id.
 svc.saveMemberTranscript("cx", { blocks });
-assert(svc.getMemberTranscript("cx").length === 2, "saved transcript is retrievable for restore");
+assert(svc.getMemberTranscript("cx").blocks.length === 2, "saved transcript is retrievable for restore");
 svc.closeMember("cx");
 svc.startMember("cx");
 assert(cxStarts().length === 2 && cxStarts()[1].resumeSessionId === "harness-thread-9", "reopening the member RESUMES its harness thread (context continues)");

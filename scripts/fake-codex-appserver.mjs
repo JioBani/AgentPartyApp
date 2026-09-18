@@ -194,15 +194,23 @@ rl.on("line", (line) => {
             threadId: "thr-fake",
             turnId: "turn-1",
             callId: "tool-call-1",
-            namespace: "agentparty-app",
-            tool: "list",
+            namespace: null,
+            tool: "party_list",
             arguments: {},
           },
         });
         return;
       }
       const kind = inputText.includes("KIND=fileChange") ? "fileChange" : "command";
-      send(approvalRequest(kind, cwd));
+      const approval = approvalRequest(kind, cwd);
+      if (inputText.includes("KIND=delayedApproval")) {
+        // A real provider rarely answers in the same frame as the user's send.
+        // Keep this deterministic delay available to renderer E2E so it can
+        // distinguish latched follow intent from a one-frame scroll jump.
+        setTimeout(() => send(approval), 300);
+      } else {
+        send(approval);
+      }
       return;
     }
     // Any other request: acknowledge with an empty result so nothing hangs.

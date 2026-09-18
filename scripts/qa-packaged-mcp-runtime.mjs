@@ -60,8 +60,8 @@ try {
   const messages = stdout.trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
   const initialized = messages.find((message) => message.id === 1);
   const listed = messages.find((message) => message.id === 2);
-  if (!initialized?.result?.serverInfo || listed?.result?.tools?.length !== 17) {
-    throw new Error(`Packaged MCP did not expose the canonical 17 tools via the live app. stderr=${stderr || "<empty>"}`);
+  if (!initialized?.result?.serverInfo || listed?.result?.tools?.length !== 18) {
+    throw new Error(`Packaged MCP did not expose the canonical 18 tools via the live app. stderr=${stderr || "<empty>"}`);
   }
   console.log(`PACKAGED MCP RUNTIME PASSED (${listed.result.tools.length} live tools, external PATH empty)`);
 } finally {

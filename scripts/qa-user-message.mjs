@@ -34,7 +34,10 @@ const events = [];
 host.sessionManager.on("events", (p) => { for (const e of p.events || []) events.push({ ...e, sessionId: p.sessionId }); });
 const engine = host.engineRegistry.forWorkspace(workspace);
 
-await engine.qaSeed({ members: [{ name: "solo", autoReply: false }] });
+// Let the mock settle the first user turn before the contrast send. A permanently
+// busy mock correctly queues inter-member delivery, which would test queueing
+// rather than the raw-vs-channel framing contract covered here.
+await engine.qaSeed({ members: [{ name: "solo", autoReply: true }] });
 const before = (await engine.listParty()).members.find((m) => m.name === "solo");
 
 console.log("\nsendUserMessage (shared UI+API send path):");
@@ -42,7 +45,7 @@ assert(Boolean(before?.sessionId), "member has a live session before sending");
 
 const sentBase = events.filter((e) => e.sessionId === before.sessionId && e.type === "status" && e.status === "sent").length;
 const res = await engine.sendUserMessage("solo", "describe this image", [{ kind: "image", mediaType: "image/png", dataBase64: "AAAA", name: "x.png" }]);
-await new Promise((r) => setTimeout(r, 60));
+await new Promise((r) => setTimeout(r, 800));
 const after = (await engine.listParty()).members.find((m) => m.name === "solo");
 
 assert(after?.sessionId === before.sessionId, "reuses the existing session — no duplicate start");

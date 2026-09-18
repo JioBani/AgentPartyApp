@@ -563,10 +563,19 @@ repeats the narrow four-column case for Cursor. The paint assertions use
 an element painted behind a clipping transcript.
 
 `node scripts/e2e-live-codex-party-tools.mjs` (or
-`npm run test:e2e:live-codex-party-tools`) is a billed one-turn GPT mini check of
-the actual Codex stdio MCP surface. It requires the model to call
-`mcp__agentparty-app__member-permission` and verifies the other member's
-permission changed on the app/API side.
+`npm run test:e2e:live-codex-party-tools`) is a billed two-turn check against the
+real app and Codex app-server at low effort. The first turn requires the model to
+call eager `party_status`, then inspects recorded app-server traffic to prove the
+call was a first-class dynamic tool, did not enumerate `ALL_TOOLS`, and bypassed
+the stdio MCP relay. The second turn exercises deferred long-tail discovery by
+calling `mcp__agentparty-app__list-models`, `member-create`, and
+`member-permission`, then verifies the created member and permission mutation on
+the app/API side. Set `AGENTPARTY_LIVE_CODEX_MODEL` to select the billed model.
+
+`npm run test:e2e:live-wsl-codex-party-tools` keeps the WSL relay regression on
+a deferred `list-models` call. Party Core duplicates are intentionally disabled
+on the stdio MCP server, so this test must use a long-tail tool when proving that
+the distro-local relay can reach the app API.
 
 `node scripts/e2e-live-session-reopen.mjs` (or
 `npm run test:e2e:live-session-reopen`) is the billed, minimal regression for

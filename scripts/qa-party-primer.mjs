@@ -28,6 +28,7 @@ async function load(entry, name, external = []) {
 }
 
 const primerModule = await load("src/shared/partyPrimer.ts", "party-primer.mjs");
+const { adaptPartyPrimerForCodex } = await load("src/core/partyBridge.ts", "party-bridge-codex-primer.mjs");
 const { ClaudeAdapter } = await load("src/core/claudeAdapter.ts", "claude-adapter.mjs", ["@anthropic-ai/claude-agent-sdk"]);
 const { CodexAdapter } = await load("src/core/codexAdapter.ts", "codex-adapter.mjs");
 const { CursorAdapter } = await load("src/core/cursorAdapter.ts", "cursor-adapter.mjs");
@@ -92,9 +93,27 @@ const codex = new CodexAdapter({
   effort: "medium",
   debugEnabled: false,
   storageDir: outDir,
+  partyBridge: {},
   partyIdentity: identity,
 });
-assert.equal(codex.partyDeveloperInstructions(), primer, "Codex installs the canonical default as developer instructions");
+const codexInstructions = codex.partyDeveloperInstructions();
+assert(codexInstructions.startsWith("## Codex Party Core — already loaded"), "Codex puts its eager Party Core calling convention first");
+assert(codexInstructions.includes("tools.party_send") && codexInstructions.includes("never scan `ALL_TOOLS`"), "Codex names the native-style core alias without catalog search");
+const adaptedPrimer = adaptPartyPrimerForCodex(primer);
+assert(!adaptedPrimer.includes("mcp__agentparty-app__send") && adaptedPrimer.includes("mcp__agentparty-app__member-create"), "Codex rewrites only core references and keeps long-tail canonical names");
+assert(codexInstructions.endsWith(adaptedPrimer), "Codex keeps the adapted cross-harness primer after its calling convention");
+assert.equal((codexInstructions.match(/# AgentParty — party member session/g) || []).length, 1, "Codex installs the canonical primer exactly once");
+
+const codexWithoutBridge = new CodexAdapter({
+  id: "primer-codex-no-bridge",
+  cwd: projectRoot,
+  model: "gpt-5.5",
+  effort: "medium",
+  debugEnabled: false,
+  storageDir: outDir,
+  partyIdentity: identity,
+});
+assert.equal(codexWithoutBridge.partyDeveloperInstructions(), primer, "Codex does not advertise Party Core when no callable bridge is installed");
 
 const cursor = new CursorAdapter({
   id: "primer-cursor",

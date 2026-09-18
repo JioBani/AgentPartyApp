@@ -3,8 +3,8 @@ import type { AutomationRouteContext } from "./routeContext";
 
 /**
  * QA scaffolding is deliberately NOT in the capability table: it fakes state
- * instead of performing it, and it is unreachable over the mobile link. It still
- * belongs in `GET /api/spec` so a QA agent can discover it, hence this list.
+ * instead of performing it. It still belongs in `GET /api/spec` so a QA agent
+ * can discover it, hence this list.
  */
 export const QA_ENDPOINTS = [
   "POST /api/qa/seed",
@@ -15,7 +15,6 @@ export const QA_ENDPOINTS = [
   "POST /api/qa/members/:name/subagents/open",
   "POST /api/qa/members/:name/interaction",
   "POST /api/qa/gate/open",
-  "POST /api/qa/mobile/:action",
   "POST /api/qa/open",
   "POST /api/qa/input",
   "POST /api/qa/pointer",
@@ -135,13 +134,6 @@ export async function handleQaRoute(context: AutomationRouteContext): Promise<vo
       decodeURIComponent(interactionMatch[1]),
       await readJson(req),
     ));
-    return;
-  }
-  // Phone simulator for the mock mobile gateway — the only way HTTP can act as
-  // the phone (scan, dial in, subscribe, call a method).
-  const mobileMatch = url.pathname.match(/^\/api\/qa\/mobile\/([^/]+)$/);
-  if (method === "POST" && mobileMatch) {
-    sendJson(res, 200, await c.qaMobileSimulate(decodeURIComponent(mobileMatch[1]), await readJson(req)));
     return;
   }
   if (method === "POST" && url.pathname === "/api/qa/gate/open") {

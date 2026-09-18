@@ -56,25 +56,9 @@ GITHUB=<공개 저장소에 릴리스를 만들 권한만 있는 토큰>
 worktree에서 수행한다. 릴리스 checkout은 다른 checkout의 `node_modules`를 빌리거나
 정션으로 공유하지 않고, 그 checkout 안에서 `npm ci`로 설치한 자체 의존성만 쓴다.
 
-`@agentparty/protocol`은 선택적인 로컬 `file:` 의존성이다. 외부 worktree에서
-`npm ci`를 실행하면 실제 대상이 없거나 프로젝트 밖에 있는 정션이
-`node_modules\@agentparty\protocol`에 생길 수 있다. 일반 빌드는 모바일 연결을 뺀
-구성으로 통과하지만, `electron-builder`의 `@electron/rebuild`는 `node_modules`의
-모든 항목을 먼저 `stat`하므로 끊어진 정션에서 `ENOENT`로 중단된다.
-
-`npm ci` 직후, 빌드나 패키징 전에 다음을 실행한다.
-
-```powershell
-Get-Item node_modules\@agentparty\protocol -Force -ErrorAction SilentlyContinue |
-  Select-Object FullName, LinkType, Target
-
-node --input-type=module -e `
-  "import('./scripts/mobile-pipe.mjs').then(m => console.log(m.pruneExternalPipeLinkForPackaging() ?? m.pruneBrokenPipeLink() ?? 'optional link 없음'))"
-```
-
-이 명령은 공식 패키징 헬퍼로 링크 자체만 제거하며 대상 디렉터리는 건드리지 않는다.
-실행 뒤 해당 경로가 없어졌는지 확인한다. 실제 디렉터리로 복사된 패키지라면 임의로
-삭제하지 않는다.
+패키징 전에 `package.json`에 선언된 의존성과 빌드 도구가 모두 설치되어 있는지
+확인한다. Mobile Link는 v0.10.0부터 데스크톱 패키지 의존성에서 분리되어 있으므로
+릴리스 절차가 외부 AgentPartyServer checkout이나 로컬 정션을 만지지 않는다.
 
 ### 패키징 재시도 규칙
 
@@ -88,7 +72,7 @@ node --input-type=module -e `
   프로세스가 없음을 확인한다. 두 프로세스가 같은 출력 경로를 쓰면 한쪽이
   `electron.exe`를 이동한 뒤 다른 쪽이 같은 파일을 찾지 못하는 rename `ENOENT`가
   발생할 수 있다.
-- 재시도는 선택적 링크 정리, 프로세스 종료, 부분 결과 격리까지 끝난 뒤 깨끗한
+- 재시도는 프로세스 종료와 부분 결과 격리가 끝난 뒤 깨끗한
   출력 경로에서 한 번만 수행한다.
 
 ## 스크립트가 대신 해주는 것

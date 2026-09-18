@@ -254,7 +254,7 @@ function spawnApp() {
     cwd: root,
     stdio: ["ignore", "ignore", "inherit"],
     windowsHide: true,
-    env: { ...process.env, AGENTPARTY_QA: "1", AGENTPARTY_ALLOW_MULTI_INSTANCE: "1", AGENTPARTY_AUTOMATION_PORT: String(port), AGENTPARTY_USER_DATA: userData, AGENTPARTY_MOBILE_LINK: "1" },
+    env: { ...process.env, AGENTPARTY_QA: "1", AGENTPARTY_ALLOW_MULTI_INSTANCE: "1", AGENTPARTY_AUTOMATION_PORT: String(port), AGENTPARTY_USER_DATA: userData },
   });
 }
 let child = spawnApp();
@@ -276,7 +276,6 @@ try {
 
   const state = await request("GET", "/api/state");
   const appRoot = String(state.payload?.runtime?.appRoot || "");
-  const mobileEnabled = state.payload?.settings?.mobile?.enabled === true;
   assert((appRoot + path.sep).toLowerCase().startsWith(root.toLowerCase() + path.sep), "real app is running this worktree build");
   const appPid = Number(execFileSync("powershell", ["-NoProfile", "-Command", `(Get-NetTCPConnection -State Listen -LocalPort ${port} | Select-Object -First 1 -ExpandProperty OwningProcess)`], { encoding: "utf8" }).trim());
   const discordFixture = await installDiscordErrorFixture();
@@ -294,7 +293,7 @@ try {
   });
   const tabs = [
     ...["general", "defaults", "primer", "gate", "discord"].map((tab) => ({ view: "agent", tab, harness: tab === "defaults" ? "codex" : undefined })),
-    ...["general", "environment", "workspace", ...(mobileEnabled ? ["mobile"] : []), "versions", "diagnostics", "automation"].map((tab) => ({ view: "settings", tab })),
+    ...["general", "environment", "workspace", "ssh", "versions", "diagnostics", "automation"].map((tab) => ({ view: "settings", tab })),
   ];
 
   const viewportRequests = quickMode
@@ -357,7 +356,7 @@ try {
     }
   }
   const widthClamp = viewportRequests.map((requested, index) => ({ requested, actual: viewports[index]?.actual }));
-  fs.writeFileSync(evidencePath, JSON.stringify({ appPid, baseUrl: base, appRoot, mobileEnabled, widthClamp, workspaceFixture, workspaceRendered, discordFixture, failures, measurements }, null, 2));
+  fs.writeFileSync(evidencePath, JSON.stringify({ appPid, baseUrl: base, appRoot, widthClamp, workspaceFixture, workspaceRendered, discordFixture, failures, measurements }, null, 2));
   console.log(`EVIDENCE pid=${appPid} baseUrl=${base} appRoot=${appRoot}`);
   console.log(`EVIDENCE measurements=${evidencePath} screenshots=${shots}`);
   await request("POST", "/api/window/close", {});

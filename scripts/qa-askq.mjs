@@ -52,6 +52,7 @@ const initialState = {
 let approveArgs = null;
 window.agentParty = new Proxy({
   getInitialState: async () => initialState,
+  getPartyLayout: async () => undefined,
   approve: async (...args) => { approveArgs = args; return { ok: true }; },
   onSessionEvents: on("events"), onSnapshot: on("snapshot"), onSessions: on("sessions"), onPartyUpdate: on("partyUpdate"), onModelsUpdate: on("modelsUpdate"),
   onQaLayout: on("qaLayout"), onQaOpenSubagent: on("qaOpenSub"), onNavigate: on("nav"), onWorkspaceChoose: on("ws"), onNewSession: on("new"), onRefreshHistory: on("hist"),
@@ -108,14 +109,14 @@ assert(blocks.length <= 3, `transcript is not cluttered with stacked blocks (got
 // Stepper: only the first question is shown, with a progress indicator.
 assert(text().includes("어떤 작업을 진행할까요?"), "first question shown");
 assert(!text().includes("어떤 우선순위로 진행할까요?"), "second question NOT shown until advanced (stepped, not all-at-once)");
-assert((transcript.querySelector(".wb-question-progress")?.textContent || "").replace(/\s/g, "") === "1/2", "progress shows 1/2");
+assert((transcript.querySelector(".wb-approval-origin")?.textContent || "").replace(/\s/g, "") === "1/2", "progress shows 1/2");
 assert(options().filter((b) => !b.classList.contains("wb-question-other")).length === 2, "current question shows its 2 structured options");
 assert(options().some((b) => b.classList.contains("wb-question-other")), "an Other (free-text) option is always appended");
 
 // Choosing a single-select option auto-advances to the next question.
 options()[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 await new Promise((r) => setTimeout(r, 50));
-assert((transcript.querySelector(".wb-question-progress")?.textContent || "").replace(/\s/g, "") === "2/2", "advanced to 2/2 after selecting");
+assert((transcript.querySelector(".wb-approval-origin")?.textContent || "").replace(/\s/g, "") === "2/2", "advanced to 2/2 after selecting");
 assert(text().includes("어떤 우선순위로 진행할까요?"), "second question shown after advancing");
 
 // Answer the last question; submit becomes available.
@@ -128,7 +129,7 @@ assert(Array.isArray(approveArgs) && approveArgs[2] === "allow", "answering appr
 const updatedInput = approveArgs?.[3];
 assert(updatedInput?.answers?.["어떤 작업을 진행할까요?"] === "코드 리뷰", "answer for question 1 carried in SDK-correct shape");
 assert(updatedInput?.answers?.["어떤 우선순위로 진행할까요?"] === "빠르게", "answer for question 2 carried");
-assert((document.querySelector(".wb-question .wb-status-badge")?.textContent || "").includes("답변함"), "resolved card shows answered state");
+assert((document.querySelector(".wb-question .wb-approval-resolved-label")?.textContent || "").includes("답변함"), "resolved card shows answered state");
 
 // --- Other (free-text) path: a fresh pending question with an Other option ---
 approveArgs = null;

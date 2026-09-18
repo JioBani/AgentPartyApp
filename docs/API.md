@@ -45,13 +45,12 @@ Returns a machine-readable description of this build's surface:
 }
 ```
 
-`endpoints` is every HTTP route this build serves. `methods` is the subset of
-capabilities a **paired phone** may call by name over the mobile link (see
-`AgentPartyMobile/docs/아키텍처/08-메서드-카탈로그.md`); desktop-local surfaces
-such as window chrome and screen capture are excluded from it.
+`endpoints` is every HTTP route this build serves. `methods` retains the
+transport-neutral capability names reserved for a future remote client;
+v0.10.0 ships no remote/mobile transport. Desktop-local surfaces such as window
+chrome and screen capture are excluded from `methods`.
 
-Both lists are derived from one capability table (`src/main/api/routes/`), so
-HTTP and the mobile link cannot expose different behavior for the same action.
+Both lists are derived from one capability table (`src/main/api/routes/`).
 
 ### `GET /api/state`
 
@@ -2258,6 +2257,16 @@ server configured inline, and the server routes back through the local
 automation API to the same AppController path as the UI. Requires a live session
 (start the member first).
 
+Codex also receives a five-tool **Party Core** through the app-server's
+top-level `thread/start.dynamicTools` field: `party_send`, `party_status`,
+`party_list`, `party_interrupt`, and `party_broadcast`. These frequent controls
+are eager (`deferLoading: false`) so code mode can call them without enumerating
+the MCP catalog. The complete canonical `agentparty-app` namespace remains
+deferred for management operations such as member creation, permissions,
+runtime changes, and Message Gates. Both surfaces normalize to the same party
+tool names and AppController/API routes; the aliases do not implement a second
+behavior path.
+
 ```json
 {
   "supported": true,
@@ -2501,6 +2510,14 @@ changes nothing. A group the caller did not mention (created in another window
 mid-drag) keeps its place at the end rather than being dropped. Repeating an id
 is rejected visibly; older registries containing duplicates are de-duplicated
 on read and repaired on the next write.
+
+### `POST /api/party-groups/:id/parties/reorder`
+
+`{ order: [partyId, …] }` — the whole new order for the parties inside one
+group. Parties in every other group keep their relative order. A party added to
+the group in another window while the drag is in flight is kept at the end;
+duplicate ids and ids that do not belong to the group are rejected visibly.
+The desktop's party-row drag uses this same controller path.
 
 ### `POST /api/party-groups/:id/rename`
 
@@ -3097,7 +3114,7 @@ The member's materialized transcript (assembled UI blocks), restored on
 app/member reopen. The main process is its single writer; reopening a member
 resumes the harness thread (Claude/Codex) via the stored thread id so the model
 context continues too. For a live member the response also includes the exact
-event cursor represented by `blocks`, allowing UI/mobile clients to discard
+event cursor represented by `blocks`, allowing UI clients to discard
 already-materialized live batches without comparing text.
 
 ```json
@@ -3108,8 +3125,8 @@ already-materialized live batches without comparing text.
 }
 ```
 
-Over the mobile link the response also carries an outer `seq`, the position in
-the phone's global transport stream. It is separate from `cursor`, which belongs
+A future event-stream transport may also carry an outer `seq`, the position in
+its global transport stream. It is separate from `cursor`, which belongs
 only to this member session. HTTP callers receive no pushed events and so get no
 outer `seq`.
 
@@ -3162,8 +3179,7 @@ to a different, empty directory. Report that rather than a path leading nowhere.
 ### `POST /api/party/members/:name/cli-continuation`
 
 Inspects or transfers a member's harness-owned conversation to its ordinary
-interactive CLI. This is desktop-local and is not published to the mobile RPC
-catalog.
+interactive CLI. This is marked desktop-local in the capability registry.
 
 Read-only inspection uses `{ "action": "inspect" }` and returns the cwd and
 copyable command:
@@ -3385,8 +3401,8 @@ The response identifies the transport and the host that actually ran it:
 `ok: false` is the real MCP tool result (for example a missing member or gate
 rejection). A broken relay, JSON-RPC framing error, unreachable host-local API,
 or host-channel failure is an HTTP error instead, so transport failures cannot
-masquerade as an ordinary tool refusal. This endpoint is desktop-local and is
-not published to the mobile RPC table.
+masquerade as an ordinary tool refusal. This endpoint is marked desktop-local
+in the capability registry.
 
 For `send`, a queued success includes compact delivery metadata:
 `{ "ok": true, "data": { "queued": true, "cutIn": true|false }, ... }`.
@@ -3618,12 +3634,8 @@ specific tab instead of leaving the caller to click the strip:
 
 ```text
 agent: general, defaults, primer, gate, discord
-settings: general, environment, workspace, ssh, mobile, versions, diagnostics, automation
+settings: general, environment, workspace, ssh, versions, diagnostics, automation
 ```
-
-`settings/mobile` is feature-gated. When Mobile Link is disabled in the running
-build, the tab is hidden and navigation returns an explicit error instead of
-reporting success while leaving another tab visible.
 
 The **에이전트 기본값** tab shows one harness at a time, picked by its own sub-tab
 strip. An optional `harness` lands on one of them:
@@ -3644,7 +3656,7 @@ applied (`{ok, view, tab, harness}`).
 `runtime` and `automation` remain deprecated compatibility aliases. `automation`
 normalizes to `settings/automation`. `runtime` maps its legacy tabs to their new
 homes: `harness` becomes `agent/defaults`; `general`, `primer`, `gate`, and
-`discord` open Agent; `environment`, `workspace`, `mobile`, `versions`, and
+`discord` open Agent; `environment`, `workspace`, `versions`, and
 `diagnostics` open Settings. The response returns the normalized destination.
 
 ## Windows & workspaces
@@ -3687,8 +3699,8 @@ an open window is viewing, plus the default a new window would use:
 ```
 
 `kind` is `local` or `wsl` (a WSL entry also carries `distro`). A caller that
-must act on a specific workspace lists these and then addresses it per request —
-`?window=<id>` for HTTP, `workspacePath` for the mobile link.
+must act on a specific workspace lists these and then addresses it with
+`?window=<id>` (or the corresponding window header) per HTTP request.
 
 ### `GET /api/windows`
 
@@ -3760,7 +3772,7 @@ member owns the session (a plain session tab), and `toolName`/`title` are absent
 when the app started mid-turn and never saw the request itself — the row is
 still answerable, just unnamed.
 
-Over the mobile link the response also carries `seq`, the event-stream position
+A future event-stream transport may also carry `seq`, the stream position
 this listing is consistent with; apply only events past it. HTTP callers receive
 no events and so get no `seq`.
 
@@ -3784,7 +3796,7 @@ Body is the same as `POST /api/sessions/:id/approve` minus the session:
 `behavior` that is neither `allow` nor `deny` is rejected with `400` rather than
 defaulted — defaulting would answer a security prompt on the user's behalf.
 
-Over the mobile link the id travels as a field rather than a path segment, and
+A future remote transport can carry the id as a field rather than a path segment;
 it is accepted as either `id` or `requestId`. `id` is the path segment's name,
 but every response and event — `GET /api/approvals`, this endpoint's own reply,
 `approval_request`, `approval_resolved` — calls the same value `requestId`. A
@@ -3826,173 +3838,12 @@ genuinely indistinguishable here: an approval id carries no timestamp, so once
 the record is evicted there is nothing left to date it by. Treat `unknown` the
 same as `expired` for the user (nothing was approved); only the wording differs.
 
-## Mobile link
+## Mobile link (detached)
 
-Pairing and health for the phone connection (AgentPartyMobile). The phone talks
-to this desktop over an end-to-end encrypted P2P channel and calls the **same**
-capabilities listed elsewhere in this document by their `<domain>.<verb>` names
-— `GET /api/spec` → `methods` is the authoritative list for this build, and
-`AgentPartyMobile/docs/아키텍처/08-메서드-카탈로그.md` documents their schemas.
-
-The feature ships **disabled by default** (`mobile.enabled: false`). In that
-state the app does not start the gateway, open a signalling socket, register
-phone RPC handlers, subscribe to gateway events, or show the `모바일 연결`
-settings tab. This is a deployment gate, not a removed feature.
-
-`GET /api/mobile/settings` and `POST /api/mobile/settings` remain available as
-the management surface. Enable deliberately with
-`POST /api/mobile/settings` + `{ "enabled": true }`; the settings tab appears
-immediately. Every other `/api/mobile/*` endpoint fails with an explicit
-`모바일 연결이 비활성화되어 있습니다` error while the gate is off. Disabling it
-again stops the gateway and removes its handlers/subscriptions and tab.
-
-A build can also be produced **without the mobile pipe at all**: it needs
-`@agentparty/protocol`, an optional local-path package (see
-`docs/mobile-gateway-wiring.md` §패키지가 없을 때). There *every* `/api/mobile/*`
-endpoint — `settings` included — fails with `…모바일 파이프가 없거나…` whatever
-the gate says, and the exact cause is in the app log under `mobile`. Treat that
-error as "this build has no mobile link", not as a transient failure.
-
-Once enabled, the app runs the **real** gateway by default: it opens a
-signalling socket and speaks WebRTC to a phone. The in-memory mock is an
-explicit QA opt-in, selected only by `AGENTPARTY_MOBILE_PIPE=mock`, and it opens
-no socket.
-
-There is no fallback between them. If the real gateway fails to start, the link
-stays down and the error is reported — it does not quietly become the mock,
-because a QA run that believed it was exercising the real pipe would prove
-nothing.
-
-After enablement, `GET /api/mobile/status` tells you which state you are in:
-`running` is whether a gateway is up at all, and `signaling` is that gateway's
-own connection to the signalling server (`connected`, `backoff`, `disabled`,
-…). The mock reports `running` without ever reaching a server, so `signaling`
-is the field that distinguishes a real link from a simulated one.
-
-In a headless engine process (a WSL distro's engine server) these endpoints
-fail with an explicit message rather than reporting an empty device list —
-there is no user there to compare a pairing code.
-
-### `GET /api/mobile/status`
-
-Everything the pairing screen and a QA run need, readable at any time:
-
-```json
-{
-  "ok": true,
-  "status": {
-    "running": true,
-    "bootId": "…",
-    "deviceId": "…",
-    "deviceName": "DESKTOP-01",
-    "signaling": "connected",
-    "signalingUrl": "wss://sig.agentparty.app",
-    "signalingError": null,
-    "sessions": [
-      {
-        "sessionId": "sess-1",
-        "deviceId": "…",
-        "deviceName": "Galaxy S25",
-        "transport": "directViaRendezvous",
-        "state": "connected",
-        "subscribedWorkspaces": ["C:/Project/AgentPartyApp"],
-        "inFlightRequests": 0,
-        "lastRequestMethod": "party.list",
-        "queuedBytes": 0
-      }
-    ],
-    "trustedDeviceCount": 1,
-    "pairing": { "phase": "idle", "qr": null, "code": null },
-    "events": { "seq": 42, "minSeq": 1, "maxSeq": 42, "count": 42 },
-    "lastDiagnostics": null
-  }
-}
-```
-
-`sessions[].inFlightRequests > 0` is what the desktop shows as
-"모바일에서 조작 중"; `lastRequestMethod` names what the phone just ran.
-
-### `POST /api/mobile/pair/open`
-
-Opens a single-use pairing QR, valid for two minutes. Returns the string to
-render: `{ "ok": true, "qr": "agentparty://pair?v=1&…", "expiresAt": 1786800000000 }`.
-
-Opening a second QR cancels the first. The 4-digit confirmation code is **not**
-returned here — it only exists after the phone has scanned and proved itself.
-Poll `GET /api/mobile/status` → `pairing.code` for it.
-
-### `POST /api/mobile/pair/confirm`
-
-The user pressed "the codes match". Completes the handshake and returns the
-fresh status. Errors when nothing is awaiting confirmation.
-
-### `POST /api/mobile/pair/cancel`
-
-Aborts the pairing in progress and invalidates its token. Idempotent.
-
-### `GET /api/mobile/devices`
-
-`{ "ok": true, "devices": [{ "deviceId", "name", "pairedAt", "lastSeenAt", "epoch", "push" }] }`.
-
-### `POST /api/mobile/devices/:id/revoke`
-
-Forgets a phone, bumps its trust epoch so an old handshake is rejected, and
-drops any session it holds. Returns the remaining `devices`.
-
-### `POST /api/mobile/devices/:id/rename`
-
-Body `{ "name": "거실 폰" }`. Display name only — identity is unchanged.
-
-### `POST /api/mobile/sessions/:id/disconnect`
-
-Cuts one live phone session immediately; the pairing survives and the phone may
-re-dial. Body `{ "reason": "…" }` is optional. Use `revoke` to end the trust.
-
-### `GET /api/mobile/diagnostics`
-
-Runs STUN probes and a port-mapping attempt, then reports whether a direct
-connection is expected to work:
-
-```json
-{
-  "ok": true,
-  "diagnostics": {
-    "reason": "cgnat_100_64",
-    "wanAddress": "100.72.1.4",
-    "wanIsPrivate": true,
-    "behindNat": true,
-    "mappingKind": "endpointIndependent",
-    "ipv6Available": false,
-    "portMapping": null,
-    "probes": [{ "name": "stun:cloudflare", "ok": true, "detail": "…", "elapsedMs": 41 }],
-    "errors": []
-  }
-}
-```
-
-`reason` is one of `ok_direct`, `no_upnp`, `double_nat`, `cgnat_100_64`,
-`private_wan`, `symmetric_nat`, `ipv6_only`, `unknown`. The Korean explanation
-for each is rendered by the 모바일 연결 tab. Concurrent calls share one run.
-
-### `GET` / `POST /api/mobile/settings`
-
-`{ "ok": true, "settings": { "enabled", "signalingUrl", "pushUrl", "deviceName", "natMappingEnabled" } }`.
-
-POST takes a partial patch and returns the accepted settings, which are
-persisted to `settings.json`. Changing `enabled` or `signalingUrl` reconnects.
-The URLs are **not** validated on write — an unreachable server must show up as
-a visible connection failure in `status.signaling`, not be silently replaced.
-These are the only mobile endpoints callable while `enabled` is false, because
-they are the switch used to opt in without editing the file by hand.
-
-### QA flow
-
-```js
-const { qr } = await post("/api/mobile/pair/open");   // hand `qr` to the phone/emulator
-// phone scans → poll until the code appears
-const { status } = await get("/api/mobile/status");   // status.pairing.code === "4213"
-await post("/api/mobile/pair/confirm");
-```
+Mobile Link is not part of the v0.10.0 desktop runtime. This build publishes
+no `/api/mobile/*` or `/api/qa/mobile/*` endpoints and exposes no mobile
+settings or IPC. The implementation and a complete reactivation checklist are
+preserved in [`MOBILE_LINK_REACTIVATION.md`](MOBILE_LINK_REACTIVATION.md).
 
 ## Guide
 
@@ -4549,37 +4400,6 @@ with `AGENTPARTY_QA=1`, then send an existing absolute local path before clickin
 The next `ssh.pickKeyFile` call consumes the injected path. The renderer then
 runs the normal `ssh.inspectKeyFile` and form-update path, so only OS dialog
 control is bypassed. A later click opens the native picker again.
-
-### `POST /api/qa/mobile/:action`
-
-Most actions drive the **phone side** of the mock mobile gateway — the only way
-an HTTP caller can act as the phone. They fail loudly on the real gateway rather
-than no-op. `lock-set` and `lock-clear` are the deliberate exception: they call
-the same desktop lock use case as the settings UI in QA/development builds.
-There is intentionally no release `/api/mobile/lock/*` endpoint.
-
-```text
-methods                                                 list currently registered pipe/RPC methods
-scan         {deviceName?, deviceId?}              the phone scans the open QR
-fail-pairing {error}                               fail it the way a bad code would
-connect      {deviceId?, transport?, workspaces?}  a trusted phone dials in → {sessionId}
-subscribe    {sessionId, workspaces[]}             the phone's ctl.subscribe
-request      {method, params?, sessionId?}         dispatch an RPC as the phone would
-delivered    {sessionId}                           events that session actually received
-emitted      {}                                    every event emitted, pre-filter
-snapshot     {sessionId?}                          invoke the resume snapshot provider
-diagnostics  {reason, patch?}                      set what a diagnostics run reports
-reset        {}                                    clear sessions, devices, events, pairing
-lock-set     {kind:"pin"|"pattern", secret}        configure the desktop connection lock
-lock-clear   {}                                    remove the desktop connection lock
-```
-
-`lock-set` never returns, logs, or persists `secret` in plaintext. PIN is six
-ASCII digits. Pattern is 6–9 unique row-major points `0..8`, without separators.
-
-`request` runs the **registered handler**, so an e2e can prove a phone's
-`party.list` and a local `GET /api/party` answer identically. See
-`scripts/e2e-mobile-link.mjs`.
 
 ### `POST /api/qa/reset`
 

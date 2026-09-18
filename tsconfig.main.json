@@ -11,5 +11,10 @@
     "skipLibCheck": true,
     "types": ["node", "electron"]
   },
-  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "src/core/**/*.ts", "src/shared/**/*.ts"]
+  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "src/core/**/*.ts", "src/shared/**/*.ts"],
+  "exclude": [
+    "src/main/mobile/**",
+    "src/main/mobileLink.ts",
+    "src/main/mobilePipe.ts"
+  ]
 }

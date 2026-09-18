@@ -71,11 +71,9 @@ import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
 import { AGENT_TAB_IDS, LEGACY_RUNTIME_TAB_IDS, SETTINGS_TAB_IDS, isAgentTabId, isRuntimeTabId, isSettingsTabId } from "../../shared/runtimeTabs";
 import { initialUpdateStatus, requireUpdateChannel, type ReleaseSummary, type UpdateChannel, type UpdateCheckOptions, type UpdateStatus } from "../../shared/appUpdate";
-import type { MobileLinkService } from "../mobileLink";
 import type { ApprovalIndex } from "../approvalIndex";
 import { SingleFlight } from "../singleFlight";
 import type { ApprovalDelivery, ApprovalResponseResult, PendingApproval } from "../../shared/approvals";
-import type { GatewayStatus, MobileConnectionLockKind, MobileConnectionLockStatus, MobileSettings, NatDiagnostics, TrustedDevice } from "../../shared/mobileProtocol";
 import { cliContinuationArgv, cliCrossCwdContinuationCommand, formatCliContinuationCommand, type CliContinuationAction, type CliContinuationDetails, type CliContinuationResult } from "../../shared/cliContinuation";
 import { processExists } from "../../core/processTree";
 import type { GuideInspect, GuideScreenInfo } from "../../shared/guide";
@@ -166,13 +164,6 @@ export interface AppControllerDeps {
    * replace, so the update endpoints report that plainly instead of pretending.
    */
   updater?: UpdateController;
-  /**
-   * Mobile link (pairing, phone sessions, diagnostics). Desktop-owned and
-   * absent in a headless remote engine, which has no user to confirm a pairing
-   * code — the mobile endpoints report that plainly instead of answering with
-   * an empty device list.
-   */
-  mobileLink?: MobileLinkService;
   /**
    * Where each approval request was seen, so one can be answered by its id
    * alone. Fed from the workspace event stream in main.ts; absent in the
@@ -393,18 +384,6 @@ export class AppController {
       const payload = await engine.listParty(this.activePartyByWindow.get(entry.id));
       entry.window.webContents.send("party:update", payload);
     }
-    // A phone pins no window, so it gets the workspace's own current party —
-    // the same listing `party.list` answers with. Skipped entirely when no
-    // phone is connected, since it costs an extra engine call.
-    if (this.deps.mobileLink?.hasSessions()) {
-      const payload = await engine.listParty(undefined);
-      const targets = this.globalPartyMode()
-        ? new Set([...windows.map((entry) => entry.workspacePath), workspacePath])
-        : new Set([workspacePath]);
-      for (const target of targets) {
-        this.deps.mobileLink.publish("party:update", payload, target);
-      }
-    }
     void this.reconcileUsageProviders();
   }
 
@@ -479,12 +458,6 @@ export class AppController {
         continue;
       }
       entry.window.webContents.send("party:layout", { partyId, layout });
-    }
-    const mobileTargets = this.globalPartyMode()
-      ? new Set([...windows.map((entry) => entry.workspacePath), workspacePath])
-      : new Set([workspacePath]);
-    for (const target of mobileTargets) {
-      this.deps.mobileLink?.publish("party:layout", { partyId, layout }, target);
     }
   }
 
@@ -777,7 +750,6 @@ export class AppController {
     for (const entry of this.deps.windowRegistry.all()) {
       const payload = await this.listModels(entry.workspacePath);
       entry.window.webContents.send("models:update", payload);
-      this.deps.mobileLink?.publish("models:update", payload, entry.workspacePath);
     }
   }
 
@@ -870,110 +842,12 @@ export class AppController {
     return updater;
   }
 
-  // --- Mobile link (설정 → 모바일 연결) -----------------------------------
-  // Pairing, trusted phones, live phone sessions, and NAT diagnostics. The
-  // capabilities a phone CALLS are not here — those are the same methods the
-  // desktop UI and HTTP use, dispatched from the shared capability table.
-
-  getMobileStatus(): { ok: true; status: GatewayStatus } {
-    return { ok: true, status: this.mobile().status() };
-  }
-
-  getMobileSettings(): { ok: true; settings: MobileSettings } {
-    return { ok: true, settings: this.mobile().settings() };
-  }
-
-  async updateMobileSettings(patch: Partial<MobileSettings>): Promise<{ ok: true; settings: MobileSettings }> {
-    const settings = await this.mobile().updateSettings(patch);
-    const publicSettings = getPublicSettings();
-    for (const entry of this.deps.windowRegistry.all()) {
-      entry.window.webContents.send("settings:update", publicSettings);
-    }
-    return { ok: true, settings };
-  }
-
-  listMobileDevices(): { ok: true; devices: TrustedDevice[] } {
-    return { ok: true, devices: this.mobile().devices() };
-  }
-
-  /**
-   * Opens a single-use pairing QR. The 4-digit confirmation code appears in
-   * `getMobileStatus().pairing.code` once the phone has scanned — the caller
-   * (UI or QA) polls that rather than holding a session object.
-   */
-  async openMobilePairing(): Promise<{ ok: true; qr: string; expiresAt: number }> {
-    return { ok: true, ...(await this.mobile().openPairing()) };
-  }
-
-  async confirmMobilePairing(): Promise<{ ok: true; status: GatewayStatus }> {
-    const link = this.mobile();
-    await link.confirmPairing();
-    return { ok: true, status: link.status() };
-  }
-
-  async cancelMobilePairing(): Promise<{ ok: true; status: GatewayStatus }> {
-    const link = this.mobile();
-    await link.cancelPairing();
-    return { ok: true, status: link.status() };
-  }
-
-  /** Forgets a phone and drops any session it holds. Returns the list that remains. */
-  async revokeMobileDevice(deviceId: string): Promise<{ ok: true; devices: TrustedDevice[] }> {
-    const link = this.mobile();
-    await link.revokeDevice(deviceId);
-    return { ok: true, devices: link.devices() };
-  }
-
-  async renameMobileDevice(deviceId: string, name: string): Promise<{ ok: true; devices: TrustedDevice[] }> {
-    const link = this.mobile();
-    await link.renameDevice(deviceId, name);
-    return { ok: true, devices: link.devices() };
-  }
-
-  /** Cuts one live phone session now; the trust record survives (04 §즉시 끊기). */
-  async disconnectMobileSession(sessionId: string, reason?: string): Promise<{ ok: true; status: GatewayStatus }> {
-    const link = this.mobile();
-    await link.disconnectSession(sessionId, reason);
-    return { ok: true, status: link.status() };
-  }
-
-  async getMobileDiagnostics(): Promise<{ ok: true; diagnostics: NatDiagnostics }> {
-    return { ok: true, diagnostics: await this.mobile().diagnostics() };
-  }
-
-  getMobileConnectionLock(): { ok: true; lock: MobileConnectionLockStatus } {
-    return { ok: true, lock: this.mobile().connectionLockStatus() };
-  }
-
-  async configureMobileConnectionLock(
-    kind: MobileConnectionLockKind,
-    secret: string,
-  ): Promise<{ ok: true; lock: MobileConnectionLockStatus }> {
-    return { ok: true, lock: await this.mobile().configureConnectionLock(kind, secret) };
-  }
-
-  async clearMobileConnectionLock(): Promise<{ ok: true; lock: MobileConnectionLockStatus }> {
-    return { ok: true, lock: await this.mobile().clearConnectionLock() };
-  }
-
-  /**
-   * The mobile link, or a hard error. Absent in the headless WSL engine, which
-   * has no identity store and no user to confirm a pairing code, and in a build
-   * whose optional mobile pipe was left out (`src/main/mobilePipe.ts`) — saying
-   * so is better than answering with an empty device list that reads as "not
-   * paired".
-   */
-  private mobile(): MobileLinkService {
-    const link = this.deps.mobileLink;
-    if (!link) {
-      throw new Error("이 프로세스는 모바일 연결을 제공하지 않습니다 — 이 빌드에 모바일 파이프가 없거나(@agentparty/protocol 미설치), 데스크톱 앱이 아닌 프로세스입니다. 정확한 이유는 앱 로그의 mobile 항목에 있습니다.");
-    }
-    return link;
-  }
-
   updateSettings(patch: Partial<AppSettings>): AppSettings {
     if (Object.prototype.hasOwnProperty.call(patch || {}, "updateChannel")) {
       throw new Error("업데이트 채널은 POST /api/update/channel 또는 버전 탭에서 변경하세요.");
+    }
+    if (Object.prototype.hasOwnProperty.call(patch || {}, "mobile")) {
+      throw new Error("모바일 연동은 현재 데스크톱 릴리스에서 분리되어 설정을 변경할 수 없습니다.");
     }
     let validatedPatch = patch || {};
     if (Object.prototype.hasOwnProperty.call(validatedPatch, "locale")) {
@@ -1011,7 +885,6 @@ export class AppController {
   private publishSettings(): AppSettings {
     const settings = getPublicSettings();
     // The renderer preserves each window's own workspacePath on merge.
-    this.deps.mobileLink?.publish("settings:update", settings);
     for (const entry of this.deps.windowRegistry.all()) {
       entry.window.webContents.send("settings:update", settings);
     }
@@ -1097,7 +970,6 @@ export class AppController {
 
   private broadcastAppearance(): void {
     const appearance = this.readLocalAppearance();
-    this.deps.mobileLink?.publish("appearance:update", appearance);
     const windows = typeof this.deps.windowRegistry.all === "function" ? this.deps.windowRegistry.all() : [];
     for (const entry of windows) {
       entry.window.webContents.send("appearance:update", appearance);
@@ -1419,7 +1291,6 @@ export class AppController {
 
   /** Keeps every window in sync when Authentication is driven over HTTP. */
   private broadcastAuth(auth: ReturnType<typeof getAuthState>): ReturnType<typeof getAuthState> {
-    this.deps.mobileLink?.publish("auth:update", auth);
     for (const entry of this.deps.windowRegistry.all()) {
       entry.window.webContents.send("auth:update", auth);
     }
@@ -1428,7 +1299,6 @@ export class AppController {
 
   /** Lightweight incremental event; avoids rerunning unrelated CLIs per step. */
   private broadcastNativeCliAuthProgress(progress: NativeCliAuthProgress, workspacePath: string): void {
-    this.deps.mobileLink?.publish("auth:native-progress", progress, workspacePath);
     for (const entry of this.deps.windowRegistry.all()) {
       if (workspaceKey(entry.workspacePath) !== workspaceKey(workspacePath)) continue;
       entry.window.webContents.send("auth:native-progress", progress);
@@ -2069,6 +1939,14 @@ export class AppController {
   /** Full new order, ids first-to-last. Idempotent; see the store. */
   reorderPartyGroups(order: string[]): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[] } {
     const state = this.partyGroups.reorderGroups(order);
+    this.deps.onSettingsChanged();
+    this.deps.onPartyGroupsChanged?.();
+    return { ok: true, groups: state.groups, parties: this.visibleRegisteredParties(state) };
+  }
+
+  /** Full new order for the parties in one group; other groups are untouched. */
+  reorderPartiesInGroup(groupId: string, order: string[]): { ok: true; groups: PartyGroup[]; parties: RegisteredParty[] } {
+    const state = this.partyGroups.reorderParties(groupId, order);
     this.deps.onSettingsChanged();
     this.deps.onPartyGroupsChanged?.();
     return { ok: true, groups: state.groups, parties: this.visibleRegisteredParties(state) };
@@ -3144,7 +3022,7 @@ export class AppController {
     if (view === "runtime") {
       if (tab && !isRuntimeTabId(tab)) throw new Error(`Unknown legacy runtime tab '${tab}'. Known: ${LEGACY_RUNTIME_TAB_IDS.join(", ")}.`);
       const legacyTab = tab || "general";
-      if (["environment", "workspace", "mobile", "versions", "diagnostics"].includes(legacyTab)) {
+      if (["environment", "workspace", "versions", "diagnostics"].includes(legacyTab)) {
         view = "settings";
         tab = legacyTab;
       } else {
@@ -3162,9 +3040,6 @@ export class AppController {
     if (tab && !tabbed) throw new Error(`The '${view}' screen has no tabs.`);
     if (view === "agent" && tab && !isAgentTabId(tab)) throw new Error(`Unknown agent tab '${tab}'. Known: ${AGENT_TAB_IDS.join(", ")}.`);
     if (view === "settings" && tab && !isSettingsTabId(tab)) throw new Error(`Unknown settings tab '${tab}'. Known: ${SETTINGS_TAB_IDS.join(", ")}.`);
-    if (view === "settings" && tab === "mobile" && getSettings().mobile?.enabled !== true) {
-      throw new Error("The Settings 'mobile' tab is unavailable because Mobile Link is disabled in this build.");
-    }
     // The Agent defaults tab shows ONE harness at a time, so driving it needs to
     // name which — same rule as the tab itself: an unknown one is an error, not a
     // navigation that silently lands somewhere else.
@@ -3700,63 +3575,6 @@ export class AppController {
   }
 
   /** Opens a Message Gate modal (member editor or party manager) — QA of the modal UI. */
-  /**
-   * Test-only: drives the mock gateway's PHONE side, which no HTTP caller can
-   * otherwise reach — scanning a QR, dialling in, subscribing, sending an RPC.
-   * This is what lets an E2E prove that a phone's `party.list` and the local
-   * `GET /api/party` run the same handler.
-   *
-   * It fails loudly on the real gateway: a QA run that believes it paired a
-   * phone must not pass while having exercised nothing.
-   */
-  async qaMobileSimulate(action: string, body: any): Promise<{ ok: true; action: string; result: unknown }> {
-    this.requireQa();
-    const result = await (async (): Promise<unknown> => {
-      switch (action) {
-        case "methods":
-          return { methods: this.mobile().registeredMethods() };
-        case "lock-set": {
-          const kind = body?.kind === "pattern" ? "pattern" : body?.kind === "pin" ? "pin" : undefined;
-          if (!kind) {
-            throw new Error("lock-set requires kind 'pin' or 'pattern'.");
-          }
-          return this.configureMobileConnectionLock(kind, String(body?.secret ?? ""));
-        }
-        case "lock-clear":
-          return this.clearMobileConnectionLock();
-        case "scan":
-          const mock = this.mobile().mockControls();
-          mock.scanQr({ deviceName: body?.deviceName, deviceId: body?.deviceId });
-          return this.mobile().status().pairing;
-        case "fail-pairing":
-          this.mobile().mockControls().failPairing(String(body?.error || "QA induced pairing failure"));
-          return this.mobile().status().pairing;
-        case "connect":
-          return { sessionId: this.mobile().mockControls().connect({ deviceId: body?.deviceId, transport: body?.transport, workspaces: body?.workspaces }) };
-        case "subscribe":
-          this.mobile().mockControls().subscribe(String(body?.sessionId || ""), Array.isArray(body?.workspaces) ? body.workspaces : []);
-          return { sessionId: body?.sessionId, workspaces: body?.workspaces };
-        case "request":
-          return this.mobile().mockControls().request(String(body?.method || ""), body?.params, body?.sessionId ? { sessionId: String(body.sessionId) } : undefined);
-        case "delivered":
-          return { events: this.mobile().mockControls().deliveredTo(String(body?.sessionId || "")) };
-        case "emitted":
-          return { events: this.mobile().mockControls().emitted() };
-        case "snapshot":
-          return this.mobile().mockControls().snapshot(body?.sessionId ? String(body.sessionId) : undefined);
-        case "diagnostics":
-          this.mobile().mockControls().setDiagnostics(body?.reason, body?.patch);
-          return { reason: body?.reason };
-        case "reset":
-          this.mobile().mockControls().reset();
-          return { reset: true };
-        default:
-          throw new Error(`Unknown mobile simulator action '${action}'.`);
-      }
-    })();
-    return { ok: true, action, result };
-  }
-
   qaOpenGate(windowId: string | undefined, kind: "member" | "party", member: string): { ok: true; kind: string; member: string } {
     this.requireQa();
     this.windowFor(windowId)?.webContents.send("qa:open-gate", { kind, member });
