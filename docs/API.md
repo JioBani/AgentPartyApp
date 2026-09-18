@@ -1292,6 +1292,27 @@ Calls DeepSeek's model endpoint to verify the configured key.
 
 When `AGENTPARTY_E2E=1`, this endpoint returns a mocked verification result and does not call DeepSeek.
 
+### `POST /api/auth/bai`
+
+Stores a B.AI API key (B.AI's unified API at `https://api.b.ai/v1`). B.AI is
+exposed only on the Codex harness for the three verified DeepSeek Responses
+models; its Anthropic Messages surface is not offered because it discards
+reasoning settings.
+
+```json
+{ "key": "sk-..." }
+```
+
+### `DELETE /api/auth/bai`
+
+Clears the stored B.AI API key.
+
+### `POST /api/auth/bai/test`
+
+Calls B.AI's `GET /v1/models` to verify the configured key.
+
+When `AGENTPARTY_E2E=1`, this endpoint returns a mocked verification result and does not call B.AI.
+
 ### `POST /api/auth/openrouter`
 
 Stores an OpenRouter API key.
@@ -1725,6 +1746,10 @@ never silent. `GET /api/models` carries the same object as `catalog`.
 - `lastError` — present when the newest fetch or cache load was rejected
   (network failure, invalid payload, unsupported `schemaVersion`). The
   previously applied catalog stays in effect.
+- `skippedModels` — present when the applied catalog contains entries whose
+  provider this build does not know (`"<id> (provider <name>)"`). Those entries
+  are skipped and everything else is applied, so an older install keeps
+  receiving model updates after a newer build adds a provider.
 
 Publishing an update is `npm run catalog:publish` from the source repo (also
 runs automatically inside `release:win`); users pick it up within ~5 minutes
@@ -2562,6 +2587,12 @@ already-delivered message is not mistaken for a failure and resent:
 
 If the target member is bound to an active session, AgentParty injects the message directly into that session as a channel payload. If no active session is bound, the message is recorded with `delivered: false` and no provider call is made. Sending an image to a text-only model is refused with a visible `vision` diagnostic (never silently dropped).
 
+For an SSH member, delivery is refused before queueing when its saved server is
+missing, unreachable, unable to authenticate, or blocked by a changed host
+fingerprint. The response has `ok: false`, a concrete `partyMessage.error`, and
+`sshUnavailable: { server, problem }`. Batch sends and broadcasts keep that
+recipient in `failed` while still delivering to available recipients.
+
 **Message Gate**: when `from` is a member (not `"user"`), AgentParty resolves the
 sender's active `send` rule and the target's active `recv` rule. The two rules
 are kept separate in one reviewer request (`<sender_rules>` and
@@ -2704,6 +2735,12 @@ person typed it and is waiting.
 This endpoint is a **human/user turn**, so omitting `interrupt` means `false`.
 The app's own Send button remains independent and fills its value from
 `composer.interruptOnSend`; a caller may explicitly pass either boolean.
+
+An unavailable SSH destination returns `ok: false` with
+`sshUnavailable: { server, problem }`, where `problem` is `server-missing`,
+`unreachable`, `auth-failed`, or `fingerprint-changed`. The message is not
+queued or retried. The composer uses the same result to keep the user's local
+message visible as a failed send and link to SSH server settings.
 
 ### `GET /api/party/members/:name/queue`
 
@@ -3061,6 +3098,9 @@ including the intended member.
 ```
 
 Returns per-member delivery: `{ "delivered": ["impl", "test"], "failed": [{ "name": "survey1", "error": "target_member_has_no_active_session" }] }`.
+An unavailable SSH recipient appears independently in `failed`, including the
+member name, SSH server name, and reason; it never prevents delivery to the
+remaining recipients.
 With `"interrupt": true` each busy recipient's turn is stopped first so the
 message is handled immediately. Agents reach this via the `broadcast` party tool.
 
@@ -3596,7 +3636,7 @@ specific tab instead of leaving the caller to click the strip:
 
 ```text
 agent: general, defaults, primer, gate, discord
-settings: general, environment, workspace, mobile, versions, diagnostics, automation
+settings: general, environment, workspace, ssh, mobile, versions, diagnostics, automation
 ```
 
 `settings/mobile` is feature-gated. When Mobile Link is disabled in the running
@@ -4358,11 +4398,15 @@ Every field is optional and applied in order:
 - `select` — requires a focused `<select>` and an existing option value, then
   drives its `input`/`change` workflow. A missing option or non-select target
   fails visibly instead of reporting a no-op as success.
-- `key` — sent as a **real input event** (`keyDown`/`char`/`keyUp`), so the
-  browser's own default action for that key still runs. This is the reason the
-  endpoint exists: a synthetic DOM event dispatched from a script never fires a
-  default action, so behaviour that depends on one — Enter submitting the form
-  a single-line input sits in — cannot be verified any other way.
+- `key` — sent as **real input events**, so the browser's own default action for
+  that key still runs. Printable keys use `keyDown`/`char`/`keyUp`; named action
+  and navigation keys such as `Enter`, `Escape`, and `ArrowDown` use
+  `keyDown`/`keyUp` and do not insert their key names as text. This is the reason
+  the endpoint exists: a synthetic DOM event dispatched from a script never
+  fires a default action, so behaviour that depends on one — Enter submitting
+  the form a single-line input sits in — cannot be verified any other way.
+  DOM arrow names (`ArrowDown`, `ArrowUp`, `ArrowLeft`, `ArrowRight`) are accepted
+  and translated to Electron's native input names at the application boundary.
 - `modifiers` — Electron modifier names (`control`, `shift`, `alt`, `meta`).
 
 Returns `{ ok, selector, key, kind, value, references }` describing what is
@@ -4510,6 +4554,20 @@ Stands a **fixed environment report** in for the real probe, so the 환경 scree
 and its blocker cards can be reviewed without breaking the reviewer's machine.
 Body is a partial report; `{ "reset": true }` puts the real probe back.
 
+### `POST /api/qa/ssh/key-file/pick`
+
+QA-only one-shot replacement for the native SSH key-file dialog result. Launch
+with `AGENTPARTY_QA=1`, then send an existing absolute local path before clicking
+**찾아보기…** in the real SSH server form:
+
+```json
+{ "path": "C:\\qa-fixtures\\id_ed25519" }
+```
+
+The next `ssh.pickKeyFile` call consumes the injected path. The renderer then
+runs the normal `ssh.inspectKeyFile` and form-update path, so only OS dialog
+control is bypassed. A later click opens the native picker again.
+
 ### `POST /api/qa/mobile/:action`
 
 Most actions drive the **phone side** of the mock mobile gateway — the only way
@@ -4604,3 +4662,155 @@ Invoke-RestMethod "$base/api/settings" -Method Post -ContentType application/jso
 $session = Invoke-RestMethod "$base/api/sessions" -Method Post -ContentType application/json -Body '{"workspacePath":"C:\\Project\\AgentPartyApp"}'
 Invoke-RestMethod "$base/api/sessions/$($session.id)/send" -Method Post -ContentType application/json -Body '{"text":"Reply with exactly PONG."}'
 ```
+
+## SSH servers and member locations
+
+SSH member locations use `ssh+<percent-encoded-server-name>:/absolute/posix/path`.
+The server name, rather than its network address, is the member's immutable
+execution-host identity. Only Codex (`codex`) and Claude Code (`claude-code`)
+members are supported on SSH in this release. A deleted server leaves those
+members intact; location checks return `server-missing` until a server with that
+name is registered again.
+
+The server capability routes are:
+
+| HTTP | Remote method | Result |
+| --- | --- | --- |
+| `GET /api/ssh/servers` | `ssh.list` | Sanitized server views; never credentials |
+| `POST /api/ssh/attempts` | `ssh.connectDraft` | `{attemptId}` or field errors |
+| `GET /api/ssh/attempts/:id` | `ssh.attempt` | Current sanitized progress/error state |
+| `POST /api/ssh/attempts/:id/trust-fingerprint` | `ssh.trustFingerprint` | Continue the first connection |
+| `POST /api/ssh/attempts/:id/cancel` | `ssh.cancelAttempt` | Cancel and discard the draft |
+| `POST /api/ssh/attempts/:id/auto-login` | `ssh.setupAutoLogin` | Register and verify the app key |
+| `POST /api/ssh/attempts/:id/password` | `ssh.continueWithPassword` | Save after declining auto-login |
+| `POST /api/ssh/attempts/:id/save-password` | `ssh.savePasswordLogin` | Retain password after auto-login failure |
+| `POST /api/ssh/attempts/:id/retest` | `ssh.retest` | Retry the draft attempt |
+| `POST /api/ssh/key-file/pick` | `ssh.pickKeyFile` | Desktop key-file picker (`remote: false`) |
+| `POST /api/ssh/key-file/inspect` | `ssh.inspectKeyFile` | Key kind, fingerprint and lock state |
+| `POST /api/ssh/servers/:name/test` | `ssh.testServer` | Start connection/install checks |
+| `POST /api/ssh/servers/:name/reconnect` | `ssh.reconnect` | Manually reconnect and test |
+| `POST /api/ssh/servers/:name/trust-fingerprint` | `ssh.trustNewFingerprint` | Replace a changed stored fingerprint, then test |
+| `DELETE /api/ssh/servers/:name` | `ssh.deleteServer` | Delete; optional `removeAutoLoginKey` |
+| `POST /api/ssh/public-key/copy` | `ssh.copyPublicKey` | Copy app public key (`remote: false`) |
+| `POST /api/ssh/path/check` | `ssh.checkRemotePath` | `{ok:true}` or a specific path/connection problem |
+| `POST /api/ssh/directories/home` | `ssh.remoteHome` | Absolute home path and its child folders |
+| `POST /api/ssh/directories/list` | `ssh.listRemoteDirectories` | Canonical path and child folders |
+| `POST /api/ssh/path/suggestions` | `ssh.suggestRemotePaths` | Up to 20 folder completions for typed input |
+
+### `GET /api/ssh/servers`
+
+Returns the sanitized SSH server views. Credentials are never returned.
+
+### `POST /api/ssh/attempts`
+
+Starts validation and connection of an SSH server draft and returns `{attemptId}`.
+
+### `GET /api/ssh/attempts/:id`
+
+Returns the current sanitized connection-attempt state for automation polling.
+
+### `POST /api/ssh/attempts/:id/trust-fingerprint`
+
+Accepts the fingerprint shown by a first connection and continues login.
+
+### `POST /api/ssh/attempts/:id/cancel`
+
+Cancels the attempt, discards its credentials, and rolls back a pending automatic-login key.
+
+### `POST /api/ssh/attempts/:id/auto-login`
+
+Registers the app-owned public key, verifies key login, and then discards the password.
+
+### `POST /api/ssh/attempts/:id/password`
+
+Declines automatic login and saves the password-backed server.
+
+### `POST /api/ssh/attempts/:id/save-password`
+
+Keeps password login after automatic-login setup failed.
+
+### `POST /api/ssh/attempts/:id/retest`
+
+Retries a failed draft attempt.
+
+### `POST /api/ssh/key-file/pick`
+
+Opens the desktop key-file picker. This method is not remotely callable.
+
+### `POST /api/ssh/key-file/inspect`
+
+Returns a key file's kind, fingerprint, comment, and encrypted/locked state without key material.
+
+### `POST /api/ssh/servers/:name/test`
+
+Starts SSH login and remote agent-installation checks.
+
+### `POST /api/ssh/servers/:name/reconnect`
+
+Closes the cached connection and starts a fresh connection test.
+
+### `POST /api/ssh/servers/:name/trust-fingerprint`
+
+Reads and saves the endpoint's current fingerprint, then reconnects with that exact fingerprint pinned.
+
+### `DELETE /api/ssh/servers/:name`
+
+Deletes the server. Pass `removeAutoLoginKey: true` to request remote key removal first.
+
+### `POST /api/ssh/public-key/copy`
+
+Copies the app-owned automatic-login public key. This method is not remotely callable.
+
+### `POST /api/ssh/path/check`
+
+Checks an absolute POSIX directory on a registered server and returns a specific path or connection problem.
+
+### `POST /api/ssh/directories/home`
+
+Body: `{ "server": "mini" }`. Resolves the account home through SFTP and returns
+the same result shape as directory listing. A successful `path` is always the
+server's absolute path (for example `/home/dev`), never `~`.
+
+### `POST /api/ssh/directories/list`
+
+Body: `{ "server": "mini", "path": "/home/dev" }`. Returns only child
+directories (including symbolic links whose targets are directories), sorted
+case-insensitively with dot-prefixed folders last:
+
+```json
+{
+  "ok": true,
+  "path": "/home/dev",
+  "parent": "/home",
+  "directories": [
+    { "name": "projects", "path": "/home/dev/projects", "hidden": false },
+    { "name": ".config", "path": "/home/dev/.config", "hidden": true }
+  ],
+  "truncated": true
+}
+```
+
+At most 1000 folders are returned. `truncated: true` means more folders exist.
+Failures return `{ok:false,path,problem,detail?}`. `problem` is one of
+`permission-denied`, `missing`, `not-absolute`, `unreachable`, `auth-failed`,
+`fingerprint-changed`, `server-missing`, or `read-failed`; `detail`, when
+present, is the underlying SFTP/connection message.
+
+### `POST /api/ssh/path/suggestions`
+
+Body: `{ "server": "mini", "input": "/home/dev/pro" }`. Lists the parent
+directory and returns at most 20 child folders whose names start with the final
+path segment. Empty input uses the account home; input ending in `/` lists that
+directory. Relative input returns `not-absolute`.
+
+`POST /api/ssh/attempts` accepts `{name,host,port,user,originalName?,auth}`,
+where `auth` is either `{kind:"password",password?}` or
+`{kind:"key",keyPath,passphrase?}`. When editing a server whose current auth is
+automatic login, `{kind:"auto"}` keeps the stored app key without returning it
+to the caller; it is rejected for new servers and for servers using another
+auth mode. Passwords, private keys and passphrases are
+write-only. They are OS-encrypted in the desktop store and are absent from every
+API response. The renderer additionally receives `ssh:attempt` progress and
+`ssh:servers` snapshot events. Connection tests report login success plus only
+the installed state of `agent:codex`, `agent:claude-code`, `agent:cursor`, and
+`agent:grok`; AgentParty does not manage remote CLI login state.

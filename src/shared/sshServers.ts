@@ -1,0 +1,93 @@
+export type SshAuthKind = "auto" | "password" | "key";
+
+export type SshConnectionState = "connected" | "disconnected" | "connecting" | "reconnecting" | "unreachable" | "auth-failed" | "fingerprint-changed";
+export type SshCheckStatus = "ok" | "warn" | "fail" | "checking" | "pending";
+
+export interface SshCheckItem {
+  id: "connect" | "login" | `agent:${string}`;
+  status: SshCheckStatus;
+  installed?: boolean;
+}
+
+export interface SshTestResult { at: string; items: SshCheckItem[] }
+
+export interface SshServerView {
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  auth: SshAuthKind;
+  keyFileName?: string;
+  connection: SshConnectionState;
+  fingerprintChange?: { previous: string; next: string };
+  memberNames: string[];
+  lastTest?: SshTestResult;
+}
+
+/** Secrets in a draft are write-only and must never be echoed by an API. */
+export interface SshServerDraft {
+  originalName?: string;
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  /** `auto` is edit-only: keep using the stored app key; a new server must choose password or key. */
+  auth:
+    | { kind: "auto" }
+    | { kind: "password"; password?: string }
+    | { kind: "key"; keyPath: string; passphrase?: string };
+}
+
+export type SshDraftField = "name" | "host" | "port" | "user" | "password" | "keyPath" | "passphrase";
+export interface SshFieldError { field: SshDraftField; kind: "required" | "duplicate" | "port-range" | "passphrase-wrong" }
+
+export type SshKeyInspection =
+  | { fileName: string; fingerprint: string; comment?: string; locked: boolean }
+  | { error: "public-key" | "ppk" | "not-key" }
+  | { error: "inspect-failed"; detail: string };
+
+export type SshAttemptErrorKind =
+  | "password-not-allowed" | "key-rejected" | "auth-failed" | "unreachable" | "fingerprint-changed"
+  | "unsupported-os" | "agent-check-failed" | "key-install-failed" | "key-verify-failed" | "key-remove-failed";
+
+export interface SshAttemptError { kind: SshAttemptErrorKind; detail?: string; keyFingerprint?: string }
+export type SshAutoLoginStepId = "key" | "register" | "verify" | "forget-password";
+export interface SshAutoLoginStep { id: SshAutoLoginStepId; status: SshCheckStatus; detail?: string }
+
+export interface SshConnectAttempt {
+  attemptId: string;
+  serverName: string;
+  target: { host: string; port: number; user: string };
+  phase: "connecting" | "fingerprint" | "offer-auto-login" | "auto-login" | "auto-login-failed" | "testing" | "done" | "failed";
+  steps: SshCheckItem[];
+  fingerprint?: { sha256: string; previous?: string };
+  autoLoginSteps?: SshAutoLoginStep[];
+  error?: SshAttemptError;
+}
+
+export type SshRemotePathProblem = "missing" | "denied" | "not-absolute" | "unreachable" | "auth-failed" | "fingerprint-changed" | "server-missing";
+export type SshRemotePathCheck = { ok: true } | { ok: false; problem: SshRemotePathProblem };
+
+export interface SshRemoteDirectory {
+  name: string;
+  path: string;
+  hidden: boolean;
+}
+
+export type SshRemoteBrowseProblem =
+  | "permission-denied" | "missing" | "not-absolute"
+  | "unreachable" | "auth-failed" | "fingerprint-changed" | "server-missing" | "read-failed";
+
+export type SshRemoteDirectoryResult =
+  | { ok: true; path: string; parent?: string; directories: SshRemoteDirectory[]; truncated?: boolean }
+  | { ok: false; path: string; problem: SshRemoteBrowseProblem; detail?: string };
+
+export type SshRemotePathSuggestions =
+  | { ok: true; input: string; items: SshRemoteDirectory[] }
+  | { ok: false; input: string; problem: SshRemoteBrowseProblem; detail?: string };
+
+export interface SshDeleteResult {
+  deleted: true;
+  keyRemoval: "not-requested" | "removed" | "failed";
+  detail?: string;
+}

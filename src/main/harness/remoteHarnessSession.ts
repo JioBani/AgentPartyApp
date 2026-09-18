@@ -7,6 +7,7 @@ import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 import type { CreateSessionInput, HostedPartySessionBinding } from "../../shared/types";
 import type { EngineConnection } from "../engine/engineConnection";
 import type { HarnessSession } from "./types";
+import { parseWorkspaceLocation } from "../../shared/workspaceLocation";
 
 export type RemoteEventSource = EngineConnection & {
   onEvent(listener: (channel: string, payload: unknown) => void): () => void;
@@ -14,6 +15,7 @@ export type RemoteEventSource = EngineConnection & {
 
 export interface RemoteHarnessSessionOptions {
   id: string;
+  target: string;
   cwd: string;
   request: CreateSessionInput;
   resumeSessionId?: string;
@@ -87,6 +89,12 @@ export class RemoteHarnessSession extends EventEmitter implements HarnessSession
       this.reportError(error, true);
       throw error;
     });
+    // Keep the rejected promise for later operations (`requireReady`) while
+    // marking the eager background start as observed. Without this terminal
+    // observer, an SSH/WSL engine failure during automatic member startup was
+    // also reported by Node as an unhandled rejection after the session had
+    // already surfaced the same error to the transcript and snapshot.
+    this.ready.catch(() => undefined);
   }
 
   sendUserTurn(text: string, attachments?: ImageAttachment[]): void {
@@ -193,7 +201,7 @@ export class RemoteHarnessSession extends EventEmitter implements HarnessSession
         } else if (event.type === "approval_resolved" && typeof event.requestId === "string") {
           this.pendingApprovals.delete(event.requestId);
         }
-        this.emit("event", event);
+        this.emit("event", this.withRemoteContext(event));
       }
     } else if (channel === "session:snapshot" && envelope?.snapshot) {
       this.applySnapshot(envelope.snapshot as ClaudeSessionSnapshot);
@@ -224,7 +232,20 @@ export class RemoteHarnessSession extends EventEmitter implements HarnessSession
       lastError: message,
       lastEventAt: new Date().toISOString(),
     };
-    this.emit("event", { type: "error", message, at: new Date().toISOString() } satisfies ClaudeNormalizedEvent);
+    this.emit("event", this.withRemoteContext({ type: "error", message, at: new Date().toISOString() }));
     this.emit("snapshot", this.getSnapshot());
+  }
+
+  private withRemoteContext(event: ClaudeNormalizedEvent): ClaudeNormalizedEvent {
+    if (event.type !== "error") return event;
+    const location = parseWorkspaceLocation(this.options.target);
+    if (location.host.kind !== "ssh") return event;
+    return {
+      ...event,
+      remote: {
+        server: location.host.server,
+        agent: this.options.request.selectedHarnessId || "claude-code",
+      },
+    };
   }
 }

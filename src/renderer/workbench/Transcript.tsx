@@ -11,6 +11,7 @@ import { CODEX_DECISION_HINTS, CODEX_DECISION_LABELS, codexApprovalOptions } fro
 import type { CodexApprovalKind, CodexApprovalMeta, CodexDecision } from "../../shared/codexApproval";
 import { claudeAlwaysRule, extractToolFilePath, ruleAddsInformation } from "../../shared/approvalRequest";
 import { harnessLabel, harnessShort } from "./harnessLabel";
+import { SshAgentStartError } from "./SshConnectionNotices";
 import { EnvironmentBlock } from "./EnvironmentBlock";
 import { imageDataUrl, type ImageAttachment } from "../../shared/attachments";
 import { collectDisplayImages, hasDisplayImages, isRenderableImage, type DisplayImage } from "../../shared/transcriptImages";
@@ -22,6 +23,7 @@ import { usePartyMembers } from "../app/partyMemberPrefs";
 import { LocalizedText, localized, useI18n } from "../i18n/I18nProvider";
 import { nextTranscriptMountLimit, PROGRESSIVE_TRANSCRIPT_GAP_MS } from "./transcriptScheduling";
 import type { SessionSpawnState } from "../../shared/sessionSpawn";
+import type { SshMessageUnavailable } from "../../shared/types";
 
 interface TranscriptProps {
   view: MemberView;
@@ -381,8 +383,9 @@ const Block = memo(function TranscriptBlock({ block, view, density, actions, det
   switch (block.kind) {
     case "user":
       return (
-        <div className={"wb-block wb-user" + (block.fromQueue ? " is-from-queue" : "")} style={block.from ? memberColorVars(block.from) : undefined}>
+        <div className={"wb-block wb-user" + (block.fromQueue ? " is-from-queue" : "") + (block.sendFailure ? " is-send-failed" : "")} style={block.from ? memberColorVars(block.from) : undefined} data-send-failed={block.sendFailure ? block.sendFailure.problem : undefined}>
           <div className="wb-user-head">
+            {block.sendFailure && <span className="wb-user-send-failed"><AlertTriangle size={10} /> <LocalizedText id="STR-4228" /></span>}
             {/* Permanent, not transient. Scrolling back, this badge is the only
                 way to tell that the message reached the agent LATER than it was
                 typed — which is what makes the surrounding order read correctly. */}
@@ -411,6 +414,12 @@ const Block = memo(function TranscriptBlock({ block, view, density, actions, det
               drawn the same way here — a sent message should look like what was
               composed, not like raw `@name` and an absolute path. */}
           {block.text && <div className="wb-user-bubble"><ExpandableText text={block.text} title={localized("STR-2160")} chips /></div>}
+          {block.sendFailure && (
+            <div className="wb-user-send-reason" role="alert" data-send-failure-reason>
+              <span>{sendFailureText(block.sendFailure)}</span>
+              <button type="button" className="set-link-btn" onClick={actions.openSshSettings} data-open-ssh-settings><LocalizedText id="STR-4233" /></button>
+            </div>
+          )}
         </div>
       );
     case "reasoning":
@@ -466,6 +475,10 @@ const Block = memo(function TranscriptBlock({ block, view, density, actions, det
         </div>
       ) : null;
     case "error":
+      // A remote start failure names its server and agent (§13-4); the text stays the agent's own.
+      if (block.remote) {
+        return <div className="wb-block"><SshAgentStartError server={block.remote.server} agent={harnessLabel(block.remote.agent)} message={block.text} /></div>;
+      }
       return (
         <div className="wb-block wb-error">
           <span className="wb-mono">{block.text}</span>
@@ -655,7 +668,7 @@ const SESSION_SPAWN_META: Record<SessionSpawnState, { title: string; tone: strin
   failed: { title: "세션 시작 실패", tone: "danger", note: "" },
 };
 
-const SESSION_SPAWN_HOSTS: Record<string, string> = { windows: "Windows", wsl: "WSL" };
+const SESSION_SPAWN_HOSTS: Record<string, string> = { windows: "Windows", wsl: "WSL", ssh: "SSH" };
 
 /**
  * A member's session START.
@@ -827,6 +840,16 @@ function GateBlock({ block, view }: { block: Extract<TranscriptBlock, { kind: "g
       {open && details.length > 0 && <div className="wb-gate-meta wb-mono">{details.map((detail) => <div key={detail}>{detail}</div>)}</div>}
     </div>
   );
+}
+
+/** Why a message to an SSH member was not sent, naming the server. */
+function sendFailureText(failure: SshMessageUnavailable): string {
+  switch (failure.problem) {
+    case "server-missing": return localized("STR-4229", [failure.server]);
+    case "unreachable": return localized("STR-4230", [failure.server]);
+    case "auth-failed": return localized("STR-4231", [failure.server]);
+    case "fingerprint-changed": return localized("STR-4232", [failure.server]);
+  }
 }
 
 /**

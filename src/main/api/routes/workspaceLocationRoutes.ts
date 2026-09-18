@@ -19,16 +19,20 @@ function location(p: Record<string, any>): MemberExecutionLocation {
   const env = env0(p.env);
   const cwd = text(p.cwd, "cwd");
   const distro = optText(p.distro);
+  const server = optText(p.server);
   if (env === "wsl" && !distro) {
     throw new ApiError(400, "WSL 위치에는 distro 가 필요합니다.");
   }
-  return env === "wsl" ? { env, cwd, distro } : { env, cwd };
+  if (env === "ssh" && !server) {
+    throw new ApiError(400, "SSH 위치에는 server 가 필요합니다.");
+  }
+  return env === "wsl" ? { env, cwd, distro } : env === "ssh" ? { env, cwd, server } : { env, cwd };
 }
 
 function env0(value: unknown): ExecutionEnv {
   const env = String(value || "").trim();
-  if (env !== "windows" && env !== "wsl") {
-    throw new ApiError(400, `env 는 'windows' 또는 'wsl' 이어야 합니다 (받은 값: '${env}').`);
+  if (env !== "windows" && env !== "wsl" && env !== "ssh") {
+    throw new ApiError(400, `env 는 'windows', 'wsl' 또는 'ssh' 이어야 합니다 (받은 값: '${env}').`);
   }
   return env;
 }

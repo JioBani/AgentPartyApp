@@ -1,7 +1,9 @@
-import { catalogModelByClaudeSubscriptionModel, codexDirectDeepseekModel, orRoutedModels } from "./modelCatalog";
+import { catalogModelByClaudeSubscriptionModel, codexDirectBaiModel, codexDirectDeepseekModel, orRoutedModels } from "./modelCatalog";
+import { BAI_API_KEY_ENV, BAI_BASE_URL } from "./baiDefaults";
 import { DEEPSEEK_API_KEY_ENV, DEEPSEEK_BASE_URL } from "./deepseekDefaults";
 import { DEFAULT_SUBSCRIPTION_PROXY_BASE_URL, SUBSCRIPTION_PROXY_KEY_ENV } from "./subscriptionProxyDefaults";
 import { HARNESS_PROTOCOLS } from "./harnessProtocols";
+import { backendFor } from "./modelIdentity";
 
 /**
  * Codex custom model providers (Phase 2 — docs/codex-ux-research/07-model-routing.md).
@@ -23,6 +25,8 @@ export interface CodexCustomProvider {
   wireApi: "responses";
   /** Env var the provider API key is read from (set on the app-server process). */
   envKey: string;
+  /** Extra top-level `-c key=value` overrides this provider needs (values are TOML literals). */
+  extraConfig?: Record<string, string>;
 }
 
 export const CODEX_OPENROUTER_PROVIDER: CodexCustomProvider = {
@@ -57,10 +61,30 @@ export const CODEX_DEEPSEEK_PROVIDER: CodexCustomProvider = {
   envKey: DEEPSEEK_API_KEY_ENV,
 };
 
+/**
+ * B.AI's unified API. Its Responses surface serves the GPT and DeepSeek
+ * families only; models opt in through the catalog's `baiResponsesApi` flag.
+ *
+ * Web search is disabled: Codex attaches its web_search tool by default and
+ * B.AI rejects it for DeepSeek — measured 2026-09-14, every turn failed with
+ * "The current model does not support web search". The integration guide
+ * prescribes the same top-level `web_search = "disabled"`.
+ * https://docs.b.ai/llmservice/codex/integration-guide/
+ */
+export const CODEX_BAI_PROVIDER: CodexCustomProvider = {
+  id: "bai",
+  name: "B.AI",
+  baseUrl: BAI_BASE_URL,
+  wireApi: HARNESS_PROTOCOLS.codex.wireApi,
+  envKey: BAI_API_KEY_ENV,
+  extraConfig: { web_search: JSON.stringify("disabled") },
+};
+
 const PROVIDERS: Record<string, CodexCustomProvider> = {
   [CODEX_OPENROUTER_PROVIDER.id]: CODEX_OPENROUTER_PROVIDER,
   [CODEX_CLAUDE_SUBSCRIPTION_PROVIDER.id]: CODEX_CLAUDE_SUBSCRIPTION_PROVIDER,
   [CODEX_DEEPSEEK_PROVIDER.id]: CODEX_DEEPSEEK_PROVIDER,
+  [CODEX_BAI_PROVIDER.id]: CODEX_BAI_PROVIDER,
 };
 
 export function codexCustomProvider(id: string | undefined): CodexCustomProvider | undefined {
@@ -74,7 +98,11 @@ export function codexCustomProvider(id: string | undefined): CodexCustomProvider
  * provider; a bare account slug (e.g. "gpt-5.5") maps to nothing (built-in
  * openai).
  */
-export function codexProviderForModel(model: string): CodexCustomProvider | undefined {
+export function codexProviderForModel(model: string, routeProvider?: string): CodexCustomProvider | undefined {
+  const explicit = codexCustomProvider(routeProvider);
+  if (explicit) {
+    return explicit;
+  }
   const lower = model.toLowerCase();
   if (catalogModelByClaudeSubscriptionModel(model)) {
     return CODEX_CLAUDE_SUBSCRIPTION_PROVIDER;
@@ -82,8 +110,31 @@ export function codexProviderForModel(model: string): CodexCustomProvider | unde
   if (codexDirectDeepseekModel(model)) {
     return CODEX_DEEPSEEK_PROVIDER;
   }
+  if (codexDirectBaiModel(model)) {
+    return CODEX_BAI_PROVIDER;
+  }
   const isOpenRouterSlug = orRoutedModels().some((m) => (m.orModelId || "").toLowerCase() === lower);
   return isOpenRouterSlug ? CODEX_OPENROUTER_PROVIDER : undefined;
+}
+
+/** Resolve a picker route before its display id is replaced by the wire slug. */
+export function codexProviderForRoute(model: string, routeProvider?: string): CodexCustomProvider | undefined {
+  const explicit = codexCustomProvider(routeProvider);
+  if (explicit) {
+    return explicit;
+  }
+  switch (backendFor(model, "codex")?.kind) {
+    case "codex-bai":
+      return CODEX_BAI_PROVIDER;
+    case "codex-deepseek":
+      return CODEX_DEEPSEEK_PROVIDER;
+    case "codex-openrouter":
+      return CODEX_OPENROUTER_PROVIDER;
+    case "codex-claude-subscription":
+      return CODEX_CLAUDE_SUBSCRIPTION_PROVIDER;
+    default:
+      return undefined;
+  }
 }
 
 /**
@@ -101,5 +152,6 @@ export function codexProviderConfigArgs(provider: CodexCustomProvider | undefine
     "-c", `${prefix}.wire_api=${JSON.stringify(provider.wireApi)}`,
     "-c", `${prefix}.env_key=${JSON.stringify(provider.envKey)}`,
     "-c", `${prefix}.requires_openai_auth=false`,
+    ...Object.entries(provider.extraConfig || {}).flatMap(([key, value]) => ["-c", `${key}=${value}`]),
   ];
 }

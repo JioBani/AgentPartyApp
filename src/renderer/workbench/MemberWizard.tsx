@@ -16,6 +16,7 @@ import { HarnessPermissionControl } from "./HarnessPermissionControl";
 import { CwdPicker, selectableWslDistroError, type WslBrowsing } from "./CwdPicker";
 import type { CwdPreferences, ExecutionEnv, MemberExecutionLocation } from "../../shared/memberLocation";
 import { checkLocationShape, suggestedCwd } from "../../shared/memberLocation";
+import { seedCapabilityOption } from "../../shared/modelOptions";
 
 /** Why this harness's permission axes matter, in the wizard's own voice. */
 const PERMISSION_HINTS: Record<HarnessId, string> = {
@@ -26,6 +27,7 @@ const PERMISSION_HINTS: Record<HarnessId, string> = {
 };
 import { cursorPolicyOf, type CursorPolicy } from "../../shared/cursorPolicy";
 import { HarnessIcon } from "./HarnessIcon";
+import { useSshBrowsing } from "../app/useSshBrowsing";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 interface MemberWizardProps {
@@ -66,6 +68,8 @@ interface MemberWizardProps {
    */
   startStep?: number;
   submitting?: boolean;
+  /** Why the last [멤버 생성] failed, shown as one line above the buttons. */
+  createError?: string;
   onCancel: () => void;
   onCreate: (input: CreateMemberInput) => void;
 }
@@ -99,6 +103,12 @@ const GROK_HARNESS: HarnessChoice = {
   hint: "xAI Grok Build CLI · 구독 · 도구를 스스로 승인",
 };
 const ALL_HARNESSES = [...HARNESSES, CURSOR_HARNESS, GROK_HARNESS];
+/**
+ * Phase 1 runs only Codex and Claude Code on an SSH server. The others stay in
+ * the list, visibly unavailable, because nothing the user does can make them work
+ * there — unlike an agent that is merely not installed yet.
+ */
+const SSH_UNSUPPORTED_HARNESSES = ["cursor", "grok"] as const;
 
 /**
  * Creating a party member, in three steps: identity → runtime → permission.
@@ -124,7 +134,7 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: "runtime", label: "실행 구성" },
   { id: "permission", label: "권한" },
 ];
-export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, submitting = false, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, submitting = false, createError, onCancel, onCreate }: MemberWizardProps) {
   const [name, setName] = useState("");
   const [tabGroup, setTabGroup] = useState(() => (
     defaultTabGroupId && tabGroups.some((group) => group.id === defaultTabGroupId)
@@ -145,6 +155,7 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
   const [location, setLocation] = useState<MemberExecutionLocation | undefined>(() =>
     initialLocation ? { ...initialLocation } : suggestedCwd(cwdPrefs, "windows", appWorkspaceRoot));
   const [saveAsDefault, setSaveAsDefault] = useState(false);
+  const { ssh, modals: sshModals, pathCheck: sshPathCheck } = useSshBrowsing(location, setLocation);
   /** Steps already reached, so the rail can jump back to one without re-walking. */
   const [maxStep, setMaxStep] = useState(startStep);
 
@@ -159,7 +170,7 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
     const match = routes.find((route) => route.model === defaultProfile.model && (route.harnessId || "claude-code") === (defaultProfile.harness || "claude-code"));
     return match ? routeKey(match) : "";
   });
-  const selected = harnessEntries.find((entry) => routeKey(entry.route) === selectedKey) || harnessEntries[0];
+  const selected = harnessEntries.find((entry) => routeKey(entry.route) === selectedKey) || harnessEntries.find((entry) => entry.route.enabled !== false) || harnessEntries[0];
   const capabilities = selected?.route.capabilities || {};
   const effortCap = capabilities.effort;
   const serviceTierCap = capabilities.serviceTier;
@@ -185,8 +196,9 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
   useEffect(() => {
     if (!harnessEntries.some((entry) => routeKey(entry.route) === selectedKey)) {
       const defModel = harnessDefaults[harness]?.model;
-      const defEntry = defModel ? harnessEntries.find((entry) => entry.route.model === defModel) : undefined;
-      const seed = defEntry || harnessEntries[0];
+      const defEntry = defModel ? harnessEntries.find((entry) => entry.route.model === defModel && entry.route.enabled !== false) : undefined;
+      // Never seed a route the harness cannot run; the catalog would open on it with [선택] disabled.
+      const seed = defEntry || harnessEntries.find((entry) => entry.route.enabled !== false) || harnessEntries[0];
       setSelectedKey(seed ? routeKey(seed.route) : "");
     }
   }, [harnessEntries, selectedKey, harness, harnessDefaults]);
@@ -196,10 +208,9 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
   // honors that harness's saved default), else the model's own default.
   useEffect(() => {
     const hDefaults = harnessDefaults[harness];
-    const effDefault = effortCap?.supported ? effortCap.defaultValue || "medium" : "";
     const thinkDefault = thinkingCap?.supported ? thinkingCap.defaultValue || "" : "";
     const budgetDefault = thinkingCap?.budget?.default ?? 0;
-    setEffort(effortCap?.supported && hDefaults?.effort ? hDefaults.effort : effDefault);
+    setEffort(seedCapabilityOption(effortCap, hDefaults?.effort) || "");
     setServiceTier(serviceTierCap?.supported ? hDefaults?.serviceTier || serviceTierCap.defaultValue || SERVICE_TIER_INHERIT : "");
     setThinkingMode(thinkingCap?.supported && hDefaults?.reasoning ? hDefaults.reasoning : thinkDefault);
     setBudget(hDefaults?.reasoningBudget ? hDefaults.reasoningBudget : budgetDefault);
@@ -236,11 +247,18 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
    */
   const locationProblem = location ? checkLocationShape(location) : undefined;
   const distroProblem = selectableWslDistroError(location, wsl);
-  const hasLocation = Boolean(location?.cwd) && !locationProblem && !distroProblem;
-  const canSubmit = canCreate && hasLocation;
+  // An SSH path is only usable once the server said so; anything else is still
+  // being checked or is shown as the reason under the field.
+  const sshPathProblem = location?.env === "ssh" && !(sshPathCheck && sshPathCheck !== "checking" && sshPathCheck.ok);
+  const hasLocation = Boolean(location?.cwd) && !locationProblem && !distroProblem && !sshPathProblem;
+  const sshUnsupported = location?.env === "ssh" && (SSH_UNSUPPORTED_HARNESSES as readonly string[]).includes(harness);
+  const unsupportedHarnesses = location?.env === "ssh"
+    ? Object.fromEntries(SSH_UNSUPPORTED_HARNESSES.map((id) => [id, localized("STR-4204")]))
+    : undefined;
+  const canSubmit = canCreate && hasLocation && !sshUnsupported;
   // Name gates the first step, location the second; the permission step is
   // pre-seeded from the saved defaults and cannot be left unusable.
-  const canAdvance = step === "identity" ? canCreate : step === "runtime" ? hasLocation : true;
+  const canAdvance = step === "identity" ? canCreate : step === "runtime" ? hasLocation && !sshUnsupported : true;
 
   function goNext() {
     if (!canAdvance) {
@@ -471,7 +489,7 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
                   rather than a second arrangement of the same controls. */}
               <button type="button" className="wb-wizard-runtime" onClick={() => setPickerOpen(true)}>
                 <span className="wb-wizard-runtime-main">
-                  <span className="wb-wizard-runtime-harness">{selectedHarness?.icon}{selectedHarness?.label || harness}</span>
+                  <span className="wb-wizard-runtime-harness">{selectedHarness?.icon}{selectedHarness?.label || harness}{sshUnsupported && <span className="wb-model-off" data-ssh-unsupported>{localized("STR-4204")}</span>}</span>
                   <span className="wb-mono wb-wizard-runtime-model">{selected?.route.label || selectedMeta?.name || "모델 선택"}</span>
                 </span>
                 <span className="wb-mono wb-wizard-runtime-sub">
@@ -515,10 +533,12 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
                 onChangeEnv={changeEnv}
                 onBrowse={() => { void browse(); }}
                 wsl={wsl}
-                saveAsDefault={{ checked: saveAsDefault, onToggle: setSaveAsDefault }}
+                ssh={ssh}
+                saveAsDefault={location?.env === "ssh" ? undefined : { checked: saveAsDefault, onToggle: setSaveAsDefault }}
                 hint={localized("STR-3664")}
               />
-              {(locationProblem || distroProblem) && <p className="wb-wizard-error">{locationProblem?.message || distroProblem}</p>}
+              {/* SSH states its path problem on the check line under the field. */}
+              {location?.env !== "ssh" && (locationProblem || distroProblem) && <p className="wb-wizard-error">{locationProblem?.message || distroProblem}</p>}
             </section>
             )}
 
@@ -541,6 +561,7 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
           </div>
         </div>
 
+        {createError && <p className="wb-wizard-error wb-wizard-create-error" role="alert" data-member-create-error>{createError}</p>}
         <footer className="wb-modal-foot wb-wizard-foot">
           <button type="button" className="wb-btn wb-btn-ghost" disabled={submitting} onClick={onCancel}><LocalizedText id="STR-1764" /></button>
           <div className="wb-modal-actions">
@@ -588,11 +609,14 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
             config={{ harness: true, effort: true, serviceTier: true, thinking: true }}
             currentHarness={harness}
             applyLabel="선택"
+            unsupportedHarnesses={unsupportedHarnesses}
             dim
             onApply={applyRuntime}
             onClose={() => setPickerOpen(false)}
           />
         )}
+        {/* §12-2: adding a server opens over the wizard, which keeps what was typed. */}
+        {sshModals}
       </div>
     </div>
   );

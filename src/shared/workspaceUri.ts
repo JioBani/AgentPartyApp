@@ -13,7 +13,8 @@
 
 export type WorkspaceHost =
   | { kind: "local" }
-  | { kind: "wsl"; distro: string };
+  | { kind: "wsl"; distro: string }
+  | { kind: "ssh"; server: string };
 
 export interface WorkspaceLocation {
   host: WorkspaceHost;
@@ -23,6 +24,7 @@ export interface WorkspaceLocation {
 
 /** `wsl+<distro>:<posix-abs-path>` — mirrors VS Code's `wsl+<distro>` authority. */
 const WSL_URI = /^wsl\+([^:]+):(.*)$/i;
+const SSH_URI = /^ssh\+([^:]+):(.*)$/i;
 /** Windows UNC view of a distro: `\\wsl$\<distro>\...` or `\\wsl.localhost\<distro>\...`. */
 const WSL_UNC = /^\\\\wsl(?:\$|\.localhost)\\([^\\]+)\\?(.*)$/i;
 
@@ -39,6 +41,17 @@ export function parseWorkspaceLocation(value: string): WorkspaceLocation {
   const uri = WSL_URI.exec(trimmed);
   if (uri) {
     return { host: { kind: "wsl", distro: uri[1].trim() }, path: uri[2] || "/" };
+  }
+
+  const ssh = SSH_URI.exec(trimmed);
+  if (ssh) {
+    let server: string;
+    try {
+      server = decodeURIComponent(ssh[1]);
+    } catch {
+      throw new Error(`SSH workspace '${value}' has an invalid encoded server name.`);
+    }
+    return { host: { kind: "ssh", server }, path: ssh[2] || "/" };
   }
 
   const unc = WSL_UNC.exec(trimmed);
@@ -58,9 +71,16 @@ export function serializeWorkspaceLocation(loc: WorkspaceLocation): string {
   if (loc.host.kind === "wsl") {
     return `wsl+${loc.host.distro}:${loc.path}`;
   }
+  if (loc.host.kind === "ssh") {
+    return `ssh+${encodeURIComponent(loc.host.server)}:${loc.path}`;
+  }
   return loc.path;
 }
 
 export function isWslLocation(loc: WorkspaceLocation): boolean {
   return loc.host.kind === "wsl";
+}
+
+export function isSshLocation(loc: WorkspaceLocation): boolean {
+  return loc.host.kind === "ssh";
 }

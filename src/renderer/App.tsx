@@ -46,9 +46,10 @@ import type { WorkbenchActions } from "./workbench/actions";
 import { createLatestMethodProxy } from "./workbench/stableActions";
 import { PROGRESSIVE_TRANSCRIPT_GAP_MS } from "./workbench/transcriptScheduling";
 import type { MemberView, Subagent, TranscriptBlock } from "./workbench/types";
-import { buildMemberView } from "./workbench/memberStatus";
+import { buildMemberView, type FailedSend } from "./workbench/memberStatus";
 import { findRoute, RouteLike, routeKey } from "./workbench/routes";
 import { ipcErrorMessage } from "./app/ipcError";
+import { memberCreateFailureText, type MemberCreateResult } from "./workbench/memberCreateFailure";
 import { initialState, isViewId, MemberRuntimeDraft, ViewId, viewSubtitle, viewTitle } from "./app/appState";
 import { NAV_ICONS, NavRail, TitleBar, WorkbenchScreenHeader } from "./app/AppChrome";
 import { isAgentTabId, isSettingsTabId, type AgentTabId, type SettingsTabId } from "../shared/runtimeTabs";
@@ -118,6 +119,9 @@ export function App() {
   // Persisted transcripts restored from disk, keyed by member name — shown for a
   // closed member or right after an app reopen (before/without a live session).
   const [restoredByMember, setRestoredByMember] = useState<Record<string, TranscriptBlock[]>>({});
+  // Messages refused because the member's SSH server is unusable, by member key.
+  // Shown in place as 전송 실패; this window only, never saved or re-sent.
+  const [failedSendsByMember, setFailedSendsByMember] = useState<Record<string, FailedSend[]>>({});
   const [apiKeyDrafts, setApiKeyDrafts] = useState<Record<string, string>>({});
   // Account/provider-scoped rate-limit usage (titlebar indicator). Global, pushed
   // by main; fetched once on mount and kept live via the "usage:update" channel.
@@ -691,7 +695,9 @@ export function App() {
       const restored = restoredByMember[key];
       const transcriptReady = revealedMembers.has(member.name);
       const compacting = compactingByMember[member.name];
+      const failedSends = failedSendsByMember[key];
       const signature = [
+        failedSends,
         member,
         session,
         session ? logsBySession[session.id] : undefined,
@@ -719,13 +725,14 @@ export function App() {
         routes,
         compactDefault: state.settings.compactDefault,
         compacting,
+        failedSends,
       });
       nextCache.set(key, { signature, view });
       return view;
     });
     viewCacheRef.current = nextCache;
     return result;
-  }, [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, revealedMembers, routes, state.settings.compactDefault, compactingByMember]);
+  }, [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, revealedMembers, routes, state.settings.compactDefault, compactingByMember, failedSendsByMember]);
 
   // Auto-compaction trigger: when a member's live occupancy crosses its
   // threshold, fire ONE compaction (hysteresis via autoArmedRef so it never
@@ -1370,6 +1377,11 @@ export function App() {
       test: () => window.agentParty.testDeepseekKey(),
       clear: () => window.agentParty.clearDeepseekKey(),
     },
+    bai: {
+      save: (value) => window.agentParty.setBaiKey(value),
+      test: () => window.agentParty.testBaiKey(),
+      clear: () => window.agentParty.clearBaiKey(),
+    },
   };
 
   async function saveApiKey(providerId: string) {
@@ -1449,7 +1461,7 @@ export function App() {
     await refreshParty();
   }
 
-  async function createMemberInline(input: CreateMemberInput) {
+  async function createMemberInline(input: CreateMemberInput): Promise<MemberCreateResult> {
     try {
       // The wizard owns an object-shaped location because it edits environment,
       // distro, and cwd independently. IPC/API own the serialized string shape.
@@ -1462,10 +1474,10 @@ export function App() {
         location: location ? serializeMemberLocation(location) : undefined,
       });
       await applyPartyResult(result);
-      return true;
+      return { ok: true };
     } catch (error) {
-      noticeOnFailure(`'${input.name}' 멤버를 만들지 못했습니다`)(error);
-      return false;
+      // Shown inside the wizard that is still open, not as a toast behind it.
+      return { ok: false, reason: memberCreateFailureText(input.name, ipcErrorMessage(error)) };
     }
   }
 
@@ -1877,6 +1889,10 @@ export function App() {
       // asking for a tab you are already on must still move the screen there.
       setSettingsTabRequest((current) => ({ tab: "environment", seq: current.seq + 1 }));
     },
+    openSshSettings() {
+      setCurrentView("settings");
+      setSettingsTabRequest((current) => ({ tab: "ssh", seq: current.seq + 1 }));
+    },
     async sendMessage(name, text, attachments, options) {
       // Optimistic echo when the member already has a live session (instant feel);
       // for a not-yet-started member the echo is appended once the shared send
@@ -1900,6 +1916,16 @@ export function App() {
       if (!result.ok) {
         if (known) {
           setLogsBySession((current) => removeBlock(current, known, echoId));
+        }
+        const owner = members.find((item) => item.name === name);
+        if (result.sshUnavailable && owner) {
+          // The message stays where it was typed, marked 전송 실패 with the reason;
+          // the composer clears because the text now lives in the conversation.
+          const key = memberKey(owner);
+          const afterCount = (known ? logsBySession[known] : restoredByMember[key])?.length ?? 0;
+          const block: TranscriptBlock = { id: echoId, kind: "user", text, attachments, at: nowTime(), sendFailure: result.sshUnavailable };
+          setFailedSendsByMember((current) => ({ ...current, [key]: [...(current[key] || []), { afterCount, block }] }));
+          return result;
         }
         throw new Error(result.message || `Could not send a message to ${name}.`);
       }
@@ -2085,11 +2111,16 @@ export function App() {
         });
         await applyPartyResult(result);
       } else {
-        if (runtime.route && sessionId) {
-          await window.agentParty.setModel(sessionId, runtime.route.model, runtime.route.providerId, runtime.route.runtimeModel);
-        }
-        if (sessionId && runtime.effort) {
-          await window.agentParty.setEffort(sessionId, runtime.effort);
+        // Model + effort are member settings, including while the prewarmed
+        // harness is still starting or before a session exists. The shared
+        // party runtime action persists and applies them atomically; direct
+        // session setters used to drop the no-session case entirely.
+        if (runtime.route || runtime.effort) {
+          const result = await window.agentParty.setMemberRuntime(name, {
+            model: runtime.route?.model,
+            effort: runtime.effort || undefined,
+          });
+          await applyPartyResult(result);
         }
         if (sessionId && runtime.thinkingMode) {
           await window.agentParty.setThinking(sessionId, runtime.thinkingMode, runtime.thinkingBudget);
@@ -2109,10 +2140,9 @@ export function App() {
       }));
     },
     setEffort(name, effort) {
-      const sessionId = sessionIdFor(name);
-      if (sessionId) {
-        void window.agentParty.setEffort(sessionId, effort).catch(noticeOnFailure("추론 강도를 바꾸지 못했습니다"));
-      }
+      void window.agentParty.setMemberRuntime(name, { effort })
+        .then((result) => applyPartyResult(result, false))
+        .catch(noticeOnFailure("추론 강도를 바꾸지 못했습니다"));
       setRuntimeDrafts((current) => ({ ...current, [name]: { ...current[name], effort } }));
     },
     setThinking(name, mode, budget) {

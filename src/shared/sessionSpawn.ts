@@ -37,7 +37,7 @@ export interface SessionSpawnFacts {
   /** Effective model name. Already user-facing everywhere else in the UI. */
   model?: string;
   /** Which side of the machine the member runs on. */
-  host?: "windows" | "wsl";
+  host?: "windows" | "wsl" | "ssh";
   /**
    * Working directory, ALREADY shortened for display by {@link shortCwd}. The
    * full path never travels: it is both noise on a card and, in a screenshared
@@ -184,9 +184,12 @@ export function legacySpawnFacts(): SessionSpawnFacts {
  * asking is already on the side it is reporting — no path sniffing needed, and
  * nothing about the path reaches the card either way.
  */
-export function currentSpawnHost(): "windows" | "wsl" | undefined {
+export function currentSpawnHost(): "windows" | "wsl" | "ssh" | undefined {
   if (typeof process === "undefined" || !process?.platform) {
     return undefined;
+  }
+  if (process.env.AGENTPARTY_REMOTE_HOST_KIND === "ssh") {
+    return "ssh";
   }
   return process.platform === "win32" ? "windows" : "wsl";
 }

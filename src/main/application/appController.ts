@@ -11,7 +11,7 @@ import {
 import type { BrowserWindow, NativeImage } from "electron";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import { invokePartyToolFromExecutionHost, partyToolNameOf, type PartyToolResult } from "../../core/partyBridge";
-import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
+import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, MemberRuntimeInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
@@ -35,7 +35,7 @@ import { migratePartyGroups, type MigrationReport } from "../partyGroupMigration
 import { cwdProblem, parseMemberLocation, type CwdPreferences, type CwdProblem, type ExecutionEnv, type MemberExecutionLocation, type MemberLocationRow } from "../../shared/memberLocation";
 import { clearDefaultCwd, getCheckedCwdPreferences, getCwdPreferences, rememberCwd, removeRecentCwd, setDefaultCwd } from "../cwdPreferencesStore";
 import { appWorkspaceRoot, checkCwd, locationFromPickedFolder, wslDistros, wslHome } from "../cwdService";
-import { clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setDeepseekKey, setOpenRouterKey, testDeepseekKey, testOpenRouterKey, withClaudeNativeAuth, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
+import { clearBaiKey, clearDeepseekKey, clearOpenRouterKey, codexCliAuthState, cursorCliAuthState, getAuthState, invalidateCursorAuthCache, setBaiKey, setDeepseekKey, setOpenRouterKey, testBaiKey, testDeepseekKey, testOpenRouterKey, withClaudeNativeAuth, withCodexCliAuth, withCursorCliAuth, withSubscriptionProxyAuth } from "../authService";
 import { harnesses } from "../harness/types";
 import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
@@ -99,6 +99,8 @@ import {
   type ThemePreference,
 } from "../../shared/appTheme";
 import { applyNativeCliAuthProgress, nativeCliAuthProgressCheck } from "../../shared/nativeCliAuth";
+import type { SshServerDraft } from "../../shared/sshServers";
+import type { SshDraftValidationError, SshServerService } from "../ssh/sshServerService";
 
 export interface AppControllerDeps {
   sessionManager: SessionManager;
@@ -178,6 +180,11 @@ export interface AppControllerDeps {
    * RPC by the desktop that owns the window.
    */
   approvals?: ApprovalIndex;
+  /** Desktop-owned SSH credentials and connections; absent in headless workers. */
+  sshServers?: SshServerService;
+  /** Native key picker and clipboard stay injected so AppController remains Electron-free. */
+  pickSshKeyFile?: (windowId?: string) => Promise<string | undefined>;
+  writeClipboardText?: (text: string) => void;
   /** Opens an interactive CLI in the desktop user's default terminal. Desktop-only. */
   launchCliContinuation?: (input: { target: CliContinuationDetails; location: ReturnType<typeof parseWorkspaceLocation> }) => Promise<number>;
   /**
@@ -272,6 +279,8 @@ export class AppController {
 
   /** Last explicit native-login proof per workspace/provider/host. */
   private readonly nativeCliAuthTests = new Map<string, { checkedAt: string; phase: NativeCliAuthProgress["phase"]; check: EnvironmentReport["checks"][number]; distro?: string }>();
+  /** One-shot native picker result used only by the QA HTTP surface. */
+  private qaNextSshKeyFile: string | undefined;
 
   /**
    * Cursor Agent CLI status for the host that actually RUNS the harness: the
@@ -367,6 +376,7 @@ export class AppController {
       uri: serializeWorkspaceLocation(location),
       kind: location.host.kind,
       distro: location.host.kind === "wsl" ? location.host.distro : undefined,
+      server: location.host.kind === "ssh" ? location.host.server : undefined,
       path: location.path,
     };
   }
@@ -1330,6 +1340,22 @@ export class AppController {
     return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, await testDeepseekKey()), await this.getSubscriptionStatus()));
   }
 
+  async setBaiKey(key: string, workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    const state = setBaiKey(key || "");
+    this.deps.onSettingsChanged();
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
+  }
+
+  async clearBaiKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    const state = clearBaiKey();
+    this.deps.onSettingsChanged();
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, state), await this.getSubscriptionStatus()));
+  }
+
+  async testBaiKey(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
+    return this.broadcastAuth(withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, await testBaiKey()), await this.getSubscriptionStatus()));
+  }
+
   /** The full provider list, for the automation API's GET /api/auth. */
   async getAuthProviders(workspacePath = getSettings().workspacePath || process.cwd()): Promise<ReturnType<typeof getAuthState>> {
     return withSubscriptionProxyAuth(await this.authStateWithCli(workspacePath, getAuthState()), await this.getSubscriptionStatus());
@@ -2150,6 +2176,12 @@ export class AppController {
    * its own wording for the same three failures.
    */
   async checkCwd(location: MemberExecutionLocation): Promise<{ ok: true; usable: boolean; problem?: CwdProblem; location: MemberExecutionLocation }> {
+    if (location.env === "ssh") {
+      const result = await this.requireSshServers().checkRemotePath(location.server || "", location.cwd);
+      return result.ok
+        ? { ok: true, usable: true, location }
+        : { ok: true, usable: false, problem: cwdProblem(result.problem), location };
+    }
     const result = await checkCwd(location);
     return { ok: true, usable: !result.problem, problem: result.problem, location: result.location };
   }
@@ -2230,6 +2262,50 @@ export class AppController {
       }));
     return { ok: true, members };
   }
+
+  // --- SSH servers --------------------------------------------------------
+  async listSshServers() { return this.requireSshServers().listServers(); }
+  sshAttemptState(attemptId: string) { return this.requireSshServers().attemptState(attemptId); }
+
+  sshConnectDraft(draft: SshServerDraft): { attemptId: string } | { fieldErrors: import("../../shared/sshServers").SshFieldError[] } {
+    try {
+      return this.requireSshServers().connectDraft(draft);
+    } catch (error) {
+      if (error && typeof error === "object" && Array.isArray((error as SshDraftValidationError).fieldErrors)) {
+        return { fieldErrors: (error as SshDraftValidationError).fieldErrors };
+      }
+      throw error;
+    }
+  }
+
+  sshTrustFingerprint(attemptId: string) { this.requireSshServers().trustFingerprint(attemptId); }
+  sshCancelAttempt(attemptId: string) { this.requireSshServers().cancelAttempt(attemptId); }
+  sshSetupAutoLogin(attemptId: string) { this.requireSshServers().setupAutoLogin(attemptId); }
+  sshContinueWithPassword(attemptId: string) { this.requireSshServers().continueWithPassword(attemptId); }
+  sshSavePasswordLogin(attemptId: string) { this.requireSshServers().savePasswordLogin(attemptId); }
+  sshRetest(attemptId: string) { this.requireSshServers().retest(attemptId); }
+  async sshPickKeyFile(windowId?: string): Promise<string | null> {
+    if (this.qaNextSshKeyFile !== undefined) {
+      const selected = this.qaNextSshKeyFile;
+      this.qaNextSshKeyFile = undefined;
+      return selected;
+    }
+    if (!this.deps.pickSshKeyFile) throw new Error("이 프로세스에서는 SSH 키 파일을 선택할 수 없습니다");
+    return (await this.deps.pickSshKeyFile(windowId)) || null;
+  }
+  sshInspectKeyFile(file: string) { return this.requireSshServers().inspectKeyFile(file); }
+  sshTestServer(name: string) { return this.requireSshServers().testServer(name); }
+  sshReconnect(name: string) { return this.requireSshServers().reconnect(name); }
+  sshTrustNewFingerprint(name: string) { return this.requireSshServers().trustNewFingerprint(name); }
+  sshDeleteServer(name: string, options: { removeAutoLoginKey: boolean }) { return this.requireSshServers().deleteServer(name, options.removeAutoLoginKey); }
+  sshCopyPublicKey(): void {
+    if (!this.deps.writeClipboardText) throw new Error("이 프로세스에서는 SSH 공개 키를 복사할 수 없습니다");
+    this.deps.writeClipboardText(this.requireSshServers().publicKey());
+  }
+  sshCheckRemotePath(server: string, cwd: string) { return this.requireSshServers().checkRemotePath(server, cwd); }
+  sshRemoteHome(server: string) { return this.requireSshServers().remoteHome(server); }
+  sshListRemoteDirectories(server: string, remotePath: string) { return this.requireSshServers().listRemoteDirectories(server, remotePath); }
+  sshSuggestRemotePaths(server: string, input: string) { return this.requireSshServers().suggestRemotePaths(server, input); }
 
   async createParty(workspacePath: string, input: CreatePartyInput, windowId?: string): Promise<ReturnType<PartyApplicationService["createParty"]>> {
     // `main` needs a cwd it can actually run in. Checked BEFORE the party is
@@ -2364,7 +2440,16 @@ export class AppController {
     if (typeof serialized !== "string") {
       throw new Error("실행 위치 형식이 잘못되었습니다 — 직렬화된 경로 문자열이 필요합니다.");
     }
-    const check = await checkCwd(parseMemberLocation(serialized));
+    const location = parseMemberLocation(serialized);
+    if (location.env === "ssh") {
+      const remote = await this.requireSshServers().checkRemotePath(location.server || "", location.cwd);
+      if (!remote.ok) {
+        const problem = cwdProblem(remote.problem);
+        throw new Error(`실행 위치를 사용할 수 없습니다 — ${problem.message}: ${serialized}`);
+      }
+      return { location, serialized };
+    }
+    const check = await checkCwd(location);
     if (check.problem) {
       throw new Error(`실행 위치를 사용할 수 없습니다 — ${check.problem.message}: ${check.serialized}`);
     }
@@ -2519,8 +2604,9 @@ export class AppController {
       partyId,
       tool,
       executionLocation: member.location,
-      executionHost: location.host.kind === "wsl" ? "wsl" as const : "windows" as const,
+      executionHost: location.host.kind,
       ...(location.host.kind === "wsl" ? { distro: location.host.distro } : {}),
+      ...(location.host.kind === "ssh" ? { server: location.host.server } : {}),
     };
   }
 
@@ -2542,13 +2628,14 @@ export class AppController {
       member: member.name,
       partyId,
       executionLocation: member.location,
-      executionHost: location.host.kind === "wsl" ? "wsl" as const : "windows" as const,
+      executionHost: location.host.kind,
       ...(location.host.kind === "wsl" ? { distro: location.host.distro } : {}),
+      ...(location.host.kind === "ssh" ? { server: location.host.server } : {}),
     };
   }
 
   /** The shared "user sends a message to a member" path (UI, HTTP, and Discord). */
-  sendMemberMessage(workspacePath: string, name: string, text: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }, partyId?: string): Promise<ReturnType<PartyApplicationService["sendUserMessage"]>> {
+  sendMemberMessage(workspacePath: string, name: string, text: string, attachments?: ImageAttachment[], windowId?: string, options?: { interrupt?: boolean }, partyId?: string): ReturnType<PartyApplicationService["sendUserMessage"]> {
     return this.mutateParty(workspacePath, (engine) => engine.sendUserMessage(name, text, attachments, partyId || this.partyForWindow(windowId), options));
   }
 
@@ -2603,6 +2690,30 @@ export class AppController {
 
   startPartyMember(workspacePath: string, name: string, input?: StartPartyMemberInput, windowId?: string): Promise<ReturnType<PartyApplicationService["startMember"]>> {
     return this.mutateParty(workspacePath, (engine) => engine.startMember(name, input, this.partyForWindow(windowId)));
+  }
+
+  /** Rebuilds every session hosted by one SSH server after a manual reconnect. */
+  async recoverSshMembers(server: string): Promise<void> {
+    const workspacePath = this.partyStorageWorkspace("");
+    const engine = this.partyEngine(workspacePath);
+    const state = await engine.listAllParties();
+    const members = state.members.filter((member) => {
+      if (!member.location) return false;
+      const location = parseMemberLocation(member.location);
+      return location.env === "ssh" && location.server === server && member.status !== "closed";
+    });
+    for (const member of members) {
+      try {
+        await engine.respawnMember(member.name, undefined, member.partyId);
+      } catch (error) {
+        log("error", "ssh", "SSH 멤버를 다시 시작하지 못했습니다", {
+          server,
+          member: member.name,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (members.length) await this.broadcastParty(workspacePath);
   }
 
   bindPartyMember(workspacePath: string, name: string, sessionId: string, windowId?: string): Promise<ReturnType<PartyApplicationService["bindMember"]>> {
@@ -2684,6 +2795,11 @@ export class AppController {
    */
   setMemberPermission(workspacePath: string, name: string, permission: MemberPermissionInput, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberPermission"]>> {
     return this.handlePartyAction(workspacePath, name, "permission", permission, windowId) as Promise<ReturnType<PartyApplicationService["setMemberPermission"]>>;
+  }
+
+  /** Persists and applies model controls by member name, including before a session exists. */
+  setMemberRuntime(workspacePath: string, name: string, runtime: MemberRuntimeInput, windowId?: string): Promise<ReturnType<PartyApplicationService["setMemberRuntime"]>> {
+    return this.handlePartyAction(workspacePath, name, "runtime", runtime, windowId) as Promise<ReturnType<PartyApplicationService["setMemberRuntime"]>>;
   }
 
   /** Persists a member's Message Gate override (mode/rule/reviewer patch). UI + HTTP + agent share this path. */
@@ -2862,6 +2978,9 @@ export class AppController {
       return { ok: true, supported: false, member: name, reason: inspected.reason, launched: false };
     }
     const location = parseWorkspaceLocation(member.location);
+    if (location.host.kind === "ssh") {
+      return { ok: true, supported: false, member: name, reason: "SSH 멤버는 1단계에서 원격 경로 복사만 지원합니다.", launched: false };
+    }
     const locationCheck = await checkCwd(parseMemberLocation(member.location));
     const shell = location.host.kind === "wsl" ? "bash" : "powershell";
     const argv = cliContinuationArgv(inspected.target, location.host);
@@ -3212,6 +3331,12 @@ export class AppController {
     const sourceLocation = options?.sourceLocation
       ? this.requireAbsoluteSourceLocation(options.sourceLocation)
       : undefined;
+    if (sourceLocation) {
+      const source = parseWorkspaceLocation(sourceLocation);
+      if (source.host.kind === "ssh") {
+        throw new Error(`${source.host.server} 의 원격 파일은 이 PC에서 열 수 없습니다. 경로를 복사하세요.`);
+      }
+    }
     const resolutionOwner = sourceLocation ? "the member's execution location" : "the window's workspace";
     let resolved = this.resolveLocalPath(windowId, raw, sourceLocation);
     try {
@@ -3294,6 +3419,10 @@ export class AppController {
     if (location.host.kind === "wsl") {
       if (!location.host.distro || !path.posix.isAbsolute(location.path)) {
         throw new Error(`Invalid sourceLocation '${value}': an absolute WSL path is required.`);
+      }
+    } else if (location.host.kind === "ssh") {
+      if (!location.host.server || !path.posix.isAbsolute(location.path)) {
+        throw new Error(`Invalid sourceLocation '${value}': an SSH server and absolute path are required.`);
       }
     } else if (!path.win32.isAbsolute(location.path) && !path.posix.isAbsolute(location.path)) {
       throw new Error(`Invalid sourceLocation '${value}': an absolute local path is required.`);
@@ -3485,6 +3614,22 @@ export class AppController {
   // --- QA (test-only, workspace + window aware) ---------------------------
   isQaEnabled(): boolean {
     return isE2E() || process.env.AGENTPARTY_QA === "1";
+  }
+
+  /** Supplies the next SSH picker result while leaving all renderer handling unchanged. */
+  async qaSetNextSshKeyFile(input: { path?: unknown }): Promise<{ ok: true }> {
+    this.requireQa();
+    const selected = typeof input?.path === "string" ? input.path.trim() : "";
+    if (!selected || !path.isAbsolute(selected)) {
+      throw new Error("path must be an absolute local file path.");
+    }
+    try {
+      if (!(await fs.stat(selected)).isFile()) throw new Error("not a file");
+    } catch {
+      throw new Error(`SSH key picker fixture does not exist: ${selected}`);
+    }
+    this.qaNextSshKeyFile = selected;
+    return { ok: true };
   }
 
   async qaSeed(workspacePath: string, input: { party?: string; members?: QaMemberSpec[] }): Promise<{ ok: true; created: string[] } & ReturnType<PartyApplicationService["list"]>> {
@@ -3816,9 +3961,31 @@ export class AppController {
     const key = String(body?.key || "").trim();
     if (key) {
       const modifiers = (Array.isArray(body?.modifiers) ? body.modifiers : []).map((m) => String(m).toLowerCase());
-      for (const type of ["keyDown", "char", "keyUp"] as const) {
-        win.webContents.sendInputEvent({ type, keyCode: key, modifiers } as Parameters<typeof win.webContents.sendInputEvent>[0]);
+      // Chromium exposes DOM key names (`ArrowDown`), while Electron's native
+      // input bridge expects the corresponding accelerator names (`Down`).
+      // Keep the HTTP contract browser-shaped and translate only at this
+      // boundary; callers should not need Electron-specific key vocabulary.
+      const electronKey = ({
+        ArrowDown: "Down",
+        ArrowLeft: "Left",
+        ArrowRight: "Right",
+        ArrowUp: "Up",
+      } as Record<string, string>)[key] || key;
+      const sendKeyEvent = (type: "keyDown" | "char" | "keyUp") => {
+        win.webContents.sendInputEvent({ type, keyCode: electronKey, modifiers } as Parameters<typeof win.webContents.sendInputEvent>[0]);
+      };
+      sendKeyEvent("keyDown");
+      // Electron's `char` event literally inserts keyCode as text. Sending one
+      // for a named key such as ArrowDown therefore types "Arr" instead of
+      // moving a combobox selection. A physical keyboard produces characters
+      // only for printable keys without a command modifier, so mirror that
+      // boundary here and leave navigation/action keys to keyDown/keyUp.
+      const commandModifiers = new Set(["alt", "command", "control", "ctrl", "meta", "super"]);
+      const producesCharacter = Array.from(electronKey).length === 1 && !modifiers.some((modifier) => commandModifiers.has(modifier));
+      if (producesCharacter) {
+        sendKeyEvent("char");
       }
+      sendKeyEvent("keyUp");
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
     // Report what IS there, not that the call ran. An editable area is read as
@@ -4047,6 +4214,13 @@ export class AppController {
     if (!this.isQaEnabled()) {
       throw new Error("QA endpoints are disabled. Launch with AGENTPARTY_QA=1 (or E2E mode).");
     }
+  }
+
+  private requireSshServers(): SshServerService {
+    if (!this.deps.sshServers) {
+      throw new Error("이 프로세스에서는 SSH 서버를 관리할 수 없습니다");
+    }
+    return this.deps.sshServers;
   }
 
   private async captureNonEmptyPage(win: BrowserWindow): Promise<{ image: NativeImage; buffer: Buffer }> {

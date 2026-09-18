@@ -13,6 +13,7 @@ import type { GuideScreenInfo } from "../shared/guide";
 import type { GuideHostApi } from "../shared/guideHost";
 import type { TranscriptBlock } from "../shared/transcript";
 import type { TranscriptSnapshot } from "../shared/sessionEventStream";
+import type { SshConnectAttempt, SshDeleteResult, SshFieldError, SshKeyInspection, SshRemoteDirectoryResult, SshRemotePathCheck, SshRemotePathSuggestions, SshServerDraft, SshServerView } from "../shared/sshServers";
 
 const appearanceBoot = parseAppearanceBootArgs(process.argv)
   || ipcRenderer.sendSync("appearance:boot");
@@ -60,10 +61,42 @@ const api = {
   listWslDistros: () => ipcRenderer.invoke("cwd:distros"),
   browseCwd: (env: string, distro?: string) => ipcRenderer.invoke("cwd:browse", env, distro),
   listMemberLocations: () => ipcRenderer.invoke("cwd:memberLocations"),
+  listSshServers: (): Promise<SshServerView[]> => ipcRenderer.invoke("ssh:list"),
+  sshConnectDraft: (draft: SshServerDraft): Promise<{ attemptId: string } | { fieldErrors: SshFieldError[] }> => ipcRenderer.invoke("ssh:connectDraft", draft),
+  sshTrustFingerprint: (attemptId: string): Promise<void> => ipcRenderer.invoke("ssh:trustFingerprint", attemptId),
+  sshCancelAttempt: (attemptId: string): Promise<void> => ipcRenderer.invoke("ssh:cancelAttempt", attemptId),
+  sshSetupAutoLogin: (attemptId: string): Promise<void> => ipcRenderer.invoke("ssh:setupAutoLogin", attemptId),
+  sshContinueWithPassword: (attemptId: string): Promise<void> => ipcRenderer.invoke("ssh:continueWithPassword", attemptId),
+  sshSavePasswordLogin: (attemptId: string): Promise<void> => ipcRenderer.invoke("ssh:savePasswordLogin", attemptId),
+  sshRetest: (attemptId: string): Promise<void> => ipcRenderer.invoke("ssh:retest", attemptId),
+  sshPickKeyFile: (): Promise<string | null> => ipcRenderer.invoke("ssh:pickKeyFile"),
+  sshInspectKeyFile: (file: string): Promise<SshKeyInspection> => ipcRenderer.invoke("ssh:inspectKeyFile", file),
+  sshTestServer: (name: string): Promise<void> => ipcRenderer.invoke("ssh:testServer", name),
+  sshReconnect: (name: string): Promise<void> => ipcRenderer.invoke("ssh:reconnect", name),
+  sshTrustNewFingerprint: (name: string): Promise<void> => ipcRenderer.invoke("ssh:trustNewFingerprint", name),
+  sshDeleteServer: (name: string, options: { removeAutoLoginKey: boolean }): Promise<SshDeleteResult> => ipcRenderer.invoke("ssh:deleteServer", name, options),
+  sshCopyPublicKey: (): Promise<void> => ipcRenderer.invoke("ssh:copyPublicKey"),
+  sshCheckRemotePath: (server: string, cwd: string): Promise<SshRemotePathCheck> => ipcRenderer.invoke("ssh:checkRemotePath", server, cwd),
+  sshRemoteHome: (server: string): Promise<SshRemoteDirectoryResult> => ipcRenderer.invoke("ssh:remoteHome", server),
+  sshListRemoteDirectories: (server: string, remotePath: string): Promise<SshRemoteDirectoryResult> => ipcRenderer.invoke("ssh:listRemoteDirectories", server, remotePath),
+  sshSuggestRemotePaths: (server: string, input: string): Promise<SshRemotePathSuggestions> => ipcRenderer.invoke("ssh:suggestRemotePaths", server, input),
+  onSshServers: (callback: (servers: SshServerView[]) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, servers: SshServerView[]) => callback(servers);
+    ipcRenderer.on("ssh:servers", listener);
+    return () => ipcRenderer.off("ssh:servers", listener);
+  },
+  onSshAttempt: (callback: (attempt: SshConnectAttempt) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, attempt: SshConnectAttempt) => callback(attempt);
+    ipcRenderer.on("ssh:attempt", listener);
+    return () => ipcRenderer.off("ssh:attempt", listener);
+  },
   listAuth: () => ipcRenderer.invoke("auth:list"),
   setDeepseekKey: (value: string) => ipcRenderer.invoke("auth:setDeepseekKey", value),
   clearDeepseekKey: () => ipcRenderer.invoke("auth:clearDeepseekKey"),
   testDeepseekKey: () => ipcRenderer.invoke("auth:testDeepseekKey"),
+  setBaiKey: (value: string) => ipcRenderer.invoke("auth:setBaiKey", value),
+  clearBaiKey: () => ipcRenderer.invoke("auth:clearBaiKey"),
+  testBaiKey: () => ipcRenderer.invoke("auth:testBaiKey"),
   setOpenRouterKey: (value: string) => ipcRenderer.invoke("auth:setOpenRouterKey", value),
   clearOpenRouterKey: () => ipcRenderer.invoke("auth:clearOpenRouterKey"),
   testOpenRouterKey: () => ipcRenderer.invoke("auth:testOpenRouterKey"),
@@ -206,6 +239,7 @@ const api = {
   /** Compacts a member's conversation, waking it first if it is asleep. */
   compactPartyMember: (name: string) => ipcRenderer.invoke("party:compact", name),
   setMemberPermission: (name: string, permission: unknown) => ipcRenderer.invoke("party:permission", name, permission),
+  setMemberRuntime: (name: string, runtime: unknown) => ipcRenderer.invoke("party:runtime", name, runtime),
   setMemberGate: (name: string, gate: unknown) => ipcRenderer.invoke("party:gate", name, gate),
   setMemberOutboundInterrupt: (name: string, outboundInterrupt: boolean | null) => ipcRenderer.invoke("party:outbound-interrupt", name, outboundInterrupt),
   setPartyGate: (partyId: string, gate: unknown) => ipcRenderer.invoke("party:partyGate", partyId, gate),

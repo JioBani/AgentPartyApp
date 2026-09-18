@@ -1,6 +1,6 @@
 /** Tabs exposed by the Agent and Settings screens. Shared with the automation API. */
 export const AGENT_TAB_IDS = ["general", "defaults", "primer", "gate", "discord"] as const;
-export const SETTINGS_TAB_IDS = ["general", "environment", "workspace", "mobile", "versions", "diagnostics", "automation"] as const;
+export const SETTINGS_TAB_IDS = ["general", "environment", "workspace", "ssh", "mobile", "versions", "diagnostics", "automation"] as const;
 
 export type AgentTabId = (typeof AGENT_TAB_IDS)[number];
 export type SettingsTabId = (typeof SETTINGS_TAB_IDS)[number];

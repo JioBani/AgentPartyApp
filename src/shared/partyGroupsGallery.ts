@@ -62,6 +62,7 @@ export const GALLERY_CWD_PREFERENCES: CwdPreferences = {
     { location: { env: "wsl", cwd: "/mnt/d/work/payments", distro: "Ubuntu-24.04" }, usedAt: ago(2 * DAY + 2 * HOUR) },
     { location: { env: "wsl", cwd: "/home/dev/legacy", distro: "Ubuntu-22.04" }, usedAt: ago(11 * DAY), problem: cwdProblem("distro-unavailable") },
   ],
+  sshRecent: [],
 };
 
 /** The distros the picker offers in the preview. */
@@ -71,7 +72,7 @@ export const GALLERY_WSL_DISTROS = ["Ubuntu-24.04", "Ubuntu-22.04", "docker-desk
 export const GALLERY_APP_WORKSPACE_ROOT = "C:\Users\Dev\AppData\Roaming\AgentParty\workspaces";
 
 /** The empty state: a fresh install has no default and nothing remembered. */
-export const GALLERY_CWD_PREFERENCES_EMPTY: CwdPreferences = { windowsRecent: [], wslRecent: [] };
+export const GALLERY_CWD_PREFERENCES_EMPTY: CwdPreferences = { windowsRecent: [], wslRecent: [], sshRecent: [] };
 
 export const GALLERY_MEMBER_LOCATIONS: MemberLocationRow[] = [
   { member: "main", partyName: "AgentParty", location: GALLERY_WINDOWS_DEFAULT },

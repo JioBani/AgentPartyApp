@@ -47,6 +47,9 @@ export async function getCheckedCwdPreferences(): Promise<CwdPreferences> {
     ...prefs,
     windowsRecent: await recheck(prefs.windowsRecent),
     wslRecent: await recheck(prefs.wslRecent),
+    // SSH reachability is owned by SshServerService and refreshed by its UI/API
+    // path. Never run these POSIX paths through the Windows filesystem checker.
+    sshRecent: prefs.sshRecent,
   };
 }
 
@@ -59,6 +62,9 @@ export async function getCheckedCwdPreferences(): Promise<CwdPreferences> {
  * member somebody creates.
  */
 export async function setDefaultCwd(location: MemberExecutionLocation): Promise<CwdPreferences> {
+  if (location.env === "ssh") {
+    throw new Error("SSH locations are remembered per server and cannot be an app-wide default.");
+  }
   const { problem } = await checkCwd(location);
   if (problem) {
     throw new Error(`${problem.message}: ${location.distro ? `${location.distro} · ` : ""}${location.cwd}`);
@@ -72,6 +78,7 @@ export async function setDefaultCwd(location: MemberExecutionLocation): Promise<
 
 export function clearDefaultCwd(env: ExecutionEnv): CwdPreferences {
   const prefs = getCwdPreferences();
+  if (env === "ssh") return prefs;
   return persist(env === "wsl" ? { ...prefs, wslDefault: undefined } : { ...prefs, windowsDefault: undefined });
 }
 
@@ -88,8 +95,19 @@ export function rememberCwd(location: MemberExecutionLocation, usedAt = new Date
 export function removeRecentCwd(location: MemberExecutionLocation): CwdPreferences {
   const prefs = getCwdPreferences();
   const key = memberLocationKey(location);
-  const field = location.env === "wsl" ? "wslRecent" : "windowsRecent";
+  const field = location.env === "wsl" ? "wslRecent" : location.env === "ssh" ? "sshRecent" : "windowsRecent";
   return persist({ ...prefs, [field]: prefs[field].filter((entry) => memberLocationKey(entry.location) !== key) });
+}
+
+/** Keeps SSH recent locations attached when a user renames a server alias. */
+export function renameSshRecentServer(from: string, to: string): CwdPreferences {
+  const prefs = getCwdPreferences();
+  return persist({
+    ...prefs,
+    sshRecent: prefs.sshRecent.map((entry) => entry.location.env === "ssh" && entry.location.server === from
+      ? { ...entry, location: { ...entry.location, server: to } }
+      : entry),
+  });
 }
 
 /** Promotes a remembered cwd to its environment's default (same checks apply). */
@@ -103,7 +121,7 @@ function persist(next: CwdPreferences): CwdPreferences {
   log("info", "cwd", "preferences saved", {
     windowsDefault: saved.windowsDefault?.cwd,
     wslDefault: saved.wslDefault ? `${saved.wslDefault.distro}:${saved.wslDefault.cwd}` : undefined,
-    recent: saved.windowsRecent.length + saved.wslRecent.length,
+    recent: saved.windowsRecent.length + saved.wslRecent.length + saved.sshRecent.length,
   });
   return saved;
 }
@@ -117,13 +135,14 @@ function persist(next: CwdPreferences): CwdPreferences {
  */
 export function normalize(value: CwdPreferences | undefined): CwdPreferences {
   if (!value || typeof value !== "object") {
-    return { ...EMPTY_CWD_PREFERENCES, windowsRecent: [], wslRecent: [] };
+    return { ...EMPTY_CWD_PREFERENCES, windowsRecent: [], wslRecent: [], sshRecent: [] };
   }
   return {
     windowsDefault: normalizeLocation(value.windowsDefault, "windows"),
     wslDefault: normalizeLocation(value.wslDefault, "wsl"),
     windowsRecent: normalizeRecent(value.windowsRecent, "windows"),
     wslRecent: normalizeRecent(value.wslRecent, "wsl"),
+    sshRecent: normalizeRecent(value.sshRecent, "ssh"),
   };
 }
 
@@ -135,6 +154,10 @@ function normalizeLocation(value: MemberExecutionLocation | undefined, env: Exec
   if (env === "wsl") {
     const distro = String(value?.distro || "").trim();
     return distro ? { env, cwd, distro } : undefined;
+  }
+  if (env === "ssh") {
+    const server = String(value?.server || "").trim();
+    return server ? { env, cwd, server } : undefined;
   }
   return { env, cwd };
 }

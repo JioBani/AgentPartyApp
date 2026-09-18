@@ -15,6 +15,7 @@ import { HARNESS_IDS, harnessLabel } from "../../shared/types";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 import { ModelIcon } from "./ModelIcon";
 import { ProviderIcon } from "./ProviderIcon";
+import { seedCapabilityOption } from "../../shared/modelOptions";
 
 /** Which optional sections a given usage of the catalog exposes. */
 export interface ModelCatalogConfig {
@@ -68,6 +69,12 @@ interface ModelCatalogModalProps {
   onClose: () => void;
   /** Dim the backdrop. Default false — a clean floating popup (no dim). */
   dim?: boolean;
+  /**
+   * Harnesses shown but not selectable, with the short reason as a tag (e.g.
+   * Cursor and Grok at an SSH location). Shown rather than hidden: the user sees
+   * why an agent is missing instead of wondering where it went.
+   */
+  unsupportedHarnesses?: Readonly<Record<string, string>>;
 }
 
 const HARNESS_CHOICES = HARNESS_IDS.map((id) => ({ id, label: harnessLabel(id) }));
@@ -125,6 +132,7 @@ export function ModelCatalogModal({
   onApply,
   onClose,
   dim = false,
+  unsupportedHarnesses,
 }: ModelCatalogModalProps) {
   const entries = useMemo<RouteEntry[]>(() => routes.map((route) => ({ route, meta: modelView(route) })), [routes]);
 
@@ -135,13 +143,19 @@ export function ModelCatalogModal({
     () => (config.harness ? entries.filter((entry) => (entry.route.harnessId || "claude-code") === harness) : entries),
     [entries, config.harness, harness],
   );
+  /**
+   * The model a fallback lands on. The first row of a harness can be a route that
+   * harness cannot run (Cursor lists Claude models it does not serve), and
+   * landing there left an unusable model selected with [선택] disabled.
+   */
+  const firstUsable = displayEntries.find((entry) => entry.route.enabled !== false) || displayEntries[0];
   const currentKey = useMemo(() => {
     const match = findRoute(value.model, displayEntries.map((entry) => entry.route));
-    return match ? routeKey(match) : displayEntries[0] ? routeKey(displayEntries[0].route) : "";
-  }, [displayEntries, value.model]);
+    return match ? routeKey(match) : firstUsable ? routeKey(firstUsable.route) : "";
+  }, [displayEntries, value.model, firstUsable]);
 
   const [selectedKey, setSelectedKey] = useState(currentKey);
-  const selected = displayEntries.find((entry) => routeKey(entry.route) === selectedKey) || displayEntries[0];
+  const selected = displayEntries.find((entry) => routeKey(entry.route) === selectedKey) || firstUsable;
 
   // --- Catalog list: search + provider collapse + favourites ---------------
   const favorites = useFavoriteModels();
@@ -176,10 +190,13 @@ export function ModelCatalogModal({
       provTouched.current = false;
     }
     if (!provTouched.current) {
-      setProvOpen(initialProvOpen(displayEntries, currentKey, favorites));
+      // Follow the SELECTED model: after a harness switch the selection moves to
+      // that harness's first usable route while currentKey still names the old
+      // model, which opened the wrong group and left the selection collapsed.
+      setProvOpen(initialProvOpen(displayEntries, selectedKey || currentKey, favorites));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [favorites, currentKey, harness]);
+  }, [favorites, currentKey, selectedKey, harness]);
 
   function setProviderOpen(provider: string, open: boolean) {
     provTouched.current = true;
@@ -220,10 +237,9 @@ export function ModelCatalogModal({
 
   const baselineEffort = (key: string): string => {
     if (!effortCap?.supported) {
-      return value.effort || "medium";
+      return "";
     }
-    const current = key === currentKey && effortCap.options.some((option) => option.id === value.effort) ? value.effort : "";
-    return current || effortCap.defaultValue || "medium";
+    return seedCapabilityOption(effortCap, key === currentKey ? value.effort : undefined) || "";
   };
   const baselineThinking = (key: string): string => {
     if (!thinkingCap?.supported) {
@@ -264,8 +280,9 @@ export function ModelCatalogModal({
   // that opens with it is handled by the expansion effect above, which keys off
   // the resulting current model rather than off this comparison.
   useEffect(() => {
-    if (config.harness && selected && (selected.route.harnessId || "claude-code") !== harness && displayEntries[0]) {
-      setSelectedKey(routeKey(displayEntries[0].route));
+    const stale = !displayEntries.some((entry) => routeKey(entry.route) === selectedKey);
+    if (config.harness && firstUsable && (stale || (selected?.route.harnessId || "claude-code") !== harness || selected?.route.enabled === false)) {
+      setSelectedKey(routeKey(firstUsable.route));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [harness]);
@@ -374,17 +391,19 @@ export function ModelCatalogModal({
                 <div className="wb-modal-label">Harness{harnessLocked && <span className="wb-mono wb-modal-note">  <LocalizedText id="STR-1864" /></span>}</div>
                 <div className="wb-harness-strip" ref={moreRef}>
                   {primaryHarnesses.map((choice) => {
-                    const locked = harnessLocked && choice.id !== currentHarness;
+                    const unsupported = unsupportedHarnesses?.[choice.id];
+                    const locked = (harnessLocked && choice.id !== currentHarness) || Boolean(unsupported);
                     return (
                       <button
                         type="button"
                         key={choice.id}
                         disabled={locked}
-                        title={locked ? lockedHarnessHint : choice.label}
+                        title={unsupported || (locked ? lockedHarnessHint : choice.label)}
                         className={"wb-harness-tab" + (choice.id === harness ? " is-active" : "") + (locked ? " is-locked" : "")}
                         onClick={() => { if (!locked) setHarness(choice.id); }}
                       >
                         {choice.label}
+                        {unsupported && <span className="wb-model-off">{unsupported}</span>}
                       </button>
                     );
                   })}
@@ -405,18 +424,20 @@ export function ModelCatalogModal({
                     <div className="wb-harness-menu" role="menu">
                       <div className="wb-harness-menu-label"><LocalizedText id="STR-1867" /></div>
                       {overflowHarnesses.map((choice) => {
-                        const locked = harnessLocked && choice.id !== currentHarness;
+                        const unsupported = unsupportedHarnesses?.[choice.id];
+                        const locked = (harnessLocked && choice.id !== currentHarness) || Boolean(unsupported);
                         return (
                           <button
                             type="button"
                             role="menuitem"
                             key={choice.id}
                             disabled={locked}
-                            title={locked ? lockedHarnessHint : undefined}
+                            title={unsupported || (locked ? lockedHarnessHint : undefined)}
                             className={"wb-harness-menu-item" + (choice.id === harness ? " is-active" : "") + (locked ? " is-locked" : "")}
                             onClick={() => { if (!locked) { setHarness(choice.id); setMoreOpen(false); } }}
                           >
                             <span className="wb-harness-menu-name">{choice.label}</span>
+                            {unsupported && <span className="wb-model-off">{unsupported}</span>}
                             <span className="wb-mono">{harnessCount(choice.id)}</span>
                             <Check size={13} className={"wb-harness-menu-check" + (choice.id === harness ? " is-on" : "")} aria-hidden="true" />
                           </button>

@@ -1,4 +1,5 @@
 import { Fragment, PointerEvent as ReactPointerEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import type { MemberCreateResult } from "./memberCreateFailure";
 import { PanelLeftOpen } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults, PartyDefinition } from "../../shared/types";
 import type { MemberView, PanelState } from "./types";
@@ -95,7 +96,7 @@ interface WorkbenchProps {
   appWorkspaceRoot: string;
   /** Frozen "now" for recency labels, so previews render deterministically. */
   now: number;
-  onCreateMember: (input: CreateMemberInput) => Promise<boolean>;
+  onCreateMember: (input: CreateMemberInput) => Promise<MemberCreateResult>;
   onRemoveMember: (member: string) => void;
   /** Idle-sleep controls for one member (pin awake, sleep now, wake now). */
   onSetMemberKeepAwake: (member: string, keepAwake: boolean) => void;
@@ -916,6 +917,7 @@ export function Workbench(props: WorkbenchProps) {
         onCreateMember={handleCreateMember}
         onOpenMember={handleOpenMember}
         onRestartMember={(member) => actions.restart(member)}
+        onOpenSshSettings={() => actions.openSshSettings()}
         onRemoveMember={onRemoveMember}
         onSetMemberKeepAwake={onSetMemberKeepAwake}
         onSleepMember={onSleepMember}

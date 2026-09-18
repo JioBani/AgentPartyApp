@@ -14,10 +14,10 @@
  */
 import catalog from "./modelCatalog.json";
 
-export type CatalogProvider = "anthropic" | "openai" | "openrouter" | "cursor" | "deepseek" | "xai";
+export type CatalogProvider = "anthropic" | "openai" | "openrouter" | "cursor" | "deepseek" | "xai" | "bai";
 
-/** Effort levels transportable to the harness (SDK `effort`). */
-export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+/** Effort levels transportable to a harness; each model advertises its subset. */
+export type EffortLevel = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 /** Thinking modes transportable to the harness (SDK `thinking.type`). */
 export type ThinkingMode = "adaptive" | "enabled" | "disabled";
 
@@ -137,6 +137,13 @@ export interface CatalogModel {
    * instead of failing once the user has already picked it.
    */
   xaiClientToolsBeta?: boolean;
+  /** Model id on B.AI's Responses API, used only by the Codex harness. */
+  baiModel?: string;
+  /**
+   * Whether B.AI serves this model on the OpenAI Responses API — the only wire
+   * codex speaks. B.AI documents it for the GPT and DeepSeek families only.
+   */
+  baiResponsesApi?: boolean;
   subscription: boolean;
   description?: string;
   context?: string;
@@ -168,9 +175,21 @@ export interface CatalogModel {
  */
 export const MODEL_CATALOG_SCHEMA_VERSION = 1;
 
-const CATALOG_PROVIDERS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "cursor", "deepseek", "xai"]);
+const CATALOG_PROVIDERS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "cursor", "deepseek", "xai", "bai"]);
 
-let MODELS: CatalogModel[] = validateModelCatalogPayload(catalog).models;
+let MODELS: CatalogModel[] = bundledCatalogModels();
+
+/**
+ * The bundled snapshot is authored with this build, so an entry it cannot route
+ * is a source mistake, not a newer provider — fail loudly instead of skipping.
+ */
+function bundledCatalogModels(): CatalogModel[] {
+  const { models, skipped } = validateModelCatalogPayload(catalog);
+  if (skipped.length > 0) {
+    throw new Error(`bundled catalog has entries with unknown providers: ${skipped.join(", ")}`);
+  }
+  return models;
+}
 
 export function modelCatalog(): CatalogModel[] {
   return MODELS;
@@ -189,11 +208,17 @@ export function applyModelCatalog(models: CatalogModel[]): void {
 
 /**
  * Validates an untrusted catalog payload (remote fetch or disk cache) and
- * returns its typed models. Throws with a specific reason on ANY structural
+ * returns its typed models. Throws with a specific reason on any structural
  * problem — the caller falls back to the previous catalog and surfaces the
- * error; a half-valid payload must never be applied.
+ * error; a broken payload must never be applied.
+ *
+ * An entry whose provider this build does not know is NOT structural: it is a
+ * provider added after this build shipped. Rejecting the whole payload for it
+ * froze older installs on their cached catalog, so they stopped receiving every
+ * later model update. Such entries are skipped and reported in `skipped` (the
+ * caller logs and surfaces them); everything this build can route is applied.
  */
-export function validateModelCatalogPayload(payload: unknown): { models: CatalogModel[] } {
+export function validateModelCatalogPayload(payload: unknown): { models: CatalogModel[]; skipped: string[] } {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("catalog payload is not an object");
   }
@@ -207,6 +232,8 @@ export function validateModelCatalogPayload(payload: unknown): { models: Catalog
     throw new Error("catalog payload has no models array");
   }
   const seen = new Set<string>();
+  const models: CatalogModel[] = [];
+  const skipped: string[] = [];
   for (const [index, entry] of record.models.entries()) {
     if (!entry || typeof entry !== "object") {
       throw new Error(`models[${index}] is not an object`);
@@ -218,8 +245,8 @@ export function validateModelCatalogPayload(payload: unknown): { models: Catalog
     if (typeof model.label !== "string" || !model.label.trim()) {
       throw new Error(`models[${index}] (${model.id}) is missing a string label`);
     }
-    if (typeof model.provider !== "string" || !CATALOG_PROVIDERS.has(model.provider)) {
-      throw new Error(`models[${index}] (${model.id}) has unknown provider ${JSON.stringify(model.provider)}`);
+    if (typeof model.provider !== "string" || !model.provider.trim()) {
+      throw new Error(`models[${index}] (${model.id}) is missing a string provider`);
     }
     if (typeof model.subscription !== "boolean") {
       throw new Error(`models[${index}] (${model.id}) is missing the boolean subscription flag`);
@@ -229,8 +256,16 @@ export function validateModelCatalogPayload(payload: unknown): { models: Catalog
       throw new Error(`duplicate model id ${model.id}`);
     }
     seen.add(key);
+    if (!CATALOG_PROVIDERS.has(model.provider)) {
+      skipped.push(`${model.id} (provider ${model.provider})`);
+      continue;
+    }
+    models.push(model as CatalogModel);
   }
-  return { models: record.models as CatalogModel[] };
+  if (models.length === 0) {
+    throw new Error(`catalog payload has no model this build can route (skipped: ${skipped.join(", ")})`);
+  }
+  return { models, skipped };
 }
 
 export function catalogModelById(id: string): CatalogModel | undefined {
@@ -245,7 +280,8 @@ export function catalogModelByRuntime(runtimeModel: string): CatalogModel | unde
       (m.runtimeModel || m.id).toLowerCase() === lower ||
       m.codexModel?.toLowerCase() === lower ||
       m.cursorModel?.toLowerCase() === lower ||
-      m.claudeSubscriptionModel?.toLowerCase() === lower,
+      m.claudeSubscriptionModel?.toLowerCase() === lower ||
+      m.baiModel?.toLowerCase() === lower,
   );
 }
 
@@ -381,6 +417,21 @@ export function codexDirectDeepseekModel(model: string): CatalogModel | undefine
   return deepseekModels().find(
     (m) => m.deepseekResponsesApi === true && m.deepseekModel?.toLowerCase() === lower,
   );
+}
+
+/** Models explicitly verified on B.AI's Responses API. */
+export function baiModels(): CatalogModel[] {
+  return MODELS.filter((m) => m.provider === "bai" && m.baiResponsesApi === true && Boolean(m.baiModel));
+}
+
+/**
+ * The B.AI entry a Codex model slug names, when B.AI serves it on Responses.
+ * Provider selection itself uses route metadata; this lookup only answers
+ * whether the slug is valid on B.AI and may therefore overlap another provider.
+ */
+export function codexDirectBaiModel(model: string): CatalogModel | undefined {
+  const lower = model.toLowerCase();
+  return baiModels().find((m) => m.baiResponsesApi === true && m.baiModel?.toLowerCase() === lower);
 }
 
 /**

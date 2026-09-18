@@ -15,6 +15,7 @@ import { ContextDonut } from "./ContextDonut";
 import { WorkingDots } from "./StatusIndicator";
 import { ENV_LABEL, EnvIcon } from "./CwdPicker";
 import { memberLocationOf, splitPathTail } from "./memberGroups";
+import { SshPanelBanner } from "./SshPanelBanner";
 import { buildSubDetail, buildSubDock } from "./subagentModel";
 import { workbenchPopupOpen } from "./workbenchPopups";
 import { useModalEscape } from "./useModalEscape";
@@ -149,7 +150,7 @@ export function Panel(props: PanelProps) {
   const location = view ? memberLocationOf(view) : undefined;
   const cwdParts = splitPathTail(location?.cwd || "");
   const locationTitle = location
-    ? (location.distro ? `${ENV_LABEL[location.env]} · ${location.distro}: ${location.cwd}` : `${ENV_LABEL[location.env]}: ${location.cwd}`)
+    ? (location.distro || location.server ? `${ENV_LABEL[location.env]} · ${location.distro || location.server}: ${location.cwd}` : `${ENV_LABEL[location.env]}: ${location.cwd}`)
     : "";
 
   return (
@@ -201,7 +202,10 @@ export function Panel(props: PanelProps) {
                 so the duplicated name gives the slot to the location. */}
             {location && (
               <span className="wb-toolbar-cwd" title={locationTitle} aria-label={locationTitle}>
-                <EnvIcon env={location.env} size={12} />
+                {/* S7: an SSH member names its server in the accent chip; the path follows. */}
+                {location.env === "ssh"
+                  ? <span className="wb-ssh-loc"><EnvIcon env="ssh" size={11} /><span className="wb-ssh-loc-server">SSH · {location.server}</span></span>
+                  : <EnvIcon env={location.env} size={12} />}
                 <span className="wb-toolbar-cwd-path">
                   {/* Ancestors absorb the ellipsis; the directory name is what
                       tells two checkouts apart and must survive a narrow panel. */}
@@ -335,6 +339,7 @@ export function Panel(props: PanelProps) {
         </div>
       ) : view ? (
         <>
+          <SshPanelBanner view={view} actions={actions} />
           <Transcript
             key={`${view.member.partyId || "default"}:${view.name}:${view.member.createdAt || ""}`}
             view={view}

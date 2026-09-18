@@ -54,7 +54,7 @@ export type MemberEnvKind = ExecutionEnv | "unknown";
  */
 const NATIVE_ENVS: readonly MemberEnvKind[] = ["windows"];
 
-const ENV_ORDER: readonly MemberEnvKind[] = ["windows", "wsl", "unknown"];
+const ENV_ORDER: readonly MemberEnvKind[] = ["windows", "wsl", "ssh", "unknown"];
 
 export interface MemberCwdGroup<T extends GroupableMember = GroupableMember> {
   /** Stable across renders and across host/cwd edits; used for open/closed state. */
@@ -81,6 +81,8 @@ export interface MemberEnvGroup<T extends GroupableMember = GroupableMember> {
   kind: MemberEnvKind;
   /** Present only for WSL, and only when the stored location named one. */
   distro?: string;
+  /** Present only for SSH: the registered server this section runs on. */
+  server?: string;
   /**
    * The environment could not be named: a WSL location with no distro, or a
    * member with no readable location at all. The view owes these a spelled-out
@@ -137,10 +139,13 @@ export function groupMembersByLocation<T extends GroupableMember>(views: readonl
     // gets its own section rather than being folded into whichever distro
     // happens to sort first.
     const distro = kind === "wsl" ? location?.distro : undefined;
-    const envId = envGroupId(kind, distro);
+    // Each SSH server is its own section for the same reason each distro is:
+    // two servers share no filesystem, and a server is what fails as a unit.
+    const server = kind === "ssh" ? location?.server : undefined;
+    const envId = envGroupId(kind, kind === "ssh" ? server : distro);
     let env = byEnv.get(envId);
     if (!env) {
-      env = { id: envId, kind, distro, unnamed: kind === "unknown" || (kind === "wsl" && !distro), groups: [], count: 0 };
+      env = { id: envId, kind, distro, server, unnamed: kind === "unknown" || (kind === "wsl" && !distro) || (kind === "ssh" && !server), groups: [], count: 0 };
       byEnv.set(envId, env);
     }
     const id = cwdGroupId(location);
@@ -167,6 +172,10 @@ export function groupMembersByLocation<T extends GroupableMember>(views: readonl
  * more to the point, one collapse key that does not flip between two ids.
  */
 export function envGroupId(kind: MemberEnvKind, distro?: string): string {
+  if (kind === "ssh") {
+    // Server names are exact user aliases, unlike WSL distro names.
+    return distro ? `env:ssh:${distro}` : "env:ssh-unidentified";
+  }
   if (kind !== "wsl") {
     return `env:${kind}`;
   }
@@ -200,11 +209,13 @@ function compareEnvs(a: MemberEnvGroup, b: MemberEnvGroup): number {
   }
   // A named distro outranks the unnamed bucket for the same reason `unknown`
   // sorts last: the least informative section never leads.
-  const named = Number(Boolean(b.distro)) - Number(Boolean(a.distro));
+  const aName = a.distro || a.server || "";
+  const bName = b.distro || b.server || "";
+  const named = Number(Boolean(bName)) - Number(Boolean(aName));
   if (named !== 0) {
     return named;
   }
-  return (a.distro || "").localeCompare(b.distro || "") || a.id.localeCompare(b.id);
+  return aName.localeCompare(bName) || a.id.localeCompare(b.id);
 }
 
 function compareGroups(a: MemberCwdGroup, b: MemberCwdGroup): number {

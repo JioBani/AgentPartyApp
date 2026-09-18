@@ -31,7 +31,7 @@ export type PermissionModeSetting = (typeof PERMISSION_MODE_SETTINGS)[number];
 export function isPermissionModeSetting(value: unknown): value is PermissionModeSetting {
   return typeof value === "string" && (PERMISSION_MODE_SETTINGS as readonly string[]).includes(value);
 }
-export type EffortSetting = "low" | "medium" | "high" | "xhigh" | "max";
+export type EffortSetting = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
 export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
 
@@ -123,6 +123,8 @@ export interface AppSettings {
   openRouterApiKey: string;
   /** DeepSeek official API key (DEEPSEEK_API_KEY). Used by provider "deepseek" models. */
   deepseekApiKey: string;
+  /** B.AI unified API key (BAI_API_KEY). Used by provider "bai" models. */
+  baiApiKey: string;
   automationApiPort: number;
   /** Transcript text zoom (Ctrl+wheel over a session view). 1 = 100%; clamped 0.6–2.0. */
   transcriptFontScale: number;
@@ -496,6 +498,14 @@ export interface PartyMessage {
   error?: string;
 }
 
+export type SshMessageUnavailableProblem = "server-missing" | "unreachable" | "auth-failed" | "fingerprint-changed";
+
+/** Why a message could not reach a member whose immutable location is SSH. */
+export interface SshMessageUnavailable {
+  server: string;
+  problem: SshMessageUnavailableProblem;
+}
+
 export interface PartyCommandResult {
   ok: boolean;
   message: string;
@@ -505,6 +515,12 @@ export interface PartyCommandResult {
   messages?: PartyMessage[];
   member?: PartyMember;
   partyMessage?: PartyMessage;
+  /**
+   * Structured SSH delivery refusal shared by the composer, HTTP API and MCP
+   * delivery paths. The renderer owns localized copy; agent tools receive the
+   * concrete text in `message` / `partyMessage.error`.
+   */
+  sshUnavailable?: SshMessageUnavailable;
   session?: SessionView;
   /**
    * Fresh destination snapshot when selecting this party also moved the
@@ -690,8 +706,9 @@ export interface WindowInfo {
 export interface WorkspaceDisplay {
   /** Serialized location: a raw path for local, `wsl+<distro>:/path` for WSL. */
   uri: string;
-  kind: "local" | "wsl";
+  kind: "local" | "wsl" | "ssh";
   distro?: string;
+  server?: string;
   /** Host-native path (a Linux path for WSL). */
   path: string;
 }

@@ -1653,7 +1653,12 @@ export const nonRendererKoMessages = {
   "STR-3817": "세션을 시작하지 못했습니다.",
   "STR-3818": "하네스가 시작 중 종료되었습니다 (코드 ${…}).",
   "STR-3819": "32-세션-긴멤버명-데이터파이프라인-리뷰어",
-  "STR-3820": "세션 시작됨 — 긴 멤버명(좁은 패널에서 이름이 자기 줄을 갖는다)"
+  "STR-3820": "세션 시작됨 — 긴 멤버명(좁은 패널에서 이름이 자기 줄을 갖는다)",
+  "STR-4199": "서버에 연결할 수 없음",
+  "STR-4200": "서버에 로그인할 수 없음",
+  "STR-4201": "서버 지문이 변경됨",
+  "STR-4202": "서버 없음",
+  "STR-4203": "SSH 경로는 / 로 시작하는 절대 경로여야 합니다"
 } as const;
 
 export type NonRendererMessageKey = keyof typeof nonRendererKoMessages;

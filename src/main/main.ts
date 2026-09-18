@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { app, BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent, Menu, safeStorage, screen, shell, type WebContents } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, IpcMainInvokeEvent, Menu, safeStorage, screen, shell, type WebContents } from "electron";
 import { EmbeddedHarnessRouter } from "../core/routerShim";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
@@ -15,12 +15,13 @@ import { WorkspaceManager } from "./workspaceManager";
 import { createEngineHost } from "./engine/engineHost";
 import type { EngineRegistry } from "./engine/engineRegistry";
 import { spawnWslEngine } from "./engine/transport/wslEngine";
+import { spawnSshEngine } from "./engine/transport/sshEngine";
 import { RemoteEngineClient } from "./engine/transport/remoteEngineClient";
 import { setUserDataDir } from "./userDataDir";
 import { startRemoteModelCatalog } from "./remoteModelCatalog";
 import { parseWorkspaceLocation, serializeWorkspaceLocation, workspaceArgFromArgv } from "../shared/workspaceLocation";
 import { WindowRegistry } from "./windowRegistry";
-import type { MemberPermissionInput, SessionView, StartPartyMemberInput, TranscriptSave, WindowInfo } from "../shared/types";
+import type { MemberPermissionInput, MemberRuntimeInput, SessionView, StartPartyMemberInput, TranscriptSave, WindowInfo } from "../shared/types";
 import { workspaceKey } from "../shared/workspaceLocation";
 import { sessionsForWindow } from "./sessionListRouting";
 import { writeInstanceDiscovery, removeInstanceDiscovery } from "./discovery";
@@ -36,6 +37,7 @@ import { UpdateService } from "./updateService";
 import { DiscordControlService } from "./discordControl";
 import { loadDotEnv } from "./dotenv";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
+import { BAI_API_KEY_ENV } from "../shared/baiDefaults";
 import { MOBILE_SETTINGS_DEFAULTS } from "../shared/mobileProtocol";
 import type { CreateMobileGatewayOptions } from "./mobile/mobileGateway";
 import { isMobilePipe, loadMobilePipe } from "./mobilePipe";
@@ -43,9 +45,13 @@ import { MobileLinkService } from "./mobileLink";
 import { ApprovalIndex } from "./approvalIndex";
 import { GuideScreenHost } from "./guideScreen";
 import { GuideChatHost, requireChatKind } from "./guideChat";
+import { SshServerStore } from "./ssh/sshServerStore";
+import { SshServerService } from "./ssh/sshServerService";
+import { Ssh2Transport } from "./ssh/ssh2Transport";
+import { parseMemberLocation, serializeMemberLocation } from "../shared/memberLocation";
+import { renameSshRecentServer } from "./cwdPreferencesStore";
 import { memberExecutionLocationCatalog } from "../shared/memberLocation";
 import { getCheckedCwdPreferences, rememberCwd } from "./cwdPreferencesStore";
-import { checkCwd } from "./cwdService";
 
 // Let webContents.capturePage() return real pixels even when the window is
 // occluded / behind other windows — the automation /api/capture relies on this
@@ -110,6 +116,7 @@ let engineRegistry: EngineRegistry | undefined;
 let subscriptionProxyService: SubscriptionProxyService | undefined;
 let updateService: UpdateService | undefined;
 let mobileLink: MobileLinkService | undefined;
+let sshServerService: SshServerService | undefined;
 /** Internal Windows directory whose engine is the party-state source of truth. */
 let partyStorageWorkspace: string | undefined;
 /** Last session list from each WSL worker, merged with desktop-owned party sessions. */
@@ -501,15 +508,36 @@ ${body}
     discord: discordBridge,
     executionLocations: {
       list: async () => memberExecutionLocationCatalog(await getCheckedCwdPreferences()),
-      check: (location) => checkCwd(location),
+      check: async (location) => {
+        const serialized = serializeMemberLocation(location);
+        // Party MCP and the visible member wizard must ask the same controller
+        // question. In particular, SSH paths are checked on their registered
+        // server rather than falling through to the desktop filesystem.
+        const checked = await controller().checkCwd(location);
+        return checked.usable
+          ? { location, serialized }
+          : { location, serialized, problem: checked.problem };
+      },
       remember: (location) => {
         rememberCwd(location);
         applyRuntimeSettings();
       },
+      sshUnavailable: (location) => {
+        if (location.env !== "ssh" || !location.server) return undefined;
+        return sshServerService
+          ? sshServerService.messageUnavailable(location.server)
+          : { server: location.server, problem: "unreachable" };
+      },
+      ensureSshAvailable: async (location) => {
+        if (location.env !== "ssh" || !location.server) return undefined;
+        return sshServerService
+          ? sshServerService.ensureMessageAvailable(location.server)
+          : { server: location.server, problem: "unreachable" };
+      },
     },
-    // Desktop only: a WSL workspace is served by an engine spawned in the distro.
+    // Desktop only: a remote workspace is served by an engine spawned in its host.
     createRemoteEngine: (location, serialized) => {
-      if (location.host.kind !== "wsl") {
+      if (location.host.kind !== "wsl" && location.host.kind !== "ssh") {
         throw new Error(`Unsupported remote host for '${serialized}'.`);
       }
       // In a packaged app the bundle is asar-unpacked (external wsl.exe/cp can't
@@ -520,15 +548,24 @@ ${body}
       const codexMcpServer = app.isPackaged
         ? path.join(process.resourcesPath, "bin", "agentparty-codex-mcp-server.mjs")
         : path.join(app.getAppPath(), "scripts", "agentparty-codex-mcp-server.mjs");
-      const handle = spawnWslEngine({
-        distro: location.host.distro,
-        workspacePosix: location.path,
-        serverBundleWinPath: serverBundle,
-        codexMcpServerWinPath: codexMcpServer,
-        acpRelayWinPath: acpRelayScript,
-        openRouterApiKey: getSettings().openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
-        deepseekApiKey: getSettings().deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "",
-      });
+      const handle = location.host.kind === "wsl"
+        ? spawnWslEngine({
+          distro: location.host.distro,
+          workspacePosix: location.path,
+          serverBundleWinPath: serverBundle,
+          codexMcpServerWinPath: codexMcpServer,
+          acpRelayWinPath: acpRelayScript,
+          openRouterApiKey: getSettings().openRouterApiKey || process.env.OPENROUTER_API_KEY || "",
+          deepseekApiKey: getSettings().deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV] || "",
+          baiApiKey: getSettings().baiApiKey || process.env[BAI_API_KEY_ENV] || "",
+        })
+        : spawnSshEngine({
+          server: location.host.server,
+          workspacePosix: location.path,
+          serverBundlePath: serverBundle,
+          codexMcpServerPath: codexMcpServer,
+          service: sshServerService || (() => { throw new Error("SSH server service is not ready."); })(),
+        });
       const client = new RemoteEngineClient(handle.transport, serialized, handle.dispose, {
         // The distro engine owns the gate decision but cannot reach a provider:
         // the subscription bridge and embedded router bind THIS host's loopback.
@@ -710,6 +747,38 @@ ${body}
     });
   }
 
+  sshServerService = new SshServerService({
+    store: new SshServerStore(app.getPath("userData"), safeStorage),
+    transport: new Ssh2Transport(),
+    memberNames: async (server) => {
+      const state = await partyEngine.listAllParties();
+      return state.members
+        .filter((member) => {
+          if (!member.location) return false;
+          const location = parseMemberLocation(member.location);
+          return location.env === "ssh" && location.server === server;
+        })
+        .map((member) => member.name);
+    },
+    renameMemberLocations: async (from, to) => {
+      await partyEngine.renameSshServerLocations(from, to);
+      try {
+        renameSshRecentServer(from, to);
+      } catch (error) {
+        await partyEngine.renameSshServerLocations(to, from);
+        throw error;
+      }
+    },
+    invalidateServer: (server) => engineRegistry?.disposeSshServer(server),
+    recoverMembers: (server) => controller().recoverSshMembers(server),
+  });
+  sshServerService.on("attempt", (attempt) => {
+    for (const entry of registry().all()) entry.window.webContents.send("ssh:attempt", attempt);
+  });
+  sshServerService.on("servers", (servers) => {
+    for (const entry of registry().all()) entry.window.webContents.send("ssh:servers", servers);
+  });
+
   appController = new AppController({
     sessionManager,
     engineRegistry: host.engineRegistry,
@@ -744,6 +813,17 @@ ${body}
     updater: updateService,
     mobileLink,
     approvals,
+    sshServers: sshServerService,
+    pickSshKeyFile: async (windowId) => {
+      const target = registry().resolve(windowId)?.window;
+      const result = await dialog.showOpenDialog(target!, {
+        title: "SSH 개인 키 선택",
+        defaultPath: path.join(os.homedir(), ".ssh"),
+        properties: ["openFile"],
+      });
+      return result.canceled ? undefined : result.filePaths[0];
+    },
+    writeClipboardText: (text) => clipboard.writeText(text),
     launchCliContinuation: ({ target, location }) => launchCliContinuation({ target, location }),
     // One line per capability. The previous form repeated the same null check
     // eight times, which is how `open` came to DROP its `windowId` argument
@@ -1047,6 +1127,7 @@ function applyRuntimeSettings(): void {
     harnessDefaults: settings.harnessDefaults,
     openRouterConfigured: Boolean(settings.openRouterApiKey || process.env.OPENROUTER_API_KEY),
     deepseekConfigured: Boolean(settings.deepseekApiKey || process.env[DEEPSEEK_API_KEY_ENV]),
+    baiConfigured: Boolean(settings.baiApiKey || process.env[BAI_API_KEY_ENV]),
   });
 }
 
@@ -1126,11 +1207,33 @@ function registerIpc(): void {
   handle("cwd:distros", async () => controller().listWslDistros());
   handle("cwd:browse", async (event, env, distro) => controller().browseCwd(env === "wsl" ? "wsl" : "windows", senderWindowId(event), distro ? String(distro) : undefined));
   handle("cwd:memberLocations", async (event) => controller().memberLocations(senderWorkspace(event)));
+  handle("ssh:list", async () => controller().listSshServers());
+  handle("ssh:connectDraft", async (_event, draft) => controller().sshConnectDraft(draft), { redactArgs: [0] });
+  handle("ssh:trustFingerprint", async (_event, attemptId) => controller().sshTrustFingerprint(String(attemptId || "")));
+  handle("ssh:cancelAttempt", async (_event, attemptId) => controller().sshCancelAttempt(String(attemptId || "")));
+  handle("ssh:setupAutoLogin", async (_event, attemptId) => controller().sshSetupAutoLogin(String(attemptId || "")));
+  handle("ssh:continueWithPassword", async (_event, attemptId) => controller().sshContinueWithPassword(String(attemptId || "")));
+  handle("ssh:savePasswordLogin", async (_event, attemptId) => controller().sshSavePasswordLogin(String(attemptId || "")));
+  handle("ssh:retest", async (_event, attemptId) => controller().sshRetest(String(attemptId || "")));
+  handle("ssh:pickKeyFile", async (event) => controller().sshPickKeyFile(senderWindowId(event)));
+  handle("ssh:inspectKeyFile", async (_event, file) => controller().sshInspectKeyFile(String(file || "")));
+  handle("ssh:testServer", async (_event, name) => controller().sshTestServer(String(name || "")));
+  handle("ssh:reconnect", async (_event, name) => controller().sshReconnect(String(name || "")));
+  handle("ssh:trustNewFingerprint", async (_event, name) => controller().sshTrustNewFingerprint(String(name || "")));
+  handle("ssh:deleteServer", async (_event, name, options) => controller().sshDeleteServer(String(name || ""), { removeAutoLoginKey: options?.removeAutoLoginKey === true }));
+  handle("ssh:copyPublicKey", async () => controller().sshCopyPublicKey());
+  handle("ssh:checkRemotePath", async (_event, server, cwd) => controller().sshCheckRemotePath(String(server || ""), String(cwd || "")));
+  handle("ssh:remoteHome", async (_event, server) => controller().sshRemoteHome(String(server || "")));
+  handle("ssh:listRemoteDirectories", async (_event, server, remotePath) => controller().sshListRemoteDirectories(String(server || ""), String(remotePath || "")));
+  handle("ssh:suggestRemotePaths", async (_event, server, input) => controller().sshSuggestRemotePaths(String(server || ""), String(input || "")));
 
   handle("auth:list", async (event) => controller().listAuthProviders(senderWorkspace(event)));
   handle("auth:setDeepseekKey", async (event, value: string) => controller().setDeepseekKey(value || "", senderWorkspace(event)));
   handle("auth:clearDeepseekKey", async (event) => controller().clearDeepseekKey(senderWorkspace(event)));
   handle("auth:testDeepseekKey", async (event) => controller().testDeepseekKey(senderWorkspace(event)));
+  handle("auth:setBaiKey", async (event, value: string) => controller().setBaiKey(value || "", senderWorkspace(event)));
+  handle("auth:clearBaiKey", async (event) => controller().clearBaiKey(senderWorkspace(event)));
+  handle("auth:testBaiKey", async (event) => controller().testBaiKey(senderWorkspace(event)));
   handle("auth:setOpenRouterKey", async (event, value: string) => controller().setOpenRouterKey(value || "", senderWorkspace(event)));
   handle("auth:clearOpenRouterKey", async (event) => controller().clearOpenRouterKey(senderWorkspace(event)));
   handle("auth:testOpenRouterKey", async (event) => controller().testOpenRouterKey(senderWorkspace(event)));
@@ -1302,6 +1405,7 @@ function registerIpc(): void {
   // Member-scoped permission: persists AND applies to the live adapter, so a
   // change made while the member's session is down is not dropped.
   handle("party:permission", async (event, name: string, permission: MemberPermissionInput) => controller().setMemberPermission(senderWorkspace(event), name, permission || {}, senderWindowId(event)));
+  handle("party:runtime", async (event, name: string, runtime: MemberRuntimeInput) => controller().setMemberRuntime(senderWorkspace(event), name, runtime || {}, senderWindowId(event)));
   handle("party:gate", async (event, name: string, gate: unknown) => controller().setMemberGate(senderWorkspace(event), name, gate, senderWindowId(event)));
   handle("party:outbound-interrupt", async (event, name: string, outboundInterrupt: boolean | null) => controller().setMemberOutboundInterrupt(senderWorkspace(event), name, outboundInterrupt, senderWindowId(event)));
   handle("party:partyGate", async (event, partyId: string, gate: unknown) => controller().setPartyGate(senderWorkspace(event), partyId, gate, senderWindowId(event)));
@@ -1497,6 +1601,7 @@ app.on("before-quit", () => {
   appController?.dispose();
   removeAllDiscovery();
   engineRegistry?.disposeAll();
+  sshServerService?.dispose();
   sessionManager?.dispose();
   router?.dispose();
   automationApi?.dispose();

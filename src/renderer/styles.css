@@ -2093,6 +2093,12 @@ body.wb-resizing-y {
   white-space: nowrap;
 }
 
+/* 전송 실패: 보낸 자리에 남기고 이유 한 줄 + [서버 설정 열기]. 색은 위험 톤 하나. */
+.wb-user.is-send-failed .wb-user-bubble { border-color: var(--danger-bd); background: var(--danger-dim); }
+.wb-user-send-failed { display: inline-flex; align-items: center; gap: 3px; color: var(--danger); font-weight: var(--weight-semibold); }
+.wb-user-send-reason { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 2px 8px; max-width: 90%; font-size: 11px; line-height: 1.45; color: var(--danger); text-align: right; overflow-wrap: anywhere; }
+.wb-user-send-reason .set-link-btn { font-size: 11px; }
+
 .wb-user-bubble {
   max-width: 90%;
   padding: 8px 11px;
@@ -6529,6 +6535,8 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 
 .wb-wizard-hint { font-size: 11.5px; color: var(--text-3); margin: 0; }
 .wb-wizard-error { font-size: 11.5px; color: var(--danger); margin: 0; }
+/* 생성 실패 한 줄: 버튼 바로 위, 본문 좌우 여백에 맞춘다. */
+.wb-wizard-create-error { padding: var(--space-3) var(--space-6); overflow-wrap: anywhere; }
 
 .wb-wizard-cards { display: flex; flex-direction: column; gap: var(--space-3); }
 .wb-wizard-card {
@@ -9899,6 +9907,324 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 .wb-cwd-default-empty { margin: 0; padding: 7px 8px; color: var(--text-3); font-size: var(--font-caption); }
 /* 배포판을 아직 안 골랐을 때 비활성. 사라지지 않고 눌리지 않는 상태로 남는다. */
 .wb-cwd-browse:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ===================== SSH 멤버 (1단계) =====================
+   docs/디자인 핸드오프/design_handoff_ssh_member 의 proposedSshMember.css 에서
+   값 그대로 옮겼다. 설정은 set-ssh-*, 워크벤치는 wb-ssh-*. */
+/* ------------------------------------------------------------ 공용 상태 */
+
+.wb-ssh-accent { color: var(--accent); }
+.wb-ssh-danger { color: var(--danger); }
+
+.wb-ssh-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 1px 7px 1px 6px;
+  border-radius: var(--radius-badge);
+  font-size: var(--font-micro);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.wb-ssh-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
+.wb-ssh-status.is-ok { background: var(--success-dim); color: var(--success); }
+.wb-ssh-status.is-warn { background: var(--warning-dim); color: var(--warning); }
+.wb-ssh-status.is-fail { background: var(--danger-dim); color: var(--danger); }
+.wb-ssh-status.is-busy { background: var(--accent-dim); color: var(--accent); }
+.wb-ssh-status.is-idle { background: var(--bg-3); color: var(--text-3); }
+
+/* 대기 / 진행 중 / 완료 / 실패 · 주의. 기존 wb-plan-step 은 두 상태뿐이라 따로 둔다. */
+.wb-ssh-steps { display: flex; flex-direction: column; gap: 9px; margin: 0; padding: 0; list-style: none; }
+.wb-ssh-step { display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; color: var(--text-1); }
+.wb-ssh-step-ic { display: flex; flex: none; align-items: center; justify-content: center; width: 18px; height: 18px; margin-top: 1px; }
+.wb-ssh-step.is-ok .wb-ssh-step-ic { color: var(--success); }
+.wb-ssh-step.is-warn .wb-ssh-step-ic { color: var(--warning); }
+.wb-ssh-step.is-fail .wb-ssh-step-ic { color: var(--danger); }
+.wb-ssh-step.is-busy { color: var(--text-0); font-weight: var(--weight-semibold); }
+.wb-ssh-step.is-busy .wb-ssh-step-ic { color: var(--accent); }
+.wb-ssh-step.is-idle { color: var(--text-3); }
+.wb-ssh-step-wait { width: 8px; height: 8px; border: 1.5px solid var(--border-strong); border-radius: 50%; }
+.wb-ssh-step-body { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.wb-ssh-step-fix { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-2); }
+.wb-ssh-cmd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wb-ssh-cmd code { padding: 3px 8px; background: var(--bg-input); border: var(--border-width) solid var(--border); border-radius: var(--radius-badge); color: var(--text-0); font-size: 11.5px; }
+
+.wb-ssh-card { display: flex; flex-direction: column; gap: 11px; padding: 14px 16px; background: var(--bg-1); border: var(--border-width) solid var(--border-subtle); border-radius: var(--radius-card); }
+.wb-ssh-card.is-offer { background: var(--accent-dim); border-color: var(--accent-bd); }
+.wb-ssh-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wb-ssh-card-head strong { font-size: 13px; color: var(--text-0); }
+.wb-ssh-card-head .wb-mono { font-size: 11px; color: var(--text-3); }
+.wb-ssh-card-note { margin: 0; font-size: 12px; line-height: 1.55; color: var(--text-2); }
+.wb-ssh-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+/* 전환 안내(§7.3)·연결 불가. 한 줄 요약 + 버튼. 좁으면 버튼이 아래로 내려간다. */
+.wb-ssh-callout { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 9px 10px; padding: 11px 13px; border: var(--border-width) solid; border-radius: var(--radius-card); font-size: 12px; line-height: 1.55; color: var(--text-1); }
+.wb-ssh-callout > svg { flex: none; margin-top: 2px; }
+.wb-ssh-callout.is-warn { background: var(--warning-dim); border-color: var(--warning-bd); }
+.wb-ssh-callout.is-warn > svg { color: var(--warning); }
+.wb-ssh-callout.is-fail { background: var(--danger-dim); border-color: var(--danger-bd); }
+.wb-ssh-callout.is-fail > svg { color: var(--danger); }
+.wb-ssh-callout-text { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.wb-ssh-callout-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.wb-ssh-callout .set-btn-soft { height: 30px; padding: 0 11px; font-size: 12px; }
+
+/* --------------------------------------------------------- S1 서버 목록 */
+
+.set-ssh-screen { background: var(--bg-1); padding: 0 20px 24px; }
+.set-ssh-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.set-ssh-toolbar-gap { flex: 1; }
+.set-ssh-list { display: flex; flex-direction: column; gap: 8px; }
+
+.set-ssh-row { display: flex; min-width: 0; flex-direction: column; gap: 8px; padding: 12px 14px; background: var(--bg-2); border: var(--border-width) solid var(--border-subtle); border-radius: var(--radius-card); }
+.set-ssh-row.is-alert { border-color: var(--danger-bd); }
+
+.set-ssh-row-main { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.set-ssh-icon { display: flex; flex: none; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; background: var(--bg-3); color: var(--text-2); }
+.set-ssh-ident { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+.set-ssh-name, .set-ssh-target { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-ssh-name { font-size: 13px; color: var(--text-0); }
+.set-ssh-target { font-size: 11px; color: var(--text-3); }
+
+.set-ssh-row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding-left: 40px; font-size: var(--font-micro); color: var(--text-3); }
+.set-ssh-auth { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); }
+.set-ssh-auth .wb-mono { color: var(--text-1); }
+.set-ssh-test { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.set-ssh-agent.is-ok { color: var(--success); }
+.set-ssh-agent.is-warn { color: var(--warning); }
+.set-ssh-agent.is-fail { color: var(--danger); }
+
+.set-ssh-alert { display: flex; align-items: flex-start; gap: 8px; margin-left: 40px; padding: 8px 10px; background: var(--danger-dim); border-radius: 8px; font-size: 12px; line-height: 1.5; color: var(--text-1); }
+.set-ssh-alert svg { flex: none; margin-top: 2px; color: var(--danger); }
+
+.set-ssh-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 40px; }
+.set-ssh-actions .set-btn-soft { height: 30px; padding: 0 11px; font-size: 12px; }
+.set-ssh-icon-btn { width: 30px; justify-content: center; padding: 0 !important; }
+.set-ssh-btn-danger { border-color: var(--danger-bd); color: var(--danger); }
+
+.set-ssh-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 26px 16px; text-align: center; color: var(--text-3); }
+.set-ssh-empty p { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--text-2); }
+.set-ssh-empty b { color: var(--text-0); }
+
+/* ------------------------------------------------------ S2 폼 · S3 · 삭제 */
+
+.wb-ssh-modal { width: min(620px, 94vw); }
+.wb-ssh-body { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; overflow-y: auto; }
+.wb-ssh-fields { display: flex; flex-direction: column; gap: 14px; margin: 0; padding: 0; border: none; min-width: 0; }
+.wb-ssh-fields:disabled { opacity: .6; }
+/* 이름·주소는 넓게, 포트는 좁게. 좁은 창에서는 한 열로. */
+.wb-ssh-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 104px; gap: 12px; }
+.wb-ssh-grid > .set-ssh-field:nth-child(4) { grid-column: 1 / -1; }
+@media (max-width: 560px) { .wb-ssh-grid { grid-template-columns: minmax(0, 1fr); } }
+.set-ssh-field { min-width: 0; }
+/*
+ * set-input 은 가로 행에서 쓰려고 flex: 1 을 갖는다. 세로로 쌓는 필드(라벨·입력·도움말)
+ * 안에서는 그 flex: 1 이 높이를 나눠 가져 입력칸이 찌그러진다 — 도움말이 붙은 칸만
+ * 납작해지는 것으로 드러났다. 필드 안에서는 자기 높이(38px)를 지킨다.
+ */
+.set-ssh-field > .set-input { flex: none; }
+.set-ssh-field.is-error .set-input { border-color: var(--danger-bd); }
+.set-ssh-field-error { display: flex; align-items: flex-start; gap: 5px; font-size: 11.5px; line-height: 1.45; color: var(--danger); }
+.set-ssh-field-error svg { flex: none; margin-top: 2px; }
+.set-ssh-field-help { font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
+.set-ssh-port input { text-align: right; }
+.set-ssh-secret { padding-right: 4px; }
+.set-ssh-eye { display: flex; flex: none; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: none; border-radius: 7px; background: none; color: var(--text-3); cursor: pointer; }
+.set-ssh-eye:hover { background: var(--bg-3); color: var(--text-1); }
+.set-ssh-auth-seg { margin-top: 0; align-self: flex-start; }
+/* 줄어든 세그먼트에서 "비밀번호" 가 두 줄로 꺾였다. 버튼은 제 글자 폭을 지킨다. */
+.set-ssh-auth-seg button { flex: none; padding: 0 14px; white-space: nowrap; }
+
+.wb-ssh-keyinfo { display: flex; flex-direction: column; gap: 3px; padding: 9px 11px; background: var(--bg-1); border: var(--border-width) solid var(--border-subtle); border-radius: 8px; font-size: 12px; color: var(--text-1); }
+.wb-ssh-keyinfo .wb-mono { overflow-wrap: anywhere; color: var(--text-0); font-size: 11.5px; }
+
+.wb-ssh-fp-lead { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-0); }
+.wb-ssh-fp-note { margin: 0; font-size: 12px; line-height: 1.55; color: var(--text-2); }
+.wb-ssh-fp-compare { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 12px; padding: 11px 13px; background: var(--bg-1); border: var(--border-width) solid var(--border-subtle); border-radius: var(--radius-card); }
+.wb-ssh-fp-label { font-size: 11px; font-weight: var(--weight-semibold); color: var(--text-3); white-space: nowrap; }
+.wb-ssh-fp-compare code { overflow-wrap: anywhere; font-size: 11.5px; color: var(--text-0); }
+/* 지문 변경: 모달 전체가 위험 톤. 다른 확인창과 헷갈리지 않게 머리줄부터 다르다. */
+/* A full SHA256 fingerprint (50 mono chars) must read on one line; at 430px the last character wrapped alone. Narrow windows still wrap. */
+.wb-modal.wb-ssh-fp { width: min(520px, 92vw); }
+.wb-ssh-fp.is-danger { border-color: var(--danger-bd); }
+.wb-ssh-fp.is-danger .wb-modal-head { background: var(--danger-dim); border-bottom-color: var(--danger-bd); }
+.wb-ssh-fp.is-danger .wb-ssh-fp-compare { border-color: var(--danger-bd); }
+.wb-ssh-fp-old { text-decoration: line-through; color: var(--text-3) !important; }
+.wb-ssh-fp-new { color: var(--danger) !important; font-weight: var(--weight-semibold); }
+.wb-ssh-btn-quiet-danger { background: none; border: var(--border-width) solid var(--border); color: var(--danger); }
+/* 확인창의 최종 버튼. 앱은 위험 동작을 빨강으로 꽉 채우지 않는다 — 설정의 연결 끊기 확정(set-btn-disconnect.is-armed)과 같은 모양. */
+.wb-ssh-btn-danger { background: var(--danger-dim); border: var(--border-width) solid var(--danger-bd); color: var(--danger); font-weight: var(--weight-semibold); }
+
+.wb-ssh-member-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.wb-ssh-member-chip { max-width: 180px; padding: 2px 8px; overflow: hidden; background: var(--bg-3); border-radius: var(--radius-badge); color: var(--text-1); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.wb-ssh-member-chip.is-more { color: var(--text-3); }
+.wb-ssh-check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-1); cursor: pointer; }
+
+/* ------------------------------------------------- S6 실행 위치 선택기 */
+
+.wb-ssh-picker { display: flex; width: 100%; max-width: 440px; flex-direction: column; gap: 0; padding: 14px; background: var(--bg-2); }
+.wb-ssh-server-pick { position: relative; flex-wrap: wrap; }
+/*
+ * 세로로 쌓는 .wb-cwd-distros 안이라 flex: 1 이 높이를 0 기준으로 나눠 칸이 납작해졌다.
+ * 기존 배포판 선택칸(.wb-cwd-distro-control)과 같은 30px 를 지킨다.
+ */
+.wb-ssh-server-select { display: flex; flex: none; min-width: 0; align-items: center; gap: 7px; height: 30px; padding: 0 8px; background: var(--bg-input); border: var(--border-width) solid var(--border); border-radius: var(--radius-input); color: var(--text-0); font-size: var(--font-body); cursor: pointer; }
+.wb-ssh-server-name { flex: 1; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+/* 배포판 select 의 chevron 클래스는 absolute 라 상태 칩 위에 겹쳤다. 흐름 안에 둔다. */
+.wb-ssh-select-chevron { flex: none; color: var(--text-3); }
+/* Floated by FloatingMenu (position, width, z-index); only the look lives here. */
+.wb-ssh-server-menu { display: flex; flex-direction: column; gap: 0; padding: 4px; background: var(--bg-2); border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-card); box-shadow: 0 16px 34px -14px var(--shadow-strong); }
+.wb-ssh-server-option { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 7px 8px; background: none; border: none; border-radius: 7px; color: var(--text-1); text-align: left; cursor: pointer; }
+.wb-ssh-server-option:hover, .wb-ssh-server-option.is-selected { background: var(--bg-3); }
+.wb-ssh-server-option.is-blocked .wb-ssh-server-name { color: var(--text-3); }
+.wb-ssh-server-option-text { display: flex; flex: 1; min-width: 0; flex-direction: column; }
+.wb-ssh-server-target { overflow: hidden; color: var(--text-3); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.wb-ssh-server-menu-foot { padding: 6px 8px 4px; border-top: var(--border-width) solid var(--border-subtle); margin-top: 4px; }
+
+.wb-ssh-path.is-error { border-color: var(--danger-bd); }
+.wb-ssh-path .wb-cwd-distro { max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-ssh-path-input { flex: 1; align-self: stretch; min-height: 22px; min-width: 0; border: none; background: transparent; outline: none; color: var(--text-0); font-size: var(--font-body); text-overflow: ellipsis; }
+.wb-ssh-path-check { display: flex; align-items: center; gap: 5px; margin-top: 5px; font-size: var(--font-micro); }
+.wb-ssh-path-check.is-ok { color: var(--success); }
+.wb-ssh-path-check.is-fail { color: var(--danger); }
+.wb-ssh-path-check.is-busy { color: var(--text-3); }
+.wb-ssh-picker .wb-ssh-callout { margin-top: 6px; }
+
+.wb-ssh-picker-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 6px; padding: 20px 14px; background: var(--bg-1); border: var(--border-width) dashed var(--border); border-radius: var(--radius-card); text-align: center; color: var(--text-3); }
+.wb-ssh-picker-empty p { margin: 0; font-size: 12px; line-height: 1.55; color: var(--text-2); }
+/* §13-6 원격 폴더 선택: 경로 칸 [찾아보기…], 입력 중 하위 폴더 제안, 선택 창. */
+.wb-ssh-path .wb-cwd-browse { margin-left: auto; }
+.wb-ssh-path { cursor: text; }
+.wb-ssh-path:focus-within:not(.is-error) { border-color: var(--accent); }
+.wb-ssh-path-check.is-fail b { font-weight: var(--weight-semibold); }
+.wb-ssh-suggest { display: flex; flex-direction: column; padding: 4px; overflow-y: auto; background: var(--bg-2); border: var(--border-width) solid var(--border-strong); border-radius: var(--radius-card); box-shadow: 0 16px 34px -14px var(--shadow-strong); }
+.wb-ssh-suggest-item { display: flex; flex: none; min-width: 0; align-items: center; gap: 7px; padding: 6px 8px; background: none; border: none; border-radius: 7px; color: var(--text-1); font-size: var(--font-body-sm); text-align: left; cursor: pointer; }
+.wb-ssh-suggest-item:hover, .wb-ssh-suggest-item.is-active { background: var(--bg-3); color: var(--text-0); }
+.wb-ssh-suggest-item > svg { flex: none; color: var(--text-3); }
+.wb-ssh-suggest-item.is-hidden { color: var(--text-3); }
+.wb-ssh-suggest-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-modal.wb-ssh-browse { width: min(560px, 92vw); }
+.wb-ssh-browse-bar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-bottom: var(--border-width) solid var(--border-subtle); background: var(--bg-1); }
+.wb-ssh-browse-up { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; background: var(--bg-3); border: var(--border-width) solid var(--border); border-radius: var(--radius-button); color: var(--text-1); cursor: pointer; }
+.wb-ssh-browse-up:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text-0); }
+.wb-ssh-browse-up:disabled { opacity: .45; cursor: not-allowed; }
+.wb-ssh-crumbs { display: flex; flex: 1; min-width: 0; flex-wrap: nowrap; align-items: center; gap: 2px; overflow: hidden; font-size: 12px; }
+.wb-ssh-crumb { flex: 0 1 auto; min-width: 2.2em; overflow: hidden; padding: 3px 5px; background: none; border: none; border-radius: 5px; color: var(--text-2); text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.wb-ssh-crumb:hover:not(:disabled) { background: var(--bg-3); color: var(--text-0); }
+/* 긴 경로는 한 줄 유지: 중간 조각이 먼저 줄고, 현재 폴더는 최대 60%까지 보인다. */
+.wb-ssh-crumb.is-current { flex-shrink: 0; max-width: 60%; color: var(--text-0); font-weight: var(--weight-semibold); }
+.wb-ssh-crumb:disabled { cursor: default; }
+.wb-ssh-crumb-sep { flex: none; color: var(--text-3); }
+.wb-ssh-browse-list { display: flex; flex-direction: column; height: 320px; max-height: calc(88vh - 190px); padding: 6px; overflow-y: auto; }
+.wb-ssh-folder { display: flex; flex: none; min-width: 0; align-items: center; gap: 8px; padding: 7px 8px; background: none; border: none; border-radius: 7px; color: var(--text-1); font-size: var(--font-body-sm); text-align: left; cursor: pointer; }
+.wb-ssh-folder:hover { background: var(--bg-3); color: var(--text-0); }
+.wb-ssh-folder-icon { flex: none; color: var(--accent); }
+.wb-ssh-folder.is-hidden { color: var(--text-3); }
+.wb-ssh-folder.is-hidden .wb-ssh-folder-icon { color: var(--text-3); }
+.wb-ssh-folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-ssh-folder-go { flex: none; color: var(--text-3); opacity: 0; }
+.wb-ssh-folder:hover .wb-ssh-folder-go, .wb-ssh-folder:focus-visible .wb-ssh-folder-go { opacity: 1; }
+.wb-ssh-browse-state { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 10px 8px; color: var(--text-3); font-size: 12px; line-height: 1.5; }
+.wb-ssh-browse-state > svg { flex: none; margin-top: 2px; }
+.wb-ssh-browse-state.is-fail { color: var(--danger); }
+.wb-ssh-browse-state.is-fail span { min-width: 0; overflow-wrap: anywhere; }
+.wb-ssh-browse-note { margin: 4px 0 0; padding: 6px 8px 2px; border-top: var(--border-width) solid var(--border-subtle); color: var(--text-3); font-size: var(--font-caption); }
+.wb-ssh-browse-foot { gap: 12px; }
+.wb-ssh-browse-picked { flex: 1; min-width: 0; overflow: hidden; color: var(--text-2); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.wb-ssh-browse-foot .wb-modal-actions { flex: none; }
+.wb-ssh-picker-empty b { color: var(--text-0); }
+
+.wb-ssh-agent-list { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+.wb-ssh-agent { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; background: var(--bg-2); border: var(--border-width) solid var(--border-subtle); border-radius: 8px; color: var(--text-0); font-size: 12.5px; cursor: pointer; }
+.wb-ssh-agent.is-selected { border-color: var(--accent-bd); background: var(--accent-dim); }
+.wb-ssh-agent.is-warn { border-color: var(--warning-bd); }
+.wb-ssh-agent-ok, .wb-ssh-agent-warn, .wb-ssh-agent-fail { display: inline-flex; align-items: center; gap: 4px; font-size: var(--font-micro); font-weight: var(--weight-semibold); }
+.wb-ssh-agent-ok { color: var(--success); }
+.wb-ssh-agent-warn { color: var(--warning); }
+.wb-ssh-agent-fail { color: var(--danger); }
+.wb-ssh-agent-fix { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 2px 10px 6px; font-size: 11.5px; line-height: 1.5; color: var(--text-2); }
+
+/* ---------------------------------------------- S7 뱃지 · S8 상태·오류 */
+
+/* 위치 칩. 기존 wb-cwd-distro 와 같은 크기, 서버 이름만 말줄임. */
+.wb-ssh-loc { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: 160px; align-items: center; gap: 4px; padding: 1px 6px; border: 1px solid var(--accent-bd); border-radius: var(--radius-badge); background: var(--accent-dim); color: var(--accent); font-size: var(--font-micro); font-weight: var(--weight-semibold); }
+.wb-ssh-loc svg { flex: none; }
+.wb-ssh-loc.is-local { border-color: var(--border); background: var(--bg-3); color: var(--text-2); }
+.wb-ssh-loc-server { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.wb-ssh-states { display: grid; grid-template-columns: 270px minmax(0, 1fr); min-height: 440px; background: var(--bg-0); }
+.wb-ssh-states.is-narrow { grid-template-columns: 170px minmax(0, 1fr); }
+.wb-ssh-drawer { display: flex; min-width: 0; flex-direction: column; gap: 4px; padding: 10px; background: var(--bg-1); border-right: var(--border-width) solid var(--border-subtle); }
+.wb-ssh-drawer-head { padding: 2px 4px 6px; color: var(--text-3); font-size: var(--font-micro); font-weight: 700; letter-spacing: .06em; }
+
+.wb-ssh-notices { display: flex; flex-direction: column; gap: 5px; margin-bottom: 6px; }
+.wb-ssh-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 9px; border: var(--border-width) solid; border-radius: 8px; font-size: 11.5px; line-height: 1.45; color: var(--text-1); }
+.wb-ssh-notice > svg { flex: none; }
+.wb-ssh-notice.is-warn { background: var(--warning-dim); border-color: var(--warning-bd); }
+.wb-ssh-notice.is-warn > svg { color: var(--warning); }
+.wb-ssh-notice.is-fail { background: var(--danger-dim); border-color: var(--danger-bd); }
+.wb-ssh-notice.is-fail > svg { color: var(--danger); }
+.wb-ssh-notice.is-danger { background: var(--danger-dim); border-color: var(--danger-bd); }
+.wb-ssh-notice.is-danger > svg { color: var(--danger); }
+.wb-ssh-notice-text { flex: 1 1 120px; min-width: 0; overflow-wrap: anywhere; }
+.wb-ssh-notice-text b { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; white-space: nowrap; }
+.wb-ssh-notice-count { flex: none; opacity: .75; font-size: var(--font-micro); }
+.wb-ssh-notice .set-btn-soft { height: 26px; padding: 0 9px; font-size: 11.5px; }
+
+.wb-ssh-member-line { display: flex; min-width: 0; align-items: center; gap: 7px; padding: 7px 8px; border-radius: 8px; }
+.wb-ssh-member-line:hover { background: var(--bg-2); }
+.wb-ssh-member-name { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--text-0); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+/*
+ * 상태가 붙은 줄은 뱃지의 서버 이름을 접는다. 서버 이름은 바로 위 서버 알림이 이미
+ * 말하고 있어서, 여기서 한 번 더 말하면 그 대가로 멤버 이름이 "backe…" 로 잘린다.
+ */
+.wb-ssh-member-line.has-state .wb-ssh-loc-server { display: none; }
+/*
+ * 이름이 먼저다. 서버 이름이 긴 멤버에서 칩이 이름을 "gpu-t…" 로 밀어냈다. 이름은
+ * 흔한 멤버 이름이 들어가는 폭을 지키고, 칩이 120px 에서 먼저 말줄임된다.
+ */
+.wb-ssh-member-line .wb-ssh-member-name { flex: 1 1 auto; min-width: 96px; }
+.wb-ssh-member-line .wb-ssh-loc { max-width: 120px; }
+
+/* 좁으면 서버 이름을 먼저 버리고 아이콘만 남긴다 — 멤버 이름이 우선이다. */
+.wb-ssh-member-line.is-narrow .wb-ssh-loc-server { display: none; }
+.wb-ssh-member-line.is-narrow .wb-ssh-status { padding: 1px 4px; font-size: 0; gap: 0; }
+.wb-ssh-member-line.is-narrow .wb-ssh-status svg { width: 11px; height: 11px; }
+
+.wb-ssh-panel { display: flex; min-width: 0; flex-direction: column; background: var(--bg-2); }
+.wb-ssh-panel-head { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: var(--border-width) solid var(--border-subtle); }
+.wb-ssh-panel-head strong { flex: none; font-size: 13px; color: var(--text-0); }
+.wb-ssh-panel-loc { display: flex; flex: 1; min-width: 0; align-items: center; gap: 6px; }
+.wb-ssh-panel-path { min-width: 0; overflow: hidden; color: var(--text-3); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.wb-ssh-transcript { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+.wb-ssh-banner.is-warn { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); background: var(--warning-dim); border: var(--border-width) solid var(--warning-bd); border-radius: var(--radius-card); }
+.wb-ssh-banner.is-warn .wb-env-head svg { color: var(--warning); }
+.wb-ssh-msg { display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.6; color: var(--text-1); }
+.wb-ssh-msg p { margin: 0; }
+.wb-ssh-msg-who { font-size: 11.5px; font-weight: var(--weight-semibold); color: var(--member, var(--accent)); }
+.wb-ssh-remote-file { padding: 1px 5px; overflow-wrap: anywhere; background: var(--bg-3); border-radius: 5px; color: var(--text-0); font-size: 12px; cursor: default; }
+/* The panel banner sits above the transcript with the transcript's own gutter. */
+.wb-ssh-panel-banner { flex: none; padding: var(--space-4) var(--space-6) 0; text-align: left; }
+/* Narrow panels: the server name wraps inside the card instead of spilling out. */
+.wb-ssh-banner .wb-env-head { align-items: flex-start; min-width: 0; }
+.wb-ssh-banner .wb-env-title { min-width: 0; overflow-wrap: anywhere; }
+.wb-ssh-banner .wb-env-actions .set-btn-accent { max-width: 100%; height: auto; min-height: 38px; white-space: normal; overflow-wrap: anywhere; }
+/*
+ * Drawer member row with a server state chip (§12-3): the name keeps a readable
+ * width, the chip does not shrink, and the chip replaces the session word —
+ * "not started" says nothing a broken connection does not already explain.
+ */
+.wb-member-row.has-ssh-state .wb-member-name { min-width: 72px; }
+.wb-member-row .wb-ssh-status { flex: none; }
+.wb-member-row.has-ssh-state .wb-member-status { display: none; }
+/* Header location chip keeps at least its icon when the panel is narrow. */
+.wb-toolbar-cwd .wb-ssh-loc { flex: 0 1 auto; min-width: 26px; }
+.wb-ssh-agent-error { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* "SSH 미지원" tag beside a harness name (catalog strip, overflow menu, wizard field). */
+.wb-harness-tab .wb-model-off, .wb-harness-menu-item .wb-model-off, .wb-wizard-runtime-harness .wb-model-off { margin-left: 6px; }
+.wb-ssh-remote-tag { margin-left: 6px; padding: 0 5px; border-radius: 4px; background: var(--bg-4); color: var(--text-3); font-family: var(--font-sans); font-size: 10px; }
 
 /* ── 파티 그룹 가시성 (사용자 요청 2026-08-20) ──────────────────────────
    목업의 그룹 헤더는 26px 캡션 한 줄이라 목록의 구분선처럼 읽혔다. 그룹은

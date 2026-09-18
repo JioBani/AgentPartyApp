@@ -1,5 +1,6 @@
 import type { ImageAttachment } from "./attachments";
 import type { GateReviewer, GateScope, GateViolation } from "./messageGate";
+import type { SshMessageUnavailable } from "./types";
 
 /**
  * One rendered block of a member's conversation.
@@ -20,7 +21,11 @@ export type TranscriptBlock =
   // badge is the only way to tell that this message reached the agent later than
   // it was typed. `queuedN` > 1 means several queued items merged into it, and
   // `from` names the sending member (absent = the user). See shared/messageQueue.ts.
-  | { id: string; kind: "user" | "assistant" | "reasoning" | "status" | "error"; text: string; attachments?: ImageAttachment[]; sent?: boolean; at?: string; fromQueue?: boolean; queuedN?: number; from?: string | null }
+  // `sendFailure` marks a user message the app refused because the member's SSH
+  // server is gone or unusable. Such a block lives only in the window that sent it
+  // (never persisted, never retried): the user sends again once the server is back.
+  | { id: string; kind: "user" | "assistant" | "reasoning" | "status"; text: string; attachments?: ImageAttachment[]; sent?: boolean; at?: string; fromQueue?: boolean; queuedN?: number; from?: string | null; sendFailure?: SshMessageUnavailable }
+  | { id: string; kind: "error"; text: string; at?: string; remote?: { server: string; agent: string } }
   | { id: string; kind: "tool"; name: string; status?: string; input?: unknown; result?: unknown; source?: string; cwd?: string; exitCode?: number; durationMs?: number; output?: string; at?: string }
   // A Codex plan/TODO card (from a plan item + turn/plan/updated); latest wins.
   | { id: string; kind: "plan"; steps: import("./codexItems").CodexPlanStep[]; explanation?: string; at?: string }
@@ -87,7 +92,7 @@ export type TranscriptBlock =
    * A start attempt owns ONE card: `starting` appends it and a terminal state
    * updates it, so a restart adds a second card rather than mutating the first.
    */
-  | { id: string; kind: "sessionSpawn"; state: import("./sessionSpawn").SessionSpawnState; harness?: string; model?: string; host?: "windows" | "wsl"; cwd?: string; reason?: string; retryable?: boolean; at?: string }
+  | { id: string; kind: "sessionSpawn"; state: import("./sessionSpawn").SessionSpawnState; harness?: string; model?: string; host?: "windows" | "wsl" | "ssh"; cwd?: string; reason?: string; retryable?: boolean; at?: string }
   | {
       id: string;
       kind: "approval";

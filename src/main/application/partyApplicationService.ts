@@ -12,6 +12,7 @@ import type {
   MemberRuntimeInput,
   StartPartyMemberInput,
   SessionView,
+  SshMessageUnavailable,
   TranscriptSave,
   TranscriptSaveResult,
 } from "../../shared/types";
@@ -67,6 +68,7 @@ import {
 } from "../../shared/sessionEventStream";
 import { idleSleepTimeoutMs, sanitizeIdleSleep, type IdleSleepSettings } from "../../shared/idleSleep";
 import {
+  composeLayout,
   EMPTY_LAYOUT,
   layoutsEqual,
   openMemberInNewPanel,
@@ -80,6 +82,7 @@ import { invokePartyTool, type PartyBridge, type PartyModelQuery, type PartyTool
 import { IMAGE_MEDIA_TYPES, readImageFile } from "../../core/imageFile";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import { buildModelRoutes, type ModelRoute } from "../../core/modelRegistry";
+import { matchingCapabilityOption, seedCapabilityOption } from "../../shared/modelOptions";
 import { resolveCatalogModel } from "../../shared/modelCatalog";
 import { harnesses } from "../harness/types";
 import { DEFAULT_CODEX_POLICY, isCodexPolicy, requireCodexPolicy, type CodexPolicy } from "../../shared/codexPolicy";
@@ -141,6 +144,10 @@ export interface PartyExecutionLocationPort {
   list(): Promise<MemberExecutionLocationCatalog>;
   check(location: MemberExecutionLocation): Promise<{ location: MemberExecutionLocation; serialized: string; problem?: CwdProblem }>;
   remember(location: MemberExecutionLocation): void;
+  /** Synchronous status guard used immediately before handing over a message. */
+  sshUnavailable(location: MemberExecutionLocation): SshMessageUnavailable | undefined;
+  /** Connects a stored SSH server on first use, then returns any refusal. */
+  ensureSshAvailable(location: MemberExecutionLocation): Promise<SshMessageUnavailable | undefined>;
 }
 
 /**
@@ -612,6 +619,27 @@ export class PartyApplicationService {
     return { backfilled };
   }
 
+  /** Renames the server alias embedded in every immutable SSH member location. */
+  renameSshServerLocations(from: string, to: string): { updated: number } {
+    if (!from || !to) throw new Error("SSH server rename requires both aliases.");
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const touched = new Set<string>();
+    let updated = 0;
+    for (const member of state.members) {
+      if (!member.location) continue;
+      const location = parseMemberLocation(member.location);
+      if (location.env !== "ssh" || location.server !== from) continue;
+      member.location = serializeMemberLocation({ ...location, server: to });
+      member.updatedAt = new Date().toISOString();
+      touched.add(this.partyIdOf(member));
+      updated += 1;
+    }
+    for (const partyId of touched) this.repository.writeParty(workspace, partyId, this.membersOf(state, partyId), this.messagesOf(state, partyId));
+    if (updated) this.invalidate();
+    return { updated };
+  }
+
   createParty(input: CreatePartyInput): PartyCommandResult {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
@@ -637,6 +665,13 @@ export class PartyApplicationService {
     state.members.push(main);
     this.writeRoleFile(workspace, main);
     this.persistParty(workspace, state, party.id);
+    // A party and its first visible tab are one creation result. Leaving the
+    // layout absent made the renderer invent a provisional panel id while a
+    // later member creation independently invented another one in this
+    // service. The wizard then submitted the panel the user could see and was
+    // correctly rejected because that id had never been stored. Persist the
+    // initial main panel here, before any caller can choose it as a tab group.
+    this.repository.writeLayout(workspace, party.id, openMemberTab(EMPTY_LAYOUT, main.name));
     this.persistIndex(workspace, state);
     log("info", "party", "party created", { workspace, partyId: party.id, name: party.name });
     // Auto-init main's session (no turn — like prewarm) so the party is usable
@@ -673,7 +708,17 @@ export class PartyApplicationService {
     // that member would have run before locations existed. An empty location
     // would instead read as "the user chose nowhere".
     const member = buildPartyMember({ ...input, partyId: party.id, location: input.location || workspace }, getSettings());
+    const controls = this.resolveMemberModelControls(
+      normalizeHarnessId(member.runtime),
+      member.model,
+      input.effort,
+      member.effort,
+      member.name,
+    );
+    member.model = controls.route.model;
+    member.effort = controls.effort;
     this.assertNotBetaLocked(normalizeHarnessId(member.runtime), member.model);
+    this.assertSshHarnessSupported(member, normalizeHarnessId(member.runtime));
     if (state.members.some((item) => item.partyId === party.id && item.name === member.name)) {
       throw new Error(`Party member '${member.name}' already exists in '${party.name}'.`);
     }
@@ -682,8 +727,15 @@ export class PartyApplicationService {
     // could not choose a group and two windows could briefly disagree.
     const storedLayout = this.repository.readLayout(workspace, party.id);
     const firstExisting = state.members.find((item) => item.partyId === party.id);
+    // Parties created before layout persistence have no authoritative panel id,
+    // but an open renderer already shows a provisional panel and submits that
+    // exact id. Adopt it as the initial stored layout so the first creation
+    // lands in the tab the user can see instead of rejecting it or silently
+    // inventing a different panel.
     const baseLayout = storedLayout
-      ?? (firstExisting ? openMemberTab(EMPTY_LAYOUT, firstExisting.name) : EMPTY_LAYOUT);
+      ?? (firstExisting && input.tabGroup && input.tabGroup !== firstExisting.name
+        ? composeLayout([{ id: input.tabGroup, tabs: [firstExisting.name], active: firstExisting.name, weight: 1 }], input.tabGroup, undefined)
+        : firstExisting ? openMemberTab(EMPTY_LAYOUT, firstExisting.name) : EMPTY_LAYOUT);
     const exactGroup = input.tabGroup
       ? baseLayout.panels.find((panel) => panel.id === input.tabGroup)
       : undefined;
@@ -857,28 +909,18 @@ export class PartyApplicationService {
     }
     const harnessId = normalizeHarnessId(member.runtime);
     const defaults = harnessDefaultsOf(getSettings(), harnessId);
-    const routes = buildModelRoutes(
-      member.model || defaults.model,
-      [],
-      [],
-      this.deps.sessionManager.getCodexModelState()?.models,
-    ).filter((route) => route.harnessId === harnessId);
-    const wantedModel = (input.model || member.model || defaults.model).trim();
-    const route = resolveMemberRuntimeRoute(routes, wantedModel, harnessId);
+    const controls = this.resolveMemberModelControls(
+      harnessId,
+      input.model || member.model || defaults.model,
+      input.effort,
+      member.effort,
+      member.name,
+    );
+    const route = controls.route;
     this.assertNotBetaLocked(harnessId, route.model);
 
     const currentEffort = member.effort;
-    const nextEffort = input.effort?.trim() || currentEffort;
-    const effortOptions = route.capabilities.effort.options.map((option) => option.id);
-    if (input.effort !== undefined && !route.capabilities.effort.supported) {
-      throw new Error(`Model '${route.model}' on ${harnessId} does not support an effort setting.`);
-    }
-    if (nextEffort && route.capabilities.effort.supported && !effortOptions.some((option) => option.toLowerCase() === nextEffort.toLowerCase())) {
-      throw new Error(`Effort '${nextEffort}' is not available for '${route.model}' on ${harnessId}. Use: ${effortOptions.join(", ")}.`);
-    }
-    const resolvedEffort = nextEffort && route.capabilities.effort.supported
-      ? effortOptions.find((option) => option.toLowerCase() === nextEffort.toLowerCase())
-      : undefined;
+    const resolvedEffort = controls.effort;
 
     const currentTier = normalizeServiceTierSelection(member.serviceTier);
     const tierCapability = route.capabilities.serviceTier;
@@ -1084,6 +1126,7 @@ export class PartyApplicationService {
       });
       return { ...this.result(`Member '${member.name}' session is already running.`, state, member), session: existing };
     }
+    this.assertSshHarnessSupported(member, normalizeHarnessId(input.selectedHarnessId || member.runtime));
     // Where this process may run it, decided BEFORE anything is written: a
     // member the desktop cannot start must leave no half-started state behind.
     //
@@ -1098,8 +1141,13 @@ export class PartyApplicationService {
       log("warn", "party", "member start blocked by its execution location", { workspace, partyId: member.partyId, member: member.name, location: member.location });
       return this.result(runtimeCwd.blocked, state, member);
     }
-    this.applyRuntimeDefaults(member, input);
-    const session = this.createMemberSession(workspace, member, input, options, runtimeCwd);
+    // Auto-prewarm may have been scheduled from a renderer snapshot that is
+    // already stale because the user changed model/effort immediately after
+    // creation. Its runtime fields are hints, never authority: start from the
+    // member's latest persisted controls so the later user change wins.
+    const effectiveInput: StartPartyMemberInput = input.auto ? { auto: true } : input;
+    this.applyRuntimeDefaults(member, effectiveInput);
+    const session = this.createMemberSession(workspace, member, effectiveInput, options, runtimeCwd);
     member.sessionId = session.id;
     member.sessionBootId = SESSION_BOOT_ID;
     member.status = "running";
@@ -1140,6 +1188,7 @@ export class PartyApplicationService {
     const changesHarness = Boolean(requestedHarness && requestedHarness !== currentHarness);
     const nextHarness = requestedHarness || currentHarness;
     this.assertNotBetaLocked(nextHarness, input.model || member.model);
+    this.assertSshHarnessSupported(member, nextHarness);
     if (changesHarness && this.memberHasStartedTurn(member)) {
       throw new Error(`Cannot change harness for '${member.name}' after its first turn has started.`);
     }
@@ -1184,11 +1233,19 @@ export class PartyApplicationService {
    * it (#23). The compaction exception mirrors {@link sendMessage}: never tear
    * down a compaction half-way; the message still parks at the front and waits.
    */
-  sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): PartyCommandResult {
+  async sendUserMessage(name: string, text: string, attachments?: ImageAttachment[], partyId?: string, options?: { interrupt?: boolean }): Promise<PartyCommandResult> {
     const workspace = this.workspacePath();
     const state = this.ensureMigrated(this.repository.read(workspace));
     const member = this.requireMember(state, name, partyId);
     this.assertNotOwnedByExternalCli(member, "send a message");
+    const unavailable = await this.ensureSshMessageAvailable(member);
+    if (unavailable) {
+      const detail = this.sshMessageUnavailableError(member, unavailable);
+      log("warn", "party", "user message refused: SSH server unavailable", {
+        workspace, partyId: member.partyId, member: member.name, server: unavailable.server, problem: unavailable.problem,
+      });
+      return { ...this.result(detail, state, member), ok: false, sshUnavailable: unavailable };
+    }
     let session: SessionView | undefined;
     let sessionId = member.sessionId && this.deps.sessionManager.hasSession(member.sessionId) ? member.sessionId : undefined;
     // Interrupt is meaningful only for a turn that existed when this message
@@ -1200,6 +1257,14 @@ export class PartyApplicationService {
       session = started.session;
       sessionId = session?.id;
       if (!sessionId) {
+        const startupUnavailable = this.sshMessageUnavailable(member);
+        if (startupUnavailable) {
+          return {
+            ...this.result(this.sshMessageUnavailableError(member, startupUnavailable), state, member),
+            ok: false,
+            sshUnavailable: startupUnavailable,
+          };
+        }
         throw new Error(started.message);
       }
     }
@@ -2464,6 +2529,18 @@ export class PartyApplicationService {
       ? state.members.find((member) => member.partyId === targetPartyId && member.name === normalizeMemberName(from))
       : undefined;
 
+    // A newly loaded app has no runtime connection state yet. Resolve that
+    // uncertainty with one real SSH connection before gate review or delivery;
+    // otherwise treating the UI's default "disconnected" label as a failure
+    // blocks the first valid message, while blindly allowing it can strand the
+    // message in a remote adapter that never connected.
+    if (await this.ensureSshMessageAvailable(target)) {
+      // `sendMessage` records the refused party message and returns the same
+      // structured problem. Do not spend a gate review on a message that cannot
+      // reach its destination.
+      return this.sendMessage(to, content, from, attachments, partyId, { interrupt: options?.interrupt });
+    }
+
     if (sender && this.deps.reviewGate) {
       const party = state.parties.find((item) => item.id === targetPartyId);
       const plan = resolveGateReviewPlan(sender.gate, target.gate, party?.gate, getSettings().gateDefaults);
@@ -2609,6 +2686,19 @@ export class PartyApplicationService {
         partyMessage: message,
       };
     }
+    const unavailable = this.sshMessageUnavailable(target);
+    if (unavailable) {
+      const detail = this.sshMessageUnavailableError(target, unavailable);
+      message.error = detail;
+      target.updatedAt = message.createdAt;
+      state.messages.push(message);
+      this.persistParty(workspace, state, this.partyIdOf(target));
+      log("warn", "party", "party message refused: SSH server unavailable", {
+        workspace, partyId: target.partyId, from: message.from, to: target.name,
+        server: unavailable.server, problem: unavailable.problem,
+      });
+      return { ...this.result(detail, state, target), ok: false, partyMessage: message, sshUnavailable: unavailable };
+    }
     // R-63: an open tab without a live session used to record
     // `target_member_has_no_active_session` and never deliver. User turns already
     // auto-start; party messages must do the same for any non-closed member.
@@ -2656,6 +2746,17 @@ export class PartyApplicationService {
         });
       }
     }
+    if (!sessionId) {
+      const startupUnavailable = this.sshMessageUnavailable(target);
+      if (startupUnavailable) {
+        const detail = this.sshMessageUnavailableError(target, startupUnavailable);
+        message.error = detail;
+        target.updatedAt = message.createdAt;
+        state.messages.push(message);
+        this.persistParty(workspace, state, this.partyIdOf(target));
+        return { ...this.result(detail, state, target), ok: false, partyMessage: message, sshUnavailable: startupUnavailable };
+      }
+    }
     if (sessionId) {
       if (turnWasActive) {
         // Busy: same visible queue a user's message uses. `interrupt` parks at
@@ -2700,6 +2801,29 @@ export class PartyApplicationService {
       ...this.result(message.delivered ? `Message delivered to '${target.name}'.` : `Message queued for '${target.name}', but no active session is bound.`, state, target),
       partyMessage: message,
     };
+  }
+
+  private sshMessageUnavailable(member: PartyMember): SshMessageUnavailable | undefined {
+    if (!member.location || !this.deps.executionLocations) return undefined;
+    const location = parseMemberLocation(member.location);
+    return location.env === "ssh" ? this.deps.executionLocations.sshUnavailable(location) : undefined;
+  }
+
+  private async ensureSshMessageAvailable(member: PartyMember): Promise<SshMessageUnavailable | undefined> {
+    if (!member.location || !this.deps.executionLocations) return undefined;
+    const location = parseMemberLocation(member.location);
+    return location.env === "ssh" ? this.deps.executionLocations.ensureSshAvailable(location) : undefined;
+  }
+
+  private sshMessageUnavailableError(member: PartyMember, unavailable: SshMessageUnavailable): string {
+    const reason = unavailable.problem === "server-missing"
+      ? "is not registered"
+      : unavailable.problem === "auth-failed"
+        ? "could not authenticate"
+        : unavailable.problem === "fingerprint-changed"
+          ? "has a changed fingerprint"
+          : "is unreachable";
+    return `Member '${member.name}' could not receive the message because SSH server '${unavailable.server}' ${reason}.`;
   }
 
   /**
@@ -2892,6 +3016,61 @@ export class PartyApplicationService {
     return Boolean(view && BUSY_SESSION_STATUSES.has(String(view.snapshot.status)));
   }
 
+  /**
+   * Resolves a model and effort as one catalog-owned setting. Explicit invalid
+   * input is rejected. An incompatible inherited/default effort is replaced by
+   * the model's declared default and logged, so persisted state never claims an
+   * effort the harness will ignore.
+   */
+  private resolveMemberModelControls(
+    harnessId: HarnessId,
+    model: string | undefined,
+    explicitEffort: string | undefined,
+    inheritedEffort: string | undefined,
+    memberName: string,
+  ): { route: ModelRoute; effort?: string } {
+    const wantedModel = model?.trim();
+    if (!wantedModel) {
+      throw new Error(`Member '${memberName}' has no model configured for ${harnessId}.`);
+    }
+    const routes = buildModelRoutes(
+      wantedModel,
+      [],
+      [],
+      this.deps.sessionManager.getCodexModelState()?.models,
+    ).filter((route) => route.harnessId === harnessId);
+    const route = resolveMemberRuntimeRoute(routes, wantedModel, harnessId);
+    const capability = route.capabilities.effort;
+    const optionIds = capability.options.map((option) => option.id);
+
+    if (explicitEffort !== undefined) {
+      if (!capability.supported) {
+        throw new Error(`Model '${route.model}' on ${harnessId} does not support an effort setting.`);
+      }
+      const effort = matchingCapabilityOption(capability, explicitEffort);
+      if (!effort) {
+        throw new Error(`Effort '${explicitEffort.trim()}' is not available for '${route.model}' on ${harnessId}. Use: ${optionIds.join(", ")}.`);
+      }
+      return { route, effort };
+    }
+
+    const effort = seedCapabilityOption(capability, inheritedEffort);
+    if (capability.supported && !effort) {
+      throw new Error(`Model '${route.model}' on ${harnessId} advertises effort support but has no selectable effort options.`);
+    }
+    if (inheritedEffort && matchingCapabilityOption(capability, inheritedEffort) === undefined) {
+      log("warn", "party", "incompatible inherited effort replaced by model default", {
+        member: memberName,
+        harnessId,
+        model: route.model,
+        inheritedEffort,
+        effort,
+        available: optionIds,
+      });
+    }
+    return { route, effort };
+  }
+
   private applyRuntimeDefaults(member: PartyMember, input: StartPartyMemberInput): void {
     if (input.permissionMode !== undefined && !isPermissionModeSetting(input.permissionMode)) {
       throw new Error(`Unknown Claude permission mode '${input.permissionMode}'.`);
@@ -2910,9 +3089,17 @@ export class PartyApplicationService {
     }
     // Fill unset fields from the member's own harness defaults (not one global).
     const defaults = harnessDefaultsOf(getSettings(), normalizeHarnessId(member.runtime));
-    member.model = input.model || member.model || defaults.model;
-    member.effort = input.effort || member.effort || defaults.effort;
     const harnessId = normalizeHarnessId(member.runtime);
+    const controls = this.resolveMemberModelControls(
+      harnessId,
+      input.model || member.model || defaults.model,
+      input.effort,
+      member.effort || defaults.effort,
+      member.name,
+    );
+    member.model = controls.route.model;
+    member.effort = controls.effort;
+    this.assertNotBetaLocked(harnessId, member.model);
     if (harnessId === "cursor") {
       member.cursorPolicy = cursorPolicyOf(
         requestedCursorPolicy || member.cursorPolicy || defaults.cursorPolicy,
@@ -2945,6 +3132,13 @@ export class PartyApplicationService {
     }
   }
 
+  private assertSshHarnessSupported(member: PartyMember, harnessId: HarnessId): void {
+    if (!member.location || parseMemberLocation(member.location).env !== "ssh") return;
+    if (harnessId === "codex" || harnessId === "claude-code") return;
+    const server = parseMemberLocation(member.location).server || "unknown";
+    throw new Error(`${server} 에서는 ${harnessId} 멤버를 만들 수 없습니다. SSH 멤버는 Codex와 Claude Code만 지원합니다`);
+  }
+
   /** Live turn count wins; persisted transcript keeps the lock after restart. */
   private memberHasStartedTurn(member: PartyMember): boolean {
     const snapshot = this.sessionViewOf(member.sessionId)?.snapshot;
@@ -2975,6 +3169,9 @@ export class PartyApplicationService {
       return {};
     }
     const location = parseMemberLocation(member.location);
+    if (location.env === "ssh") {
+      return { cwd: location.cwd, crossHostTarget: member.location };
+    }
     if (location.env === "wsl" && !isHostDistro(location.distro)) {
       // The party remains owned by this engine. SessionManager supplies a
       // transport-backed HarnessSession whose native process runs in the distro

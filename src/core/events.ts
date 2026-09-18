@@ -5,7 +5,8 @@ import type { CursorPolicy } from "../shared/cursorPolicy";
 import type { TurnTokenBreakdown } from "../shared/tokenUsage";
 import type { GateReviewer, GateScope, GateViolation } from "../shared/messageGate";
 
-export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
+/** Legacy shared session-effort name; `none` is advertised only by verified Codex routes. */
+export type ClaudeEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /**
  * A slash command the live harness reports as available for a session — built-in
@@ -234,7 +235,7 @@ export type ClaudeNormalizedEvent =
    * explains it. It is what turns a red wall of English CLI text into a card
    * with buttons — see EnvironmentBlockedError.
    */
-  | { type: "error"; message: string; at: string; environment?: { checkId: string; raw?: string } };
+  | { type: "error"; message: string; at: string; environment?: { checkId: string; raw?: string }; remote?: { server: string; agent: string } };
 
 export type NormalizedCommand =
   | { type: "sendUserTurn"; text: string }

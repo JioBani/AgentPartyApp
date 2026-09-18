@@ -23,6 +23,7 @@ export function FloatingMenu({
   onDismiss,
   drop = "down",
   align = "left",
+  matchAnchorWidth = false,
 }: {
   anchor: HTMLElement | null;
   children: ReactNode;
@@ -32,6 +33,8 @@ export function FloatingMenu({
   onDismiss: () => void;
   drop?: "down" | "up";
   align?: "left" | "right";
+  /** Size the menu to its trigger, for select-like controls whose options mirror the trigger row. */
+  matchAnchorWidth?: boolean;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState<CSSProperties>();
@@ -43,7 +46,8 @@ export function FloatingMenu({
     const trigger = anchor.getBoundingClientRect();
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
-    const { offsetHeight: height, offsetWidth: width } = menu;
+    const { offsetHeight: height } = menu;
+    const width = matchAnchorWidth ? trigger.width : menu.offsetWidth;
     const above = trigger.top - GAP - EDGE_MARGIN;
     const below = viewportHeight - trigger.bottom - GAP - EDGE_MARGIN;
 
@@ -59,11 +63,12 @@ export function FloatingMenu({
     const next: CSSProperties = {
       position: "fixed",
       left,
+      ...(matchAnchorWidth ? { width } : {}),
       maxHeight: Math.max(0, up ? above : below),
       ...(up ? { bottom: viewportHeight - trigger.top + GAP } : { top: trigger.bottom + GAP }),
     };
     setPlacement(next);
-  }, [align, anchor, drop]);
+  }, [align, anchor, drop, matchAnchorWidth]);
 
   // Measure before the menu is shown in its real position, avoiding a flash at
   // the viewport origin. ResizeObserver covers responsive panel movement and

@@ -9,6 +9,7 @@ import type { PartyGate } from "../../shared/messageGate";
 import type { MemberView } from "./types";
 import type { RouteLike } from "./routes";
 import { MemberWizard } from "./MemberWizard";
+import type { MemberCreateResult } from "./memberCreateFailure";
 import { MessageGateIcon } from "./MessageGateIcon";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 import { useModalEscape } from "./useModalEscape";
@@ -16,6 +17,9 @@ import { PartyGroupList } from "./PartyGroupList";
 import { MemberCwdTree } from "./MemberCwdTree";
 import { MoveGroupModal, NewGroupModal, RenameGroupModal } from "./PartyGroupModals";
 import { CwdPicker, ENV_LABEL, EnvIcon, selectableWslDistroError, type WslBrowsing } from "./CwdPicker";
+import { sshApi, useSshServers } from "../app/sshClient";
+import { runSshNoticeAction } from "./SshPanelBanner";
+import { SshFingerprintDialog } from "./SshServerDialogs";
 import type { PartyGroup, PartySummary } from "../../shared/partyGroups";
 import { FAVORITE_PARTY_GROUP_ID, groupPartiesWithFavorites, isFavoriteGroupId, isFavoriteParty } from "../../shared/favoriteParties";
 import type { SidebarGroupFolds } from "../../shared/sidebarGroupFolds";
@@ -88,7 +92,7 @@ interface PartySidebarProps {
   /** Opens the platform folder picker; resolves null when the user cancelled. */
   onBrowseCwd: (env: ExecutionEnv, distro?: string) => Promise<MemberExecutionLocation | null>;
   wsl?: WslBrowsing;
-  onCreateMember: (input: CreateMemberInput) => Promise<boolean>;
+  onCreateMember: (input: CreateMemberInput) => Promise<MemberCreateResult>;
   onOpenMember: (member: string) => void;
   /** Hard restart (in-place harness restart); enabled only with a live session. */
   onRestartMember: (member: string) => void;
@@ -99,6 +103,8 @@ interface PartySidebarProps {
   onSleepMember: (member: string) => void;
   /** Brings a sleeping member back and resumes its conversation. */
   onWakeMember: (member: string) => void;
+  /** Opens 설정 → SSH 서버, for a server whose login failed. */
+  onOpenSshSettings?: () => void;
   onRemoveParty: (partyId: string) => void;
   /** Opens the party-wide Message Gate manager for a party. */
   onOpenPartyGate: (partyId: string) => void;
@@ -341,6 +347,9 @@ function fitContextMenuToViewport(
  */
 
 export function PartySidebar(props: PartySidebarProps) {
+  const ssh = useSshServers();
+  const [sshReviewing, setSshReviewing] = useState<string | undefined>();
+  const sshReview = sshReviewing ? ssh.servers?.find((entry) => entry.name === sshReviewing) : undefined;
   const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, views, openMembers, tabGroups, defaultTabGroupId, drawers, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onReorderParties, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
   /**
    * The width being dragged RIGHT NOW, if any.
@@ -533,12 +542,17 @@ export function PartySidebar(props: PartySidebarProps) {
   }
 
 
+  const [createError, setCreateError] = useState<string | undefined>();
+
   async function createMember(input: CreateMemberInput) {
     if (memberSubmittingRef.current) return;
     memberSubmittingRef.current = true;
     setMemberSubmitting(true);
+    setCreateError(undefined);
     try {
-      if (await onCreateMember(input)) setCreating(false);
+      const result = await onCreateMember(input);
+      if (result.ok) setCreating(false);
+      else setCreateError(result.reason);
     } finally {
       memberSubmittingRef.current = false;
       setMemberSubmitting(false);
@@ -671,7 +685,8 @@ export function PartySidebar(props: PartySidebarProps) {
             onBrowseCwd={onBrowseCwd}
             wsl={wsl}
             submitting={memberSubmitting}
-            onCancel={() => setCreating(false)}
+            createError={createError}
+            onCancel={() => { setCreating(false); setCreateError(undefined); }}
             onCreate={(input) => { void createMember(input); }}
           />
         )}
@@ -684,7 +699,18 @@ export function PartySidebar(props: PartySidebarProps) {
           onToggleGroup={toggleMemberGroup}
           onOpenMember={onOpenMember}
           onMemberContextMenu={(name, event) => setMenu({ kind: "member", name, x: event.clientX, y: event.clientY })}
+          sshServers={ssh.servers}
+          onSshNoticeAction={(action, server) => runSshNoticeAction(action, server, { openSshSettings: () => props.onOpenSshSettings?.() }, () => setSshReviewing(server))}
         />
+        {sshReview?.fingerprintChange && (
+          <SshFingerprintDialog
+            serverName={sshReview.name}
+            fingerprint={sshReview.fingerprintChange.next}
+            previous={sshReview.fingerprintChange.previous}
+            onCancel={() => setSshReviewing(undefined)}
+            onTrust={() => { setSshReviewing(undefined); void sshApi().sshTrustNewFingerprint(sshReview.name); }}
+          />
+        )}
           </section>
           <div className="wb-drawer-resize" title={localized("STR-2289")} onPointerDown={(event) => startResize("member", event)} />
         </aside>

@@ -24,7 +24,7 @@ const REPO = "AgentParty-releases";
 const REMOTE_PATH = "modelCatalog.json";
 const BRANCH = "main";
 const SCHEMA_VERSION = 1;
-const PROVIDERS = new Set(["anthropic", "openai", "openrouter", "cursor", "deepseek", "xai"]);
+const PROVIDERS = new Set(["anthropic", "openai", "openrouter", "cursor", "deepseek", "xai", "bai"]);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceFile = path.join(root, "src", "shared", "modelCatalog.json");
