@@ -15,6 +15,12 @@ import type { McpServerSnapshot } from "./mcp";
 import type { AgentTabId, SettingsTabId } from "./runtimeTabs";
 import type { TokenUsageAggregate, TurnUsageRecord } from "./tokenUsage";
 
+/**
+ * The deck is kept intact for later reactivation and automation QA, but is not
+ * currently offered from the user-facing Guide screen.
+ */
+export const GUIDE_PRESENTATION_VISIBLE = false;
+
 /** Chapter titles in the table of contents (§2-3). Not the slide list.
  *  Titles, blurbs and boundaries come from the design canon (guide.html SCENES). */
 export const GUIDE_SCENES = [

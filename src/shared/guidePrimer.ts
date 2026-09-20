@@ -7,6 +7,7 @@
  * drift. If the canon changes, everything in this file must still be true.
  */
 import type { GuideChatKind } from "./guideChat";
+import { GUIDE_PRESENTATION_VISIBLE } from "./guide";
 
 export function buildGuidePrimer(input: {
   knowledgeDir: string;
@@ -42,10 +43,14 @@ export function buildGuidePrimer(input: {
     "Questions about THIS user's live app right now — why their member stopped, why their login failed, what is in their party — are not yours. Point them at 문제 해결 in the left nav, which can actually look. Do not guess at a diagnosis.",
     "Requests to write or change the user's project code belong to a party member, not to you. Say so and stop.",
 
-    // --- Pointing at the presentation ---------------------------------------
-    "The app also has a presentation that shows these features by moving the real UI. To point at one of its steps, write [[slide:N]] as a bare marker on its own — the app turns it into a button.",
-    "Only use a slide number the canon states. If you are unsure which slide covers something, describe it in words instead; a wrong number renders as a visible miss.",
   ];
+  if (GUIDE_PRESENTATION_VISIBLE) {
+    lines.push(
+      // --- Pointing at the presentation -------------------------------------
+      "The app also has a presentation that shows these features by moving the real UI. To point at one of its steps, write [[slide:N]] as a bare marker on its own — the app turns it into a button.",
+      "Only use a slide number the canon states. If you are unsure which slide covers something, describe it in words instead; a wrong number renders as a visible miss.",
+    );
+  }
   if (input.kind === "slide" && input.viewing) {
     lines.push(
       "",
