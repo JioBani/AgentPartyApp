@@ -13,6 +13,7 @@ import {
   firstSlideOfScene,
   GUIDE_SCENES,
   GUIDE_SLIDE_COUNT,
+  GUIDE_PRESENTATION_VISIBLE,
   sceneNumberOf,
   sceneOf,
   sceneRange,
@@ -236,18 +237,20 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
 
             <LocalizedText id="STR-1303" />
           </button>
-          <button
-            type="button"
-            className={"wb-segment" + (mode === "deck" ? " is-active" : "")}
-            title={localized("STR-1304")}
-            // Re-applies the CURRENT slide, so leaving to ask a question and
-            // coming back puts you where you were rather than at the start.
-            onClick={() => apply(index)}
-          >
-            <Play size={13} />
+          {GUIDE_PRESENTATION_VISIBLE ? (
+            <button
+              type="button"
+              className={"wb-segment" + (mode === "deck" ? " is-active" : "")}
+              title={localized("STR-1304")}
+              // Re-applies the CURRENT slide, so leaving to ask a question and
+              // coming back puts you where you were rather than at the start.
+              onClick={() => apply(index)}
+            >
+              <Play size={13} />
 
-            <LocalizedText id="STR-1305" />
-          </button>
+              <LocalizedText id="STR-1305" />
+            </button>
+          ) : null}
         </div>
         <span className="guide-spacer" />
         <span
@@ -266,8 +269,8 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
         {mode === "chat" ? (
           <GuideChat
             kind="chatbot"
-            onStart={() => apply(0)}
-            onOpenSlide={(next) => apply(next)}
+            onStart={GUIDE_PRESENTATION_VISIBLE ? () => apply(0) : undefined}
+            onOpenSlide={GUIDE_PRESENTATION_VISIBLE ? (next) => apply(next) : undefined}
           />
         ) : null}
 

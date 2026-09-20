@@ -1,6 +1,6 @@
 # AgentParty 가이드 지식
 
-이 폴더는 가이드 챗봇과 슬라이드 채팅이 참조하는 **기준 문서**다.
+이 폴더는 가이드 채팅이 참조하는 **기준 문서**다.
 시스템 프롬프트에 내용을 요약하여 입력하지 않는다. **먼저 이 파일을 확인한 후** 질문과 관련된 다른 Markdown 파일을 연다.
 목차만으로 구체적인 질문에 답변하지 않는다.
 
@@ -17,12 +17,12 @@
 |---|---|
 | `start.md` | 설치 후 초기 설정 및 사용 절차 |
 | `screens.md` | 화면·창·탭·패널의 위치와 사용 방법 |
-| `party.md` | 파티와 멤버 생성 및 관리 방법 |
+| `party.md` | 파티와 멤버 생성, Windows·WSL·SSH 실행 위치 및 관리 방법 |
 | `talk.md` | 멤버에게 메시지를 보내는 방법과 첨부·중단·대기열·명령 사용 방법 |
 | `collab.md` | 멤버 간 작업 전달 방법과 Message Gate·서브에이전트 사용 방법 |
 | `safety.md` | 권한·승인·되돌릴 수 없는 작업의 안전 관리 방법 |
 | `context.md` | 컨텍스트·압축·재시작을 사용한 장기 대화 관리 방법 |
-| `connect.md` | 계정 연결. Claude·Codex·Cursor·OpenRouter |
+| `connect.md` | 계정과 API 키 연결. Claude·Codex·Cursor·OpenRouter·B.AI |
 | `cost.md` | 비용 발생 기준과 사용량 확인 방법 |
 | `limits.md` | 지원하지 않거나 아직 제공되지 않는 기능 |
 

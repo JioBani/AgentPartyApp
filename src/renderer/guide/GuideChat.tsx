@@ -126,17 +126,19 @@ export function GuideChat({
                   <h1><LocalizedText id="STR-1261" /></h1>
                   <p><LocalizedText id="STR-1262" /></p>
                 </div>
-                <div className="guide-offer-card">
-                  <div>
-                    <strong><LocalizedText id="STR-1263" /></strong>
-                    <small><LocalizedText id="STR-1264" /></small>
-                  </div>
-                  <button type="button" className="accent-btn" onClick={onStart}>
-                    <Play size={14} />
+                {onStart ? (
+                  <div className="guide-offer-card">
+                    <div>
+                      <strong><LocalizedText id="STR-1263" /></strong>
+                      <small><LocalizedText id="STR-1264" /></small>
+                    </div>
+                    <button type="button" className="accent-btn" onClick={onStart}>
+                      <Play size={14} />
 
-                    <LocalizedText id="STR-1265" />
-                  </button>
-                </div>
+                      <LocalizedText id="STR-1265" />
+                    </button>
+                  </div>
+                ) : null}
                 <p className="guide-section-label"><LocalizedText id="STR-1266" /></p>
                 <div className="guide-suggests">
                   {SUGGESTS.map((text) => (

@@ -8,11 +8,12 @@
   Claude Code + Cursor 구독 조합은 베타 기간에 선택할 수 없다. 모델 목록에 `베타 잠금` 배지와 제한 사유가 표시된다.
   OpenRouter·DeepSeek 모델을 Claude Code / Codex에서 실행하는 것은 잠금 대상이 **아니다** → `party.md`
 - **Codex의 MCP 서버 켜기/끄기** — 설정 파일을 통해 관리되므로 실행 중 토글 기능을 제공하지 않는다.
+- **가이드 슬라이드 프레젠테이션** — 현재 가이드 탭에서는 잠시 표시하지 않으며 질문형 가이드 채팅만 제공한다.
+- **SSH의 Cursor·Grok 하네스** — SSH 실행 위치에서는 현재 Claude Code와 Codex만 지원한다 → `party.md`
 
 ## 현재 진입점이 제공되지 않는 기능
 
 - **Cursor 로그인/로그아웃** — 앱에서 제공하지 않는다. 로컬 Cursor CLI의 로그인 상태를 사용한다 → `connect.md`
-- **OpenRouter 키 삭제** — HTTP API 에만 있고 인증 화면에는 버튼이 없다.
 - 기타 API·에이전트 도구에서만 제공되는 기능 — Claude 구독 해제, 기존 세션 바인딩,
   전체 상태 조회, 일괄 중단, 전체 방송, Message Gate 1회 우회.
 
