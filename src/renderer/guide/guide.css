@@ -18,9 +18,7 @@
 .guide-window { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--bg-1); outline: none; }
 .guide-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 
-/* 화면 상단 오른쪽에 붙는 언어 선택 + 비용 표시. 정본에서는 가이드 창의
-   타이틀바에 있었지만, 메인 창에서는 타이틀바가 이미 화면 이름·테마·창 버튼을
-   들고 있으므로 가이드 고유의 두 가지만 이 줄로 내려온다. */
+/* The guide top bar only carries navigation that belongs to the guide. */
 .guide-topbar {
     flex: none; display: flex; align-items: center; gap: 8px;
     height: var(--bar-height); padding: 0 14px 0 18px; box-sizing: border-box;
@@ -35,25 +33,13 @@
     padding: 4px 10px; font-size: var(--font-body-sm); font-family: inherit; cursor: pointer;
   }
 .guide-topbar .guide-spacer { flex: 1; }
-.guide-lang {
-    height: 22px; padding: 0 6px; border-radius: var(--radius-pill);
-    border: var(--border-width) solid var(--border); background: var(--bg-2);
-    color: var(--text-1); font-size: var(--font-meta); font-family: inherit;
-  }
-.guide-cost {
-    display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px;
-    border-radius: var(--radius-pill); font-size: var(--font-meta); letter-spacing: .01em;
-    border: var(--border-width) solid var(--border); background: var(--bg-3); color: var(--text-2);
-  }
-.guide-cost.is-free { border-color: var(--success-bd); background: var(--success-dim); color: var(--success); }
-.guide-cost.is-paid { border-color: var(--live-bd); background: var(--live-dim); color: var(--live); }
-
 /* ---------- 챗봇 (창의 기본 상태) ---------- */
-.guide-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; }
-/* `both-edges` 라서 스크롤바가 생겨도 가운데 칸이 옆으로 밀리지 않는다 —
-   한쪽만 예약하면 대화 칸과 아래 컴포저가 몇 px 어긋난 채로 서 있게 된다. */
-.guide-chat-scroll { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-gutter: stable both-edges; display: flex; justify-content: center; }
-.guide-chat-col { width: min(680px, 100%); padding: 26px 22px 8px; box-sizing: border-box; }
+.guide-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* Keep the guide on the same full-width geometry as a member panel. Reserving
+   both scrollbar edges keeps the transcript and composer horizontally stable
+   when a long answer first makes the transcript scroll. */
+.guide-chat-scroll { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-gutter: stable both-edges; }
+.guide-chat-col { width: 100%; padding: 26px 22px 8px; box-sizing: border-box; }
 .guide-hero { display: flex; flex-direction: column; gap: 6px; padding: 34px 0 18px; }
 .guide-hero h1 { margin: 0; font-size: 21px; font-weight: var(--weight-bold); color: var(--text-0); letter-spacing: -.01em; }
 .guide-hero p { margin: 0; font-size: var(--font-ui); color: var(--text-2); text-wrap: pretty; word-break: keep-all; }
@@ -97,7 +83,7 @@
   }
 
 /* ---------- 컴포저 (챗봇 · 슬라이드 채팅 공용) ---------- */
-.guide-composer-wrap { width: min(680px, 100%); padding: 0 22px 16px; box-sizing: border-box; }
+.guide-composer-wrap { width: 100%; padding: 0 22px 16px; box-sizing: border-box; }
 .guide-composer-note {
     display: flex; align-items: center; gap: 6px; margin: 0 0 7px; padding-left: 2px;
     font-size: var(--font-body-sm); color: var(--live);
@@ -243,19 +229,16 @@
   }
 .guide-ask-head strong { font-size: var(--font-title); color: var(--text-0); }
 .guide-ask-head .guide-spacer { flex: 1; }
-/* 시트 자체가 이미 패널이다 — 안에 컴포저 섬을 또 띄우면 상자 안의 상자가 된다.
-   그래서 시트에서는 테두리 없이, 대화와 같은 폭의 가운데 칸으로만 둔다. */
+/* The sheet is already a panel, so its composer has no second floating frame. */
 .guide-ask-chat { display: flex; flex-direction: column; min-height: 0; }
 .guide-ask-chat .guide-composer-wrap { margin: 0 auto; padding: 10px 12px 12px; }
 
-/* 대화는 **자기가** 스크롤한다. 바깥에 스크롤 컨테이너를 하나 더 두면
-   Transcript 의 "바닥에 붙어 따라가기"가 절대 안 움직이는 요소를 붙잡게 되어,
-   답이 흐르는 동안 화면 아래로 자라 나간다. 가운데 칸은 블록마다 준다. */
+/* The transcript scrolls itself. A nested scroller breaks its follow-the-tail
+   behavior while a reply streams. Give it a definite full width as well: a
+   centered flex parent otherwise lets the transcript grow with its contents. */
 .guide-chat > .wb-transcript, .guide-ask-chat > .wb-transcript {
+    width: 100%;
     scrollbar-gutter: stable both-edges;
-  }
-.guide-chat > .wb-transcript > *, .guide-ask-chat > .wb-transcript > * {
-    width: min(680px, 100%); align-self: center;
   }
 .guide-attach {
     display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px;
@@ -273,15 +256,14 @@
 .guide-stage-app { position: absolute; top: 0; left: 0; width: 1440px; height: 942px; transform-origin: top left; overflow: hidden; }
 .guide-stage-app > * { width: 1440px; height: 942px; }
 
-/* 대화와 입력의 경계 — 스크롤할 때 둘이 섞여 보이면 안 된다.
-   창 전체를 가로지르는 띠는 화면을 두 동강 내므로, 대화와 같은 폭의
-   **떠 있는 섬**으로 둔다. 정본에 없는 규칙이며 실사용 지적으로 더했다. */
+/* Keep a visual boundary between the scrolling transcript and its input while
+   using the same full-width layout as the member chat panel. */
 .guide-composer-band {
-  flex: none; width: 100%; display: flex; justify-content: center;
+  flex: none; width: 100%; display: flex;
   padding: 0 22px 14px; box-sizing: border-box;
 }
 .guide-composer-band .guide-composer-wrap {
-  width: min(680px, 100%); padding: 12px 14px;
+  width: 100%; padding: 12px 14px;
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-panel);
   background: var(--bg-2);

@@ -100,9 +100,7 @@ export function GuideChat({
           <span className="wb-mono">{label} · effort {settings.effort || "medium"}</span>
         </button>
         <span className="guide-spacer" />
-        {sheet ? null : empty ? (
-          <span><LocalizedText id="STR-1259" /> <span className="wb-mono">guide/knowledge/</span>  <LocalizedText id="STR-1258" /></span>
-        ) : (
+        {sheet || empty ? null : (
           <button type="button" className="ghost-btn" onClick={() => void reset()}>
             <RotateCcw size={13} />
 

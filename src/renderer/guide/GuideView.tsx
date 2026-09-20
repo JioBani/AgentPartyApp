@@ -3,7 +3,6 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
-  DollarSign,
   Menu,
   MessageSquare,
   Play,
@@ -212,16 +211,13 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
   const slide = slideAt(index);
   const shown = slideAt(shownIndex);
   const scene = sceneOf(index);
-  const paid = mode !== "deck" || askOpen;
-
   return (
     // tabIndex -1: the deck's own arrow-key handler lives on THIS document, so
     // the chrome must be able to hold focus itself. Without a focusable root
     // there is nowhere to put focus back to after the stage's modals grab it.
     <div className="guide-window" ref={rootRef} tabIndex={-1}>
-      {/* The app titlebar already names the screen and carries the theme toggle
-          and window controls, so this row keeps only what is the guide's own:
-          where you are, what it costs, and the language. */}
+      {/* The app titlebar already carries global window controls. Keep this row
+          focused on navigating the guide itself. */}
       <div className="guide-topbar">
         {/* The two halves of the guide, always both reachable. The offer card on
             the empty landing disappears as soon as you ask something, and the
@@ -253,14 +249,6 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
           ) : null}
         </div>
         <span className="guide-spacer" />
-        <span
-          className={"guide-cost " + (paid ? "is-paid" : "is-free")}
-          title={paid ? localized("STR-1306") : localized("STR-1307")}
-        >
-          <DollarSign size={11} />
-          {paid ? "채팅은 비용이 발생" : "AI 사용 안 함"}
-        </span>
-        <GuideLanguage onError={setError} />
       </div>
 
       <div className="guide-body">
@@ -381,7 +369,6 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
                     <LocalizedText id="STR-1319" /> {index + 1} · {scene.title}
                   </span>
                   <span className="guide-spacer" />
-                  <span className="guide-cost is-paid"><DollarSign size={11} /><LocalizedText id="STR-1320" /></span>
                   <button type="button" className="wb-icon-btn" title={localized("STR-1321")} onClick={() => setAskOpen(false)}><X size={14} /></button>
                 </div>
                 <GuideChat
@@ -415,35 +402,5 @@ export function GuideView({ onLeave }: { onLeave: () => void }) {
         ) : null}
       </div>
     </div>
-  );
-}
-
-/** Language lives in the guide's own top row. Only Korean ships today; the
- *  placeholder stays so the seam is visible rather than invented later (§9). */
-function GuideLanguage({ onError }: { onError: (message: string) => void }) {
-  const [language, setLanguage] = useState("ko");
-  useEffect(() => {
-    void window.agentPartyGuide
-      .getChatSettings()
-      .then((settings) => setLanguage(settings.language))
-      .catch((caught) => onError(String(caught)));
-  }, [onError]);
-  return (
-    <select
-      className="guide-lang"
-      aria-label={localized("STR-1329")}
-      value={language}
-      onChange={(event) => {
-        const next = event.target.value;
-        if (next !== "ko") {
-          return;
-        }
-        setLanguage(next);
-        void window.agentPartyGuide.updateChatSettings({ language: "ko" }).catch((caught) => onError(String(caught)));
-      }}
-    >
-      <option value="ko"><LocalizedText id="STR-1330" /></option>
-      <option value="en" disabled><LocalizedText id="STR-1331" /></option>
-    </select>
   );
 }

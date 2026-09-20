@@ -23,7 +23,7 @@
 | `safety.md` | 권한·승인·되돌릴 수 없는 작업의 안전 관리 방법 |
 | `context.md` | 컨텍스트·압축·재시작을 사용한 장기 대화 관리 방법 |
 | `connect.md` | 계정과 API 키 연결. Claude·Codex·Cursor·OpenRouter·B.AI |
-| `cost.md` | 비용 발생 기준과 사용량 확인 방법 |
+| `cost.md` | 구독·API 사용량이 쓰이는 동작과 확인 방법 |
 | `limits.md` | 지원하지 않거나 아직 제공되지 않는 기능 |
 
 ## 답변 작성 원칙
