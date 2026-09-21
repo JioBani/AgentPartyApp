@@ -107,22 +107,24 @@ function runStep(step, baseFraction, stepFraction) {
       env: process.env,
     });
 
-    const timer = setInterval(() => {
-      frame += 1;
-      // Ease within the step so the bar creeps forward without ever completing early.
-      const creep = Math.min(0.9, frame / 120);
-      renderBar(baseFraction + stepFraction * creep, dim(step.name), frame);
-    }, 80);
+    const timer = process.stdout.isTTY
+      ? setInterval(() => {
+          frame += 1;
+          // Ease within the step so the bar creeps forward without ever completing early.
+          const creep = Math.min(0.9, frame / 120);
+          renderBar(baseFraction + stepFraction * creep, dim(step.name), frame);
+        }, 80)
+      : null;
 
     child.stdout.on("data", (d) => chunks.push(d));
     child.stderr.on("data", (d) => chunks.push(d));
 
     child.on("error", (err) => {
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
       reject({ err, output: Buffer.concat(chunks).toString("utf8") });
     });
     child.on("close", (code) => {
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
       if (code === 0) resolve();
       else reject({ code, output: Buffer.concat(chunks).toString("utf8") });
     });
