@@ -1119,13 +1119,13 @@ function registerIpc(): void {
   handle("ssh:suggestRemotePaths", async (_event, server, input) => controller().sshSuggestRemotePaths(String(server || ""), String(input || "")));
 
   handle("auth:list", async (event) => controller().listAuthProviders(senderWorkspace(event)));
-  handle("auth:setDeepseekKey", async (event, value: string) => controller().setDeepseekKey(value || "", senderWorkspace(event)));
+  handle("auth:setDeepseekKey", async (event, value: string) => controller().setDeepseekKey(value || "", senderWorkspace(event)), { redactArgs: [0] });
   handle("auth:clearDeepseekKey", async (event) => controller().clearDeepseekKey(senderWorkspace(event)));
   handle("auth:testDeepseekKey", async (event) => controller().testDeepseekKey(senderWorkspace(event)));
-  handle("auth:setBaiKey", async (event, value: string) => controller().setBaiKey(value || "", senderWorkspace(event)));
+  handle("auth:setBaiKey", async (event, value: string) => controller().setBaiKey(value || "", senderWorkspace(event)), { redactArgs: [0] });
   handle("auth:clearBaiKey", async (event) => controller().clearBaiKey(senderWorkspace(event)));
   handle("auth:testBaiKey", async (event) => controller().testBaiKey(senderWorkspace(event)));
-  handle("auth:setOpenRouterKey", async (event, value: string) => controller().setOpenRouterKey(value || "", senderWorkspace(event)));
+  handle("auth:setOpenRouterKey", async (event, value: string) => controller().setOpenRouterKey(value || "", senderWorkspace(event)), { redactArgs: [0] });
   handle("auth:clearOpenRouterKey", async (event) => controller().clearOpenRouterKey(senderWorkspace(event)));
   handle("auth:testOpenRouterKey", async (event) => controller().testOpenRouterKey(senderWorkspace(event)));
   handle("auth:testNativeCli", async (event, provider: string, host: string) => {

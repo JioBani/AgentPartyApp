@@ -77,7 +77,14 @@ export const CODEX_BAI_PROVIDER: CodexCustomProvider = {
   baseUrl: BAI_BASE_URL,
   wireApi: HARNESS_PROTOCOLS.codex.wireApi,
   envKey: BAI_API_KEY_ENV,
-  extraConfig: { web_search: JSON.stringify("disabled") },
+  extraConfig: {
+    web_search: JSON.stringify("disabled"),
+    // Codex 0.154 started attaching `reasoning.summary` even when the visible
+    // summary mode says "none". B.AI rejects that field with HTTP 400, so the
+    // capability flag must also be disabled to make Codex omit it entirely.
+    model_reasoning_summary: JSON.stringify("none"),
+    model_supports_reasoning_summaries: "false",
+  },
 };
 
 const PROVIDERS: Record<string, CodexCustomProvider> = {

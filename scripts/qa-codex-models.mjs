@@ -104,7 +104,7 @@ assert(noDiscovery.some((r) => r.model === "gpt-5.4") && noDiscovery.some((r) =>
 assert(noDiscovery.filter((r) => r.providerId === "openai").length === codexAccountModels().length, "without discovery: every catalog codexModel entry is a static codex route");
 
 // ---- Layer 2c: codexProviders (Phase 2 pure model) ----------------------------
-const { codexProviderForModel, codexProviderConfigArgs, CODEX_OPENROUTER_PROVIDER, CODEX_CLAUDE_SUBSCRIPTION_PROVIDER } = await bundle("src/shared/codexProviders.ts", "codex-providers.mjs", []);
+const { codexProviderForModel, codexProviderConfigArgs, CODEX_OPENROUTER_PROVIDER, CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_BAI_PROVIDER } = await bundle("src/shared/codexProviders.ts", "codex-providers.mjs", []);
 console.log("\ncodexProviders mapping:");
 assert(codexProviderForModel("z-ai/glm-5.2")?.id === "openrouter", "an OpenRouter slug maps to the openrouter provider");
 assert(codexProviderForModel("gpt-5.5") === undefined, "a bare account slug maps to no custom provider (built-in openai)");
@@ -116,6 +116,10 @@ assert(providerArgs.some((a) => a.includes("env_key=\"OPENROUTER_API_KEY\"")), "
 const claudeProviderArgs = codexProviderConfigArgs(CODEX_CLAUDE_SUBSCRIPTION_PROVIDER);
 assert(claudeProviderArgs.some((a) => a.includes('base_url="http://127.0.0.1:8317/v1"')), "Claude provider config uses local CLIProxyAPI");
 assert(claudeProviderArgs.some((a) => a.includes('env_key="AGENTPARTY_SUBSCRIPTION_PROXY_KEY"')), "Claude provider reads the local proxy key env var");
+const baiProviderArgs = codexProviderConfigArgs(CODEX_BAI_PROVIDER);
+assert(baiProviderArgs.includes('web_search="disabled"'), "B.AI disables Codex web search for DeepSeek models");
+assert(baiProviderArgs.includes('model_reasoning_summary="none"'), "B.AI disables reasoning summaries at the requested mode");
+assert(baiProviderArgs.includes("model_supports_reasoning_summaries=false"), "B.AI makes Codex omit the unsupported reasoning.summary field");
 assert(codexProviderConfigArgs(undefined).length === 0, "no override args for the built-in provider");
 
 // ---- Layer 3: MemberWizard DOM ------------------------------------------------
