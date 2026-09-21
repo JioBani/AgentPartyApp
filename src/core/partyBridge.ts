@@ -687,15 +687,27 @@ export function buildCodexPartyDynamicToolSpecs(): Array<PartyDynamicFunctionSpe
 }
 
 /** Critical Codex calling convention, generated from the same alias map. */
-export function buildCodexPartyCoreInstructions(): string {
+export function buildCodexPartyCoreInstructions(options: { legacyResumeFallback?: boolean } = {}): string {
   const aliases = Object.keys(PARTY_CODEX_CORE_TOOL_ALIASES) as PartyCodexCoreToolAlias[];
-  return [
-    "## Codex Party Core — already loaded",
-    `AgentParty's frequent controls are first-class eager tools: ${aliases.map((name) => `\`${name}\``).join(", ")}. Use them directly; never scan \`ALL_TOOLS\` to find them.`,
+  const lines = [
+    options.legacyResumeFallback
+      ? "## Codex Party Core — resume-compatible"
+      : "## Codex Party Core — already loaded",
+    options.legacyResumeFallback
+      ? `AgentParty's frequent controls are normally first-class eager tools: ${aliases.map((name) => `\`${name}\``).join(", ")}. Use an available alias directly; never scan \`ALL_TOOLS\` to find it.`
+      : `AgentParty's frequent controls are first-class eager tools: ${aliases.map((name) => `\`${name}\``).join(", ")}. Use them directly; never scan \`ALL_TOOLS\` to find them.`,
     "In code mode call them through the `tools` object, for example `await tools.party_send({to: \"impl\", content: \"Check this\"})` or `await tools.party_status({name: \"impl\"})`.",
-    "The host's `collaboration.*` tools control separate Codex sub-agents and are never a substitute for AgentParty. Do not infer that party messaging is unavailable because the duplicate `mcp__agentparty-app__send` name is absent; use `party_send`.",
+    options.legacyResumeFallback
+      ? "The host's `collaboration.*` tools control separate Codex sub-agents and are never a substitute for AgentParty. Prefer `party_send` when present; the exact AgentParty compatibility tools below cover legacy resumed threads."
+      : "The host's `collaboration.*` tools control separate Codex sub-agents and are never a substitute for AgentParty. Do not infer that party messaging is unavailable because the duplicate `mcp__agentparty-app__send` name is absent; use `party_send`.",
     "For a less-common canonical tool named below, its code-mode property is `tools.mcp__agentparty_app__<tool_name_with_hyphens_changed_to_underscores>`; inspect only that exact tool if its schema is needed.",
-  ].join("\n");
+  ];
+  if (options.legacyResumeFallback) {
+    lines.push(
+      "This is a resumed conversation. Threads created before Party Core cannot acquire new dynamic tools during `thread/resume`. If a Party Core alias is absent, use its exact compatibility tool directly without scanning `ALL_TOOLS`: `tools.mcp__agentparty_app__send`, `tools.mcp__agentparty_app__member_status`, `tools.mcp__agentparty_app__list`, `tools.mcp__agentparty_app__interrupt`, or `tools.mcp__agentparty_app__broadcast`.",
+    );
+  }
+  return lines.join("\n");
 }
 
 /**

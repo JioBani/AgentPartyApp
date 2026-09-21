@@ -67,6 +67,8 @@ const INITIAL_PAINT_BLOCKS = 20;
 // How long a captured scroll ratio stays authoritative while layout reflows
 // around a burst of font-scale changes. See pendingRatioRef in TranscriptView.
 const RESTORE_WINDOW_MS = 900;
+const BOTTOM_EPSILON_PX = 1;
+const USER_SCROLL_WINDOW_MS = 450;
 
 function TranscriptView({ view, density, actions, detail = "full" }: TranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -82,6 +84,13 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
   // the exact scrollTop we assigned so that late event is identified by origin,
   // rather than by a timing guess that varies with rendering/stream load.
   const autoPinTargetRef = useRef<number | null>(null);
+  // A scroll event does not say who caused it. Streaming text, ResizeObserver,
+  // browser anchoring, and a person's wheel/scrollbar all arrive through the
+  // same callback, so position alone cannot decide whether following should
+  // stop. Record real input intent separately and only let that input unpin.
+  const userScrollUntilRef = useRef(0);
+  const pointerScrollRef = useRef(false);
+  const lastScrollTopRef = useRef(0);
   const lastText = lastBlockText(view.transcript);
   const latestOwnTurnId = lastOwnUserTurnId(view.transcript);
   // Existing history is not a new send. Record every own turn present on the
@@ -150,9 +159,13 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
       pendingPinRef.current = true;
       return;
     }
-    const target = Math.max(0, node.scrollHeight - node.clientHeight);
-    autoPinTargetRef.current = target;
-    node.scrollTop = target;
+    // Assign past the maximum and keep the browser-clamped value. Reading an
+    // independently calculated target before assignment can differ by a
+    // fractional layout pixel under CSS zoom, which used to leave a visible
+    // gap and made the later scroll event look manual.
+    node.scrollTop = node.scrollHeight;
+    autoPinTargetRef.current = node.scrollTop;
+    lastScrollTopRef.current = node.scrollTop;
     pinnedThisFrameRef.current = true;
     requestAnimationFrame(() => {
       pinnedThisFrameRef.current = false;
@@ -181,6 +194,11 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
         if (isOwnUserTurn(block)) seen.add(block.id);
       }
       stickRef.current = true;
+      // Sending is an explicit request to leave the older reading position.
+      // Do not let the tail of the previous wheel/scrollbar gesture classify a
+      // delayed reply as another manual scroll and turn following back off.
+      userScrollUntilRef.current = 0;
+      pointerScrollRef.current = false;
       pendingRatioRef.current = null;
     }
     stickToBottom();
@@ -203,6 +221,11 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
     }
   };
 
+  const markUserScrollIntent = () => {
+    userScrollUntilRef.current = performance.now() + USER_SCROLL_WINDOW_MS;
+    autoPinTargetRef.current = null;
+  };
+
   // Ctrl+wheel adjusts the transcript font scale. The listener must be
   // non-passive (preventDefault suppresses scrolling while zooming), and it is
   // registered on this one scroller on purpose: a window-level non-passive
@@ -214,7 +237,7 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
     if (!node) return;
     const onWheelZoom = (event: WheelEvent) => {
       if (!event.ctrlKey) {
-        autoPinTargetRef.current = null;
+        markUserScrollIntent();
         return;
       }
       event.preventDefault();
@@ -226,8 +249,18 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
       }
       window.dispatchEvent(new CustomEvent("wb-font-zoom", { detail: event.deltaY < 0 ? 1 : -1 }));
     };
+    const onPointerEnd = () => {
+      pointerScrollRef.current = false;
+      userScrollUntilRef.current = performance.now() + USER_SCROLL_WINDOW_MS;
+    };
     node.addEventListener("wheel", onWheelZoom, { passive: false });
-    return () => node.removeEventListener("wheel", onWheelZoom);
+    window.addEventListener("pointerup", onPointerEnd);
+    window.addEventListener("pointercancel", onPointerEnd);
+    return () => {
+      node.removeEventListener("wheel", onWheelZoom);
+      window.removeEventListener("pointerup", onPointerEnd);
+      window.removeEventListener("pointercancel", onPointerEnd);
+    };
   }, []);
 
   // Settings can also change through the automation API or another pane. App
@@ -279,17 +312,36 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
   const onScroll = () => {
     const node = scrollRef.current;
     if (node) {
-      const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+      const top = node.scrollTop;
+      const distance = Math.max(0, node.scrollHeight - top - node.clientHeight);
+      const atBottom = distance <= BOTTOM_EPSILON_PX;
       const autoTarget = autoPinTargetRef.current;
       if (stickRef.current && autoTarget !== null && Math.abs(node.scrollTop - autoTarget) < 2) {
         autoPinTargetRef.current = null;
+        lastScrollTopRef.current = top;
         // A resize/text delta raced the scroll event from our previous pin. Its
         // old target is still recognizable even if the new bottom moved away.
         if (!atBottom) stickToBottom();
         return;
       }
       autoPinTargetRef.current = null;
-      stickRef.current = atBottom;
+      const userDriven = pointerScrollRef.current || performance.now() <= userScrollUntilRef.current;
+      const movedUp = top < lastScrollTopRef.current - BOTTOM_EPSILON_PX;
+      const movedDown = top > lastScrollTopRef.current + BOTTOM_EPSILON_PX;
+      if (userDriven && movedUp) {
+        // Any deliberate upward movement means "keep my reading position",
+        // even if it is only a few pixels from the bottom. Downward movement
+        // resumes following only after the person actually reaches the end.
+        stickRef.current = false;
+      } else if (userDriven && movedDown && atBottom) {
+        stickRef.current = true;
+      } else if (stickRef.current && !atBottom) {
+        // Non-input scrolls are layout work, not user intent. Keep the latch
+        // and compensate instead of turning one transient gap into a permanent
+        // partially-scrolled state.
+        stickToBottom();
+      }
+      lastScrollTopRef.current = top;
     }
   };
 
@@ -298,7 +350,11 @@ function TranscriptView({ view, density, actions, detail = "full" }: TranscriptP
       className={"wb-transcript density-" + density}
       ref={scrollRef}
       onScroll={onScroll}
-      onPointerDown={() => { autoPinTargetRef.current = null; }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        pointerScrollRef.current = true;
+        markUserScrollIntent();
+      }}
     >
       {/* Layout zoom on the inner wrapper keeps Chromium's glyph rasterization
           sharp. The scroller itself remains unscaled so its viewport geometry

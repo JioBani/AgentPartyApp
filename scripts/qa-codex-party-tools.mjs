@@ -26,12 +26,15 @@ async function load(entry, name) {
 const fakeServer = path.join(projectRoot, "scripts", "fake-codex-appserver.mjs");
 const workspace = path.join(os.tmpdir(), `agentparty-codex-party-tools-${process.pid}`);
 const toolOut = path.join(os.tmpdir(), `agentparty-codex-party-tool-${process.pid}.json`);
+const lifecycleOut = path.join(os.tmpdir(), `agentparty-codex-party-lifecycle-${process.pid}.jsonl`);
 mkdirSync(workspace, { recursive: true });
 try { rmSync(toolOut, { force: true }); } catch {}
+try { rmSync(lifecycleOut, { force: true }); } catch {}
 
 process.env.AGENTPARTY_CODEX_BIN = process.execPath;
 process.env.AGENTPARTY_CODEX_ARGS = JSON.stringify([fakeServer]);
 process.env.AGENTPARTY_FAKE_CODEX_TOOL_OUT = toolOut;
+process.env.AGENTPARTY_FAKE_CODEX_AUTH_OUT = lifecycleOut;
 
 const { CodexAdapter } = await load("src/core/codexAdapter.ts", "codex-party-tools.mjs");
 
@@ -60,6 +63,7 @@ const adapter = new CodexAdapter({
   storageDir: workspace,
   partyBridge: bridge,
   partyIdentity: { party: "team-qa", member: "main", role: "qa" },
+  automationBaseUrl: "http://127.0.0.1:12345",
 });
 
 const events = [];
@@ -143,6 +147,7 @@ const resumedAdapter = new CodexAdapter({
   resumeSessionId: "thr-existing",
   partyBridge: bridge,
   partyIdentity: { party: "team-qa", member: "main", role: "qa" },
+  automationBaseUrl: "http://127.0.0.1:12345",
 });
 resumedAdapter.on("event", (event) => resumedEvents.push(event));
 try {
@@ -156,17 +161,24 @@ try {
   const dynamicTools = threadResume?.params?.dynamicTools || [];
   assert(threadResume?.params?.threadId === "thr-existing", "existing Codex conversations use thread/resume");
   assert(
-    dynamicTools.filter((tool) => tool.type === "function" && tool.deferLoading === false).length === 5,
-    "resumed Codex conversations re-register every eager Party Core tool",
+    dynamicTools.length === 0,
+    "thread/resume does not send the unsupported dynamicTools field",
   );
   assert(
     threadResume?.params?.developerInstructions?.includes("tools.party_send")
+      && threadResume.params.developerInstructions.includes("tools.mcp__agentparty_app__send")
       && threadResume.params.developerInstructions.includes("`collaboration.*` tools control separate Codex sub-agents"),
-    "resumed Codex conversations restore the Party Core instructions",
+    "resumed Codex conversations explain the exact legacy MCP fallback without catalog scanning",
   );
 } finally {
   resumedAdapter.dispose();
 }
+
+const lifecycle = readFileSync(lifecycleOut, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
+const spawnArgs = lifecycle.filter((entry) => entry.event === "spawn").map((entry) => entry.argv || []);
+assert(spawnArgs.length >= 2, "fresh and resumed Codex app-server process arguments were captured");
+assert(spawnArgs[0].some((arg) => String(arg).includes("disabled_tools")), "fresh threads hide duplicate MCP coordination tools behind eager Party Core aliases");
+assert(!spawnArgs[1].some((arg) => String(arg).includes("disabled_tools")), "resumed threads retain canonical MCP coordination tools for legacy compatibility");
 
 console.log(failures.length ? `\nFAILED (${failures.length})` : "\nCODEX PARTY TOOLS PASSED");
 process.exit(failures.length ? 1 : 0);

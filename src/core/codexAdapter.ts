@@ -828,7 +828,12 @@ export class CodexAdapter extends EventEmitter {
       // Codex receives these common controls as eager native-style dynamic
       // functions. Hiding their duplicate MCP definitions makes the eager path
       // deterministic while the remaining management catalog stays searchable.
-      "-c", `mcp_servers.${PARTY_MCP_SERVER}.disabled_tools=[${PARTY_CORE_TOOL_NAMES.map(tomlString).join(",")}]`,
+      // Dynamic tools are persisted only by thread/start. A legacy thread has
+      // none to restore and thread/resume cannot add them, so resumed sessions
+      // keep the five canonical MCP controls as a compatibility fallback.
+      ...(!this.options.resumeSessionId
+        ? ["-c", `mcp_servers.${PARTY_MCP_SERVER}.disabled_tools=[${PARTY_CORE_TOOL_NAMES.map(tomlString).join(",")}]`]
+        : []),
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.startup_timeout_sec=10`,
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.tool_timeout_sec=30`,
       "-c", `mcp_servers.${PARTY_MCP_SERVER}.default_tools_approval_mode="approve"`,
@@ -900,7 +905,6 @@ export class CodexAdapter extends EventEmitter {
       approvalPolicy: this.policy.approval,
       approvalsReviewer: this.policy.guardian ? "auto_review" : "user",
       sandbox: this.policy.sandbox,
-      dynamicTools: this.partyDynamicTools(),
       config: this.threadConfig(),
       developerInstructions: this.partyDeveloperInstructions(),
     });
@@ -920,7 +924,7 @@ export class CodexAdapter extends EventEmitter {
     }
     const primer = this.options.partyPrimer || buildPartyPrimer(this.options.partyIdentity);
     return this.options.partyBridge
-      ? `${buildCodexPartyCoreInstructions()}\n\n${adaptPartyPrimerForCodex(primer)}`
+      ? `${buildCodexPartyCoreInstructions({ legacyResumeFallback: Boolean(this.options.resumeSessionId) })}\n\n${adaptPartyPrimerForCodex(primer)}`
       : primer;
   }
 

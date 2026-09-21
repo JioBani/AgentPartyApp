@@ -26,8 +26,8 @@ const app = createElectronE2eApp({
     AGENTPARTY_CODEX_BIN: process.execPath,
     AGENTPARTY_CODEX_ARGS: JSON.stringify([path.join(projectRoot, "scripts", "fake-codex-appserver.mjs")]),
     AGENTPARTY_FAKE_CODEX_STREAM_OUT: streamTrace,
-    AGENTPARTY_FAKE_CODEX_STREAM_CHUNKS: "24",
-    AGENTPARTY_FAKE_CODEX_STREAM_INTERVAL_MS: "70",
+    AGENTPARTY_FAKE_CODEX_STREAM_CHUNKS: "80",
+    AGENTPARTY_FAKE_CODEX_STREAM_INTERVAL_MS: "12",
   },
 });
 const selector = '.wb-panel:has([data-drop-tab="worker"]) .wb-transcript';
@@ -49,6 +49,9 @@ try {
   await app.post("/api/settings", {
     workspacePath: workspace,
     selectedHarnessId: "codex",
+    // Fractional layout zoom is where calculated scroll targets used to miss
+    // Chromium's clamped maximum by visible pixels.
+    transcriptFontScale: 1.1,
     composer: { sendKey: "enter", interruptOnSend: false },
     harnessDefaults: {
       codex: {
@@ -85,13 +88,24 @@ try {
 
   await sendFromComposer("KIND=stream BUILD_LONG_TRANSCRIPT", query);
   await waitForText(".wb-assistant-body", "MOCK_CLI_STREAM_06", query);
-  const initial = await waitForScroll((value) => value.range > 100 && value.distance < 48, "initial transcript bottom pin", query);
+  const initial = await waitForScroll((value) => value.range > 100 && value.distance <= 1, "initial transcript bottom pin", query);
   check("live CLI output makes the transcript overflow", initial.range > 100, `range=${initial.range}`);
-  check("a followed transcript stays at its latest output", initial.distance < 48, `distance=${initial.distance}`);
+  check("a followed transcript is flush with its latest output", initial.distance <= 1, `distance=${initial.distance}`);
 
-  await waitFor(() => traceRows(), (rows) => rows.length === 24, "all delayed CLI stdout chunks");
+  // A real upward gesture during the still-streaming response must release the
+  // follow latch. Later CLI chunks must not steal the older reading position.
+  await app.post(`/api/qa/pointer${query}`, {
+    steps: [{ selector, action: "wheel", deltaY: 8000 }],
+    delayMs: 0,
+  });
+  const readingDuringStream = await waitForScroll((value) => value.distance > 100, "manual reading position during stream", query);
+  check("a deliberate upward wheel releases bottom following", readingDuringStream.distance > 100, `distance=${readingDuringStream.distance}`);
+
+  await waitFor(() => traceRows(), (rows) => rows.length === 80, "all delayed CLI stdout chunks");
   await waitForText(".wb-assistant-body", "MOCK_CLI_FINAL_RESPONSE", query);
-  await waitForScroll((value) => value.distance < 48, "completed response bottom pin", query);
+  await delay(200);
+  const preservedDuringStream = await scrollMetrics(query);
+  check("later CLI chunks preserve a deliberately unpinned viewport", preservedDuringStream.distance > 100, `distance=${preservedDuringStream.distance}`);
 
   // Move after the long response has settled. This reproduces the reported
   // state directly: a user is reading older content, then sends a new turn.
@@ -107,14 +121,14 @@ try {
 
   await sendFromComposer("KIND=delayedApproval OWN_MESSAGE_REENABLES_BOTTOM_FOLLOW", query);
   await waitForText(".wb-user", "OWN_MESSAGE_REENABLES_BOTTOM_FOLLOW", query);
-  const afterSend = await waitForScroll((value) => value.distance < 48, "own message to restore bottom following", query);
-  check("sending a message scrolls the chat to the new turn", afterSend.distance < 48, `distance=${afterSend.distance}`);
+  const afterSend = await waitForScroll((value) => value.distance <= 1, "own message to restore bottom following", query);
+  check("sending a message scrolls flush to the new turn", afterSend.distance <= 1, `distance=${afterSend.distance}`);
 
   // The fake CLI answers in a later task, proving follow intent remains latched
   // for a genuinely delayed response rather than just a same-frame DOM update.
   await waitForText(".wb-codex-approval", "git status", query);
-  const followed = await waitForScroll((value) => value.distance < 48, "delayed CLI response while following", query);
-  check("a delayed CLI response continues following the bottom", followed.distance < 48, `distance=${followed.distance}`);
+  const followed = await waitForScroll((value) => value.distance <= 1, "delayed CLI response while following", query);
+  check("a delayed CLI response remains flush with the bottom", followed.distance <= 1, `distance=${followed.distance}`);
   completed = failures === 0;
 } finally {
   await app.close().catch(() => app.kill());

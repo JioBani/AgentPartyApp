@@ -3864,12 +3864,12 @@ export class AppController {
   async qaPointer(
     windowId: string | undefined,
     body: {
-      steps?: Array<{ selector?: string; action?: string; at?: string; dx?: number; dy?: number }>;
+      steps?: Array<{ selector?: string; action?: string; at?: string; dx?: number; dy?: number; deltaX?: number; deltaY?: number }>;
       delayMs?: number;
     },
   ): Promise<{
     ok: true;
-    steps: Array<{ selector: string; action: "move" | "down" | "up" | "click" | "rightclick"; x: number; y: number }>;
+    steps: Array<{ selector: string; action: "move" | "down" | "up" | "click" | "rightclick" | "wheel"; x: number; y: number }>;
   }> {
     this.requireQa();
     const win = this.windowFor(windowId);
@@ -3892,7 +3892,7 @@ export class AppController {
     if (!win.isFocused()) {
       throw new Error("Target window could not be focused; pointer input was not sent.");
     }
-    const completed: Array<{ selector: string; action: "move" | "down" | "up" | "click" | "rightclick"; x: number; y: number }> = [];
+    const completed: Array<{ selector: string; action: "move" | "down" | "up" | "click" | "rightclick" | "wheel"; x: number; y: number }> = [];
     let isDown = false;
 
     try {
@@ -3902,7 +3902,7 @@ export class AppController {
         if (!selector) {
           throw new Error(`Pointer step ${index + 1} requires a selector.`);
         }
-        if (action !== "move" && action !== "down" && action !== "up" && action !== "click" && action !== "rightclick") {
+        if (action !== "move" && action !== "down" && action !== "up" && action !== "click" && action !== "rightclick" && action !== "wheel") {
           throw new Error(`Pointer step ${index + 1} has unsupported action '${action}'.`);
         }
         const at = String(step?.at || "center").trim().toLowerCase();
@@ -3963,6 +3963,14 @@ export class AppController {
           if (isDown) throw new Error(`Pointer step ${index + 1} cannot right-click while already pressed.`);
           win.webContents.sendInputEvent({ type: "mouseDown", button: "right", clickCount: 1, ...coordinates });
           win.webContents.sendInputEvent({ type: "mouseUp", button: "right", clickCount: 1, ...coordinates });
+        } else if (action === "wheel") {
+          if (isDown) throw new Error(`Pointer step ${index + 1} cannot wheel while pressed.`);
+          const deltaX = Number.isFinite(step?.deltaX) ? Number(step.deltaX) : 0;
+          const deltaY = Number.isFinite(step?.deltaY) ? Number(step.deltaY) : 0;
+          if (deltaX === 0 && deltaY === 0) {
+            throw new Error(`Pointer wheel step ${index + 1} requires deltaX or deltaY.`);
+          }
+          win.webContents.sendInputEvent({ type: "mouseWheel", deltaX, deltaY, canScroll: true, ...coordinates });
         }
         completed.push({ selector, action, ...coordinates });
         if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));

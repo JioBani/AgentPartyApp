@@ -4283,9 +4283,11 @@ window.
 ```
 
 Each selector must match exactly one visible element. Actions are `move`,
-`down`, `up`, `click` (the default), and `rightclick`. Use `rightclick` to open
-the same context menu a user gets from the secondary mouse button. A sequence
-may contain 1–64 steps and
+`down`, `up`, `click` (the default), `rightclick`, and `wheel`. Use `rightclick`
+to open the same context menu a user gets from the secondary mouse button. A
+`wheel` step takes `deltaX` / `deltaY` and sends a real Chromium wheel event at
+the selected point, allowing scroll-follow behaviour to distinguish user input
+from a script assigning `scrollTop`. A sequence may contain 1–64 steps and
 must finish with the pointer released.
 
 A step lands on the element's centre unless it names an edge with

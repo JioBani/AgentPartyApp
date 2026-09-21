@@ -126,12 +126,12 @@ async function main() {
     sessionId = resumedSessionId;
     await post(`/api/party/members/${memberName}/message`, {
       text: [
-        `Use \`functions.exec\` and call \`await tools.party_status({name: ${JSON.stringify(memberName)}})\` exactly once.`,
-        "This conversation was resumed. Do not inspect `ALL_TOOLS` and do not use an MCP-named tool.",
-        "After the tool result arrives, reply with exactly LIVE_CODEX_PARTY_RESUME_OK.",
+        `Use \`functions.exec\` and call \`await tools.mcp__agentparty_app__member_status({name: ${JSON.stringify(memberName)}})\` exactly once.`,
+        "This conversation was resumed. Do not inspect `ALL_TOOLS` and do not call `party_status`.",
+        "After the tool result arrives, reply with exactly LIVE_CODEX_PARTY_RESUME_FALLBACK_OK.",
       ].join(" "),
     });
-    await waitForEagerCoreCall(sessionId);
+    await waitForMcpCall(sessionId, "member-status");
 
     await post(`/api/party/members/${memberName}/message`, {
       text: [
@@ -270,6 +270,25 @@ async function waitForEagerCoreCall(sessionId) {
     await delay(1000);
   }
   throw new Error(`Live Codex did not call eager party_status within 180s (last status: ${lastStatus}).`);
+}
+
+async function waitForMcpCall(sessionId, name) {
+  const started = Date.now();
+  let lastStatus = "";
+  while (Date.now() - started < 180000) {
+    const state = await getJson("/api/state");
+    const session = state.sessions.find((item) => item.id === sessionId);
+    lastStatus = session?.snapshot?.status || "missing";
+    if (session?.snapshot?.status === "error") {
+      throw new Error(session.snapshot.lastError || `Live Codex ${name} session entered error state.`);
+    }
+    if (readCallLog().some((call) => call.member === memberName && call.name === name) && session?.snapshot?.status === "idle") {
+      assert(true, `resumed Codex called the exact canonical ${name} fallback without catalog enumeration`);
+      return;
+    }
+    await delay(1000);
+  }
+  throw new Error(`Live Codex did not call ${name} within 180s (last status: ${lastStatus}).`);
 }
 
 function readCallLog() {
