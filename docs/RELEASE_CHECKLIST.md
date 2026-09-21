@@ -12,6 +12,8 @@ Windows 배포본을 준비하고 `JioBani/AgentParty-releases`에 공개할 때
 - 릴리스는 먼저 draft로 만들고, 모든 자산을 검증한 뒤 publish한다.
 - 기존 `master` 체크아웃을 직접 수정하지 않는다. 릴리스 전용 worktree와 브랜치를 사용한다.
 - 토큰은 파일, 명령 출력, 릴리스 본문에 남기지 않는다.
+- 매 업데이트마다 기존 사용자의 저장 데이터, 설정, 세션, 연동 호환성을 검토한다.
+- 마이그레이션이 필요하면 범위와 위험을 설명하고 사용자에게 명시적 승인을 받은 뒤 진행한다.
 
 ### 버전 선택
 
@@ -73,27 +75,27 @@ npm ci
 확인한다. 의존성 감사 결과에 새 critical 취약점이 있으면 내용을 확인하고, 위험을
 평가하기 전에는 릴리스를 계속하지 않는다.
 
-## 3. 테스트와 빌드
+## 3. 변경 QA와 단일 패키징
 
-변경 영역의 집중 테스트를 먼저 실행한 뒤 전체 빌드를 확인한다. 인증 영역을 변경한
+변경 영역의 집중 테스트는 병합 전에 실행한다. 인증 영역을 변경한
 경우의 예시는 다음과 같다.
 
 ```powershell
 npm run test:subscription-auth
 npm run test:subscription-disconnect-ui
 npm run test:subscription-auth-url
-npm run build
 ```
 
-Windows 설치본과 포터블 실행 파일을 만든다.
+릴리스 worktree에서는 준비 파이프라인을 한 번 실행한다.
 
 ```powershell
-npm run package:win
+npm run release:prepare
 ```
 
-`package:win`은 빌드와 `electron-builder --win --x64`를 실행한다. 선언된 의존성
-누락이나 빌드 오류는 실패로 처리한다. Mobile Link는 데스크톱 패키지에서 분리되어
-있으므로 이 과정은 AgentPartyServer checkout이나 프로토콜 정션을 수정하지 않는다.
+이 명령은 소스 린트 → 전체 빌드 1회 → `electron-builder --win --x64` 패키징 1회 →
+실제 패키지 E2E → 산출물 린트를 순서대로 실행한다. 별도 `npm run build`나 두 번째
+`electron-builder`를 실행하지 않는다. 패키징 시 현재 추적 소스 fingerprint와 네
+산출물의 크기·SHA-256을 `release/release-manifest.json`에 기록한다.
 
 `release/`에 다음 파일이 생겼는지 확인한다.
 
@@ -104,15 +106,9 @@ npm run package:win
 | `AgentParty <version>.exe` | `AgentParty-<version>.exe` | 포터블 실행본, 자동 업데이트 미지원 |
 | `latest.yml` | `latest.yml` | 최신 버전과 설치본 해시 메타데이터 |
 
-포터블 배포본 자체를 실행하는 자동화 QA는 다음 명령으로 실행한다. 실제 패키지의
-버전, 격리된 작업공간, Windows 네이티브 인증 호스트, 환경 진단 host/cwd와 화면
-캡처를 함께 확인한다.
-
-```powershell
-npm run test:e2e:packaged-release
-```
-
-`latest.yml`의 `version`, 설치본 URL, SHA-512 값이 생성된 설치본과 일치해야 한다.
+`release:prepare` 안의 패키지 E2E는 실제 포터블 실행 파일의 버전, 격리된 작업공간,
+Windows 네이티브 인증 호스트, 환경 진단 host/cwd와 화면 캡처를 확인한다. 산출물
+린트는 `latest.yml`의 버전, 설치본 URL, SHA-512와 source fingerprint를 확인한다.
 
 ## 4. 실제 배포본 QA
 
@@ -158,19 +154,21 @@ git push origin v<version>
 기존 `master` worktree는 사용자 변경과 충돌하지 않는 것이 확인된 뒤 별도로
 `git merge --ff-only origin/master`로 동기화한다.
 
-## 6. 공개 릴리스 만들기
+## 6. 검증한 산출물 공개하기
 
-`package.json`의 `build.publish` 대상이 `JioBani/AgentParty-releases`인지 확인한다.
-업로드 권한이 있는 토큰은 현재 PowerShell 세션에만 둔다.
+배포 스크립트는 3단계에서 검증한 산출물을 그대로 업로드한다. 업로드 권한 토큰은
+`C:\Project\AgentParty-releases\.env`에서 읽으며 출력하지 않는다.
 
 ```powershell
-$env:GH_TOKEN = "<release-repository-token>"
-npm run release:win
+node scripts/release-publish.mjs --publish-existing --notes "사용자에게 보여줄 변경 사항"
 ```
 
-이 명령은 다시 빌드하고 GitHub에 draft 릴리스를 만든다. 이미 `package:win`으로 검증한
-자산을 수동 업로드하는 경우에는 GitHub Releases 화면에서 `v<version>` draft를 만들고
-위 표의 공개 자산 이름으로 네 파일을 모두 올린다.
+이 명령은 빌드하거나 패키징하지 않는다. 게시 직전에 release manifest, 현재 source
+fingerprint, 태그, `HEAD`, `origin/master`가 모두 일치하는지 확인한다. 이후 draft를
+만들어 네 자산을 업로드하고, 원격 크기와 UTF-8 본문이 일치할 때만 공개한다.
+
+`--skip-build`는 호환성을 위해 남은 레거시 옵션이며 빌드는 생략해도 패키징은 다시
+수행한다. 새 절차에서는 사용하지 않는다.
 
 릴리스 본문은 앱 안에서도 사용자에게 표시되므로 구현 상세보다 사용자 변화를 적는다.
 
@@ -226,7 +224,7 @@ if ($actualBody -cne $expectedBody) {
 }
 ```
 
-draft 상태에서 다음을 검증한다.
+다음 draft 검증은 `release-publish.mjs`가 결정론적으로 수행한다.
 
 - 태그와 릴리스 제목이 정확하다.
 - 네 자산이 모두 `uploaded` 상태다.
@@ -236,28 +234,20 @@ draft 상태에서 다음을 검증한다.
 - 릴리스 본문에 내부 경로, 토큰, 개발자 전용 정보가 없다.
 - GitHub API에서 다시 읽은 본문이 업로드 전 UTF-8 원문과 일치한다.
 
-검증을 모두 통과한 경우에만 publish한다.
+검증을 모두 통과한 경우에만 스크립트가 publish한다. 에이전트가 동일 항목을 별도
+명령으로 재확인하지 않는다.
 
 ## 7. 공개 후 확인
 
-로그아웃 상태 또는 인증 없는 요청으로 최신 공개 릴리스를 확인한다.
-
-```powershell
-$latest = Invoke-RestMethod `
-  -Uri "https://api.github.com/repos/JioBani/AgentParty-releases/releases/latest" `
-  -Headers @{ "User-Agent" = "AgentParty-Release-Verify" }
-
-$latest.tag_name
-$latest.html_url
-$latest.assets | Select-Object name, size, state
-```
+게시 스크립트가 인증 헤더 없이 네 공개 자산에 HEAD 요청을 보내 HTTP 응답을 확인한다.
 
 완료 조건:
 
 - 최신 공개 릴리스가 `v<version>`이다.
 - draft와 prerelease가 모두 `false`다.
 - 설치본, 포터블, blockmap, `latest.yml` 네 자산이 공개 다운로드된다.
-- 공개 `latest.yml`의 버전과 설치본 URL이 정확하다.
+- 공개 `latest.yml`의 버전과 설치본 URL이 정확하다. 이 내용은 업로드 전 린트한 동일
+  파일이며 source fingerprint로 패키징 이후 변경되지 않았음을 보장한다.
 - 릴리스 저장소에서 `git fetch --tags` 후 `v<version>` 태그가 보인다.
 
 릴리스 URL과 검증 결과를 작업 보고에 남긴다. 그 뒤에만 릴리스 worktree를 정리한다.

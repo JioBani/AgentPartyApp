@@ -38,27 +38,30 @@ major 1, minor 4, patch 2다.
 호환성 영향이 있으면 릴리스 본문에 명시한다. 베타나 RC는
 `0.8.0-beta.1`, `0.8.0-rc.1`처럼 prerelease 식별자를 붙인다.
 
-1. 변경 범위에 맞춰 `package.json` 의 SemVer `version` 을 올린다. 작은 버그 수정,
+1. 기존 사용자의 저장 데이터, 설정, 세션, 연동 호환성을 먼저 검토한다. 마이그레이션이
+   필요하면 범위와 위험을 설명하고 사용자에게 명시적 승인을 받은 뒤 진행한다.
+2. 변경 범위에 맞춰 `package.json` 의 SemVer `version` 을 올린다. 작은 버그 수정,
    성능 개선, 내부 리팩터링처럼 기존 동작과 호환되는 변경은 세 번째 자리인 patch를
    올린다(`0.2.5` → `0.2.6`). 호환되는 새 기능은 minor, 호환성을 깨는 변경은
    major를 올린다. 이 값이 곧 릴리스 태그(`v0.2.6`)가 된다.
-2. 릴리스용 GitHub 토큰을 환경변수로 준다 — 공개 저장소에 릴리스를 만들 권한만
-   있으면 된다.
+3. 릴리스 전용 worktree에서 의존성을 설치하고 준비 파이프라인을 실행한다.
    ```powershell
-   $env:GH_TOKEN = "<token>"
+   npm ci
+   npm run release:prepare
    ```
-3. 빌드 + 업로드:
+   이 명령은 전체 빌드와 Windows 패키징을 각각 한 번만 실행하고, 실제 패키지 E2E와
+   산출물·업데이트 feed·source fingerprint 린트까지 완료한다.
+4. 버전 커밋과 `v<version>` 태그를 원격 `master`에 fast-forward로 올린 뒤, 검증한
+   기존 산출물을 그대로 게시한다.
    ```powershell
-   npm run release:win
+   node scripts/release-publish.mjs --publish-existing --notes "사용자에게 보여줄 변경 사항"
    ```
-   `release/` 에 `AgentParty Setup <version>.exe`(NSIS), 포터블 exe,
-   `latest.yml`, `.blockmap` 이 생기고 그대로 릴리스에 업로드된다.
-   업로드 없이 만들어만 보려면 `npm run dist:win`.
-4. GitHub 릴리스는 **draft** 로 올라간다. 본문(변경 사항)을 적고 **publish** 해야
-   앱들이 그 버전을 보기 시작한다. 본문 마크다운이 앱의 업데이트 대화상자와
-   설정 → **버전** 탭에 그대로 렌더링되므로, 사용자에게 보여줄 문장으로 쓴다.
-   버전 탭은 과거 릴리스 본문도 그대로 보여주므로, 나중에 본문을 고치면 앱에서도
-   고쳐진 내용이 보인다.
+   스크립트는 다시 빌드하거나 패키징하지 않는다. source fingerprint와 태그/원격
+   상태가 일치할 때만 GitHub draft에 네 자산을 업로드하고, 크기와 본문을 검증한 뒤
+   공개한다. 본문 마크다운은 앱의 업데이트 대화상자와 설정 → **버전** 탭에 그대로
+   렌더링되므로 사용자에게 보여줄 문장으로 쓴다.
+
+   버전 탭은 과거 릴리스 본문도 보여주므로, 공개 후 본문을 고치면 앱에도 반영된다.
 
    Windows PowerShell 5.1에서 GitHub API로 한글 본문을 직접 올릴 때 JSON 문자열을
    `Invoke-RestMethod -Body`에 그대로 넘기면 한글이 `?`로 손실될 수 있다. 반드시

@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeReleaseManifest } from "./release-lint.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isWin = process.platform === "win32";
@@ -184,10 +185,12 @@ async function main() {
   process.stdout.write("\n\n");
 
   const releaseDir = path.join(projectRoot, "release");
+  const manifest = await writeReleaseManifest(projectRoot);
   console.log(green(bold("  ✔ 패키징 완료")));
+  console.log(dim(`  릴리스 manifest: ${manifest.assets.length}개 자산, 소스 fingerprint 기록`));
   console.log(dim(`  결과물: ${releaseDir}\n`));
 
-  if (isWin && existsSync(releaseDir)) {
+  if (isWin && existsSync(releaseDir) && !process.argv.includes("--no-open")) {
     spawn("explorer", [releaseDir], { detached: true, stdio: "ignore" }).unref();
   }
 }

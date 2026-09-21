@@ -1,94 +1,208 @@
 #!/usr/bin/env node
-// 공개 릴리스 한 방 배포.
-//
-// 토큰은 릴리스 저장소의 .env(커밋 금지, 이미 gitignore)에서 읽는다.
-// 절차: 패키징 → 공개 저장소 업로드 → 릴리스 게시(본문 UTF-8) → 자산 200 확인.
-// 자세한 설명은 docs/RELEASE_FAST.md.
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  expectedReleaseAssets,
+  lintPublishState,
+  lintReleaseArtifacts,
+  lintReleaseSource,
+} from "./release-lint.mjs";
 
-const ENV_FILE =
-  process.env.AGENTPARTY_RELEASE_ENV ??
-  "C:/Project/AgentParty-releases/.env";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const ENV_FILE = process.env.AGENTPARTY_RELEASE_ENV ?? "C:/Project/AgentParty-releases/.env";
+const OWNER = "JioBani";
+const REPO = "AgentParty-releases";
+const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
+const UPLOADS = `https://uploads.github.com/repos/${OWNER}/${REPO}`;
+
+function argument(name) {
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
 
 function tokenFromEnvFile(file) {
   let text;
   try {
     text = readFileSync(file, "utf8");
   } catch {
-    throw new Error(`릴리스 토큰 파일을 열 수 없습니다: ${file}`);
+    throw new Error(`Release token file is unavailable: ${file}`);
   }
   for (const line of text.split(/\r?\n/)) {
-    const m = /^\s*(GITHUB|GH_TOKEN|GITHUB_TOKEN)\s*=\s*(.+?)\s*$/.exec(line);
-    if (m) return m[2].replace(/^["']|["']$/g, "");
+    const match = /^\s*(GITHUB|GH_TOKEN|GITHUB_TOKEN)\s*=\s*(.+?)\s*$/.exec(line);
+    if (match) return match[2].replace(/^["']|["']$/g, "");
   }
-  throw new Error(`${file} 안에 GITHUB= 토큰 줄이 없습니다.`);
+  throw new Error(`${file} has no GITHUB, GH_TOKEN, or GITHUB_TOKEN entry`);
 }
 
-const version = JSON.parse(readFileSync("package.json", "utf8")).version;
+const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+const version = pkg.version;
 const tag = `v${version}`;
-const prerelease = /-(alpha|beta|rc)\./.test(version);
+const prerelease = /-(?:alpha|beta|rc)\./.test(version);
 const feed = prerelease ? "beta.yml" : "latest.yml";
-const notesArg = process.argv.indexOf("--notes");
-const notes =
-  notesArg > -1 ? process.argv[notesArg + 1] : `AgentParty ${version}`;
+const notes = argument("--notes") ?? `AgentParty ${version}`;
+const publishExisting = process.argv.includes("--publish-existing");
 const skipBuild = process.argv.includes("--skip-build");
+if (publishExisting && skipBuild) throw new Error("Use either --publish-existing or legacy --skip-build, not both");
 
 const token = tokenFromEnvFile(ENV_FILE);
-const env = { ...process.env, GH_TOKEN: token };
-const OWNER = "JioBani";
-const REPO = "AgentParty-releases";
+const authHeaders = {
+  authorization: `Bearer ${token}`,
+  accept: "application/vnd.github+json",
+  "user-agent": "agentparty-release-publish",
+};
 
-function run(cmd, args) {
-  execFileSync(cmd, args, { stdio: "inherit", env, shell: process.platform === "win32" });
+function run(command, args) {
+  const executable = process.platform === "win32" ? `${command}.cmd` : command;
+  execFileSync(executable, args, {
+    cwd: root,
+    stdio: "inherit",
+    env: { ...process.env, GH_TOKEN: token },
+  });
 }
 
 async function api(method, url, body) {
-  const res = await fetch(url, {
+  const response = await fetch(url, {
     method,
     headers: {
-      authorization: `Bearer ${token}`,
-      accept: "application/vnd.github+json",
-      "content-type": "application/json; charset=utf-8",
+      ...authHeaders,
+      ...(body ? { "content-type": "application/json; charset=utf-8" } : {}),
     },
     body: body ? Buffer.from(JSON.stringify(body), "utf8") : undefined,
   });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`${method} ${url} → ${res.status} ${text.slice(0, 300)}`);
+  const text = await response.text();
+  if (!response.ok) throw new Error(`${method} ${url} -> ${response.status} ${text.slice(0, 300)}`);
   return text ? JSON.parse(text) : null;
 }
 
-if (!skipBuild) run("npm", ["run", "build"]);
-// draft 릴리스로 올라간다(package.json build.publish.releaseType).
-run("npx", ["electron-builder", "--win", "--x64", "--publish", "always"]);
-if (!existsSync(path.join("release", feed))) {
-  throw new Error(`업데이트 피드가 생성되지 않았습니다: release/${feed}`);
+async function findRelease() {
+  const releases = await api("GET", `${API}/releases?per_page=100`);
+  return releases.find((release) => release.tag_name === tag) ?? null;
 }
 
-const base = `https://api.github.com/repos/${OWNER}/${REPO}`;
-const releases = await api("GET", `${base}/releases?per_page=100`);
-const draft = releases.find((r) => r.tag_name === tag);
-if (!draft) throw new Error(`${tag} 릴리스를 찾지 못했습니다.`);
+async function createOrReuseDraft() {
+  const existing = await findRelease();
+  if (existing && !existing.draft) throw new Error(`${tag} is already public; never replace assets for a published version`);
+  if (existing) return existing;
+  return api("POST", `${API}/releases`, {
+    tag_name: tag,
+    name: tag,
+    body: notes,
+    draft: true,
+    prerelease,
+  });
+}
 
-// 본문은 앱의 업데이트 대화상자와 설정 → 버전 탭에 그대로 렌더링된다.
-const published = await api("PATCH", `${base}/releases/${draft.id}`, {
+async function uploadAsset(release, asset) {
+  const duplicate = release.assets?.find((remote) => remote.name === asset.publicName);
+  if (duplicate) await api("DELETE", `${API}/releases/assets/${duplicate.id}`);
+  const size = statSync(asset.file).size;
+  const response = await fetch(`${UPLOADS}/releases/${release.id}/assets?name=${encodeURIComponent(asset.publicName)}`, {
+    method: "POST",
+    headers: {
+      ...authHeaders,
+      "content-type": "application/octet-stream",
+      "content-length": String(size),
+    },
+    body: createReadStream(asset.file),
+    duplex: "half",
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`Upload ${asset.publicName} -> ${response.status} ${text.slice(0, 300)}`);
+  const uploaded = JSON.parse(text);
+  if (uploaded.state !== "uploaded" || uploaded.size !== size) {
+    throw new Error(`Upload verification failed for ${asset.publicName}`);
+  }
+  console.log(`uploaded ${asset.publicName} (${size} bytes)`);
+}
+
+function normalizeBody(value) {
+  return String(value ?? "").replace(/\r\n/g, "\n").trimEnd();
+}
+
+async function verifyDraft(release, assets) {
+  const current = await api("GET", `${API}/releases/${release.id}`);
+  if (!current.draft) throw new Error(`${tag} left draft state before validation completed`);
+  if (normalizeBody(current.body) !== normalizeBody(notes)) throw new Error("GitHub release notes differ from the UTF-8 source");
+  const expectedNames = new Set(assets.map((asset) => asset.publicName));
+  const unexpectedNames = current.assets.filter((asset) => !expectedNames.has(asset.name));
+  if (unexpectedNames.length > 0 || current.assets.length !== assets.length) {
+    throw new Error(`Draft assets differ from the required four files: ${current.assets.map((asset) => asset.name).join(", ")}`);
+  }
+  for (const asset of assets) {
+    const remote = current.assets.find((candidate) => candidate.name === asset.publicName);
+    if (!remote || remote.state !== "uploaded") throw new Error(`Draft is missing uploaded asset ${asset.publicName}`);
+    if (remote.size !== statSync(asset.file).size) throw new Error(`Remote size mismatch for ${asset.publicName}`);
+  }
+  return current;
+}
+
+async function anonymousHead(url, attempts = 6) {
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const response = await fetch(url, { method: "HEAD", redirect: "follow" });
+    lastStatus = response.status;
+    if (response.ok) return response.status;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  throw new Error(`Anonymous download failed after ${attempts} attempts: ${url} -> ${lastStatus}`);
+}
+
+lintReleaseSource(root, { checkWorkingTree: !publishExisting });
+let assets = expectedReleaseAssets(root);
+let draft;
+
+if (publishExisting) {
+  await lintReleaseArtifacts(root);
+  lintPublishState(root);
+  draft = await createOrReuseDraft();
+  for (const remote of draft.assets ?? []) await api("DELETE", `${API}/releases/assets/${remote.id}`);
+  draft = { ...draft, assets: [] };
+  for (const asset of assets) await uploadAsset(draft, asset);
+} else {
+  if (skipBuild) {
+    console.warn("--skip-build is legacy: it still repackages with electron-builder. Use --publish-existing after npm run release:prepare.");
+  } else {
+    run("npm", ["run", "build"]);
+  }
+  run("npx", ["electron-builder", "--win", "--x64", "--publish", "always"]);
+  if (!existsSync(path.join(root, "release", feed))) throw new Error(`Missing release/${feed}`);
+  draft = await findRelease();
+  if (!draft) throw new Error(`Could not find draft release ${tag}`);
+}
+
+await api("PATCH", `${API}/releases/${draft.id}`, {
+  name: tag,
+  body: notes,
+  draft: true,
+  prerelease,
+});
+draft = await verifyDraft(draft, assets);
+const published = await api("PATCH", `${API}/releases/${draft.id}`, {
   name: tag,
   body: notes,
   draft: false,
   prerelease,
 });
 
-// 익명 다운로드 경로가 실제로 열려 있는지 확인한다.
-const required = [feed, `AgentParty-Setup-${version}.exe`];
 const checks = [];
-for (const name of required) {
-  const url = `https://github.com/${OWNER}/${REPO}/releases/download/${tag}/${encodeURIComponent(name)}`;
-  const res = await fetch(url, { redirect: "follow" });
-  checks.push(`${res.status} ${name}`);
-  if (!res.ok) throw new Error(`공개 다운로드 실패: ${name} → ${res.status}`);
+for (const asset of assets) {
+  const url = `https://github.com/${OWNER}/${REPO}/releases/download/${tag}/${encodeURIComponent(asset.publicName)}`;
+  checks.push(`${await anonymousHead(url)} ${asset.publicName}`);
+}
+
+if (!prerelease) {
+  const response = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`, {
+    headers: { "user-agent": "agentparty-release-public-check" },
+  });
+  if (!response.ok) throw new Error(`Anonymous latest-release check failed: ${response.status}`);
+  const latest = await response.json();
+  if (latest.tag_name !== tag || latest.draft || latest.prerelease) {
+    throw new Error(`Latest public stable release is ${latest.tag_name}, expected ${tag}`);
+  }
 }
 
 console.log(`published ${tag} ${published.html_url}`);
 console.log(checks.join("\n"));
-console.log("본문 확인:", JSON.stringify(published.body));
+console.log("release notes verified:", JSON.stringify(published.body));
