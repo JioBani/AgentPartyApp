@@ -225,6 +225,11 @@ export class LocalEngine implements EngineConnection {
     return this.deps.sessionManager.getCodexModelState();
   }
 
+  async listMuseModels(refresh?: boolean) {
+    if (refresh) return this.deps.sessionManager.refreshMuseModels();
+    return this.deps.sessionManager.getMuseModelState();
+  }
+
   // --- Cursor CLI (host-scoped: local host here, the distro in a WSL engine) --
   async getCursorStatus() {
     return inspectCursorAgent(getSettings().cursorExecutablePath);

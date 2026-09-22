@@ -11,6 +11,7 @@ import type {
 } from "../../shared/types";
 import type { HarnessCommand } from "../../core/events";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { MuseModelDiscoveryState } from "../../shared/museModels";
 import type { HarnessId } from "../../shared/types";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
@@ -212,6 +213,8 @@ export interface EngineConnection {
    * (kicking a background discovery on first call).
    */
   listCodexModels(refresh?: boolean): Promise<CodexModelDiscoveryState>;
+  /** Snapshot of Muse Code's authenticated MSP `model/list` catalog. */
+  listMuseModels(refresh?: boolean): Promise<MuseModelDiscoveryState>;
 
   /**
    * Cursor Agent CLI status ON THIS ENGINE'S HOST — install/version/models plus

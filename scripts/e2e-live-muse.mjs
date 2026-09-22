@@ -43,8 +43,16 @@ try {
 
   await waitForApi();
   const models = await get("/api/models");
-  const route = models.modelRoutes?.find((item) => item.harnessId === "muse" && item.model === "muse-default");
-  assert(route?.providerId === "meta", "Muse provider-owned default route is published");
+  const museRoutes = models.modelRoutes?.filter((item) => item.harnessId === "muse") || [];
+  const route = museRoutes.find((item) => item.model === "muse-spark-1.3-contributor") || museRoutes[0];
+  assert(models.museModels?.status === "ready", `Muse model discovery settled: ${models.museModels?.error || models.museModels?.status}`);
+  assert(
+    ["muse-spark-1.3", "muse-spark-1.3-contributor", "muse-spark-1.2", "muse-spark-1.2-contributor"]
+      .every((id) => museRoutes.some((item) => item.model === id))
+      && museRoutes.every((item) => item.model !== "muse-default"),
+    "all four measured Muse routes replace the compatibility fallback",
+  );
+  assert(route?.providerId === "meta", "Muse provider catalog route is published");
   assert(route?.capabilities?.effort?.mutableDuringSession === true, "Muse effort is live-mutable");
 
   const windows = await get("/api/windows");
@@ -56,7 +64,7 @@ try {
   const created = await post("/api/party/members", {
     name: memberName,
     runtime: "muse",
-    model: "muse-default",
+    model: route.model,
     effort: "high",
     permissionMode: "bypassPermissions",
     requirement: "Verify the real Muse MSP and AgentParty party tool path.",

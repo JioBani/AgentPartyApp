@@ -1087,10 +1087,14 @@ bridges approvals and user questions, forwards images, context/token usage and
 compaction, and installs the `agentparty-app` MCP server as session-scoped
 configuration. It never edits the user's global Muse configuration.
 
-The catalog exposes `muse-default` because Muse's signed-in plan owns the
-concrete model route and may return an empty public model catalog. Reasoning
-effort and approval mode are mutable during a live session. The native login is
-owned by the Muse CLI; use `muse login` (or `/login` in its TUI).
+The catalog is read live from the signed-in Muse Code account through MSP
+`model/list`, so every model the provider exposes is selectable. A host without
+an active Muse profile can return a successful but empty `bundledCatalog`; in
+that case AgentParty exposes its last-known public Muse catalog (the four 1.3
+and 1.2 standard/contributor routes). A discovery error is surfaced and keeps
+`muse-default` as an explicit compatibility fallback. Reasoning effort and
+approval mode are mutable during a live session. The native login is owned by
+the Muse CLI; use `muse login` (or `/login` in its TUI).
 
 `favoriteModels` is the list of catalog model **ids** the user has starred. The
 model catalog pins them above the provider groups, in catalog order. It drives
@@ -1143,7 +1147,7 @@ Example:
     "claude-code": { "model": "MiniMax M3", "effort": "medium", "permissionMode": "plan" },
     "codex": { "model": "gpt-5.5", "effort": "medium", "codexPolicy": { "sandbox": "read-only", "approval": "on-request", "guardian": false } },
     "cursor": { "model": "Grok 4.5", "effort": "high", "cursorPolicy": { "mode": "agent", "approval": "allowlist" } },
-    "muse": { "model": "muse-default", "effort": "high", "permissionMode": "default" }
+    "muse": { "model": "muse-spark-1.3-contributor", "effort": "high", "permissionMode": "default" }
   },
   "debugEnabled": true
 }
@@ -1574,7 +1578,7 @@ Returns `{ ok, removed }`.
 ### `GET /api/models`
 
 Returns the selectable model routes, harness permission contracts/defaults, and
-the Codex catalog discovery state. Every route reports `executionHarness`, which
+the Codex and Muse catalog discovery states. Every route reports `executionHarness`, which
 is the actual selected harness process and therefore matches `harnessId` even
 for cross-routed models.
 
@@ -1593,7 +1597,8 @@ catalog route id used by each `modelRoutes` item.
     { "id": "claude-code", "status": "available", "permission": { "kind": "permissionMode", "options": ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"], "default": "default" } },
     { "id": "cursor", "status": "available", "permission": { "kind": "cursorPolicy", "mode": ["agent", "ask", "plan"], "approval": ["allowlist", "auto-review", "unrestricted"], "default": { "mode": "agent", "approval": "allowlist" } } }
   ],
-  "codexModels": { "status": "ready", "models": [{ "model": "gpt-5.5", "isDefault": true }], "at": "2026-07-03T00:00:00.000Z" }
+  "codexModels": { "status": "ready", "models": [{ "model": "gpt-5.5", "isDefault": true }], "at": "2026-07-03T00:00:00.000Z" },
+  "museModels": { "status": "ready", "models": [{ "model": "muse-spark-1.3-contributor", "displayName": "muse-spark-1.3-contributor", "isDefault": true, "providerId": "meta" }], "providerId": "meta", "source": "providerCatalog", "at": "2026-09-22T00:00:00.000Z" }
 }
 ```
 
@@ -1630,10 +1635,12 @@ Cross-routing keeps the chosen harness process intact:
   advertises `low/medium/high`; effort is applied at ACP process start and is
   therefore marked `mutableDuringSession:false`.
 
-- **Muse Code** exposes `muse-default` with `"harnessId":"muse"`. The official
-  CLI resolves the signed-in plan's concrete Muse Spark model over MSP. Session
-  resume, live effort/model/approval updates, images, tools, skills, and
-  compaction remain on the same durable MSP session.
+- **Muse Code** discovers every account-visible model through the official
+  CLI's MSP `model/list` method and exposes each with `"harnessId":"muse"`.
+  `muse-default` remains only when discovery is pending or failed, preserving
+  existing saved settings without hiding the failure. Session resume, live
+  effort/model/approval updates, images, tools, skills, and compaction remain on
+  the same durable MSP session.
 
 - **Claude Code + GPT** uses the Claude Code SDK with its `claude-gpt-*` alias;
   the embedded gateway keeps the request as Anthropic Messages and maps only the
@@ -1742,6 +1749,11 @@ install. It does not return Cursor credentials or make a model call.
 
 Re-runs Codex model discovery and returns the same shape as `GET /api/models`
 after the fresh discovery settles.
+
+### `POST /api/models/muse/refresh`
+
+Re-runs Muse Code MSP `model/list` discovery and returns the same shape as
+`GET /api/models` after the fresh discovery settles.
 
 ### `GET /api/models/catalog`
 

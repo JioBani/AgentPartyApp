@@ -216,7 +216,10 @@ export function isKnownHarnessDefaultModel(harness: HarnessId, model: string): b
   return harness === "grok"
     ? isKnownGrokModel(model)
     : harness === "muse"
-      ? model === "muse-default"
+      // Muse's live provider catalog is discovered asynchronously after settings
+      // load. Preserve provider-owned ids here; member creation still resolves
+      // them against the live catalog before a process is started.
+      ? model === "muse-default" || /^muse-[a-z0-9._-]+$/i.test(model)
     : Boolean(catalogModelById(model) || catalogModelByRuntime(model));
 }
 

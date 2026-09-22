@@ -14,6 +14,7 @@ import { invokePartyToolFromExecutionHost, partyToolNameOf, type PartyToolResult
 import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, MemberRuntimeInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
 import { HARNESS_IDS, harnessDefaultsOf } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { MuseModelDiscoveryState } from "../../shared/museModels";
 import type { DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentReport } from "../../shared/environment";
 import { probeEnvironment, probeNativeCliAuthentication, runEnvironmentRepair, setMockEnvironmentReport, type EnvironmentRepairResult } from "../environmentService";
@@ -223,14 +224,15 @@ export interface UpdateController {
 }
 
 /** Public model discovery shared by the UI and automation/member-tool clients. */
-function publicModelDiscovery(codexModels: CodexModelDiscoveryState): {
+function publicModelDiscovery(codexModels: CodexModelDiscoveryState, museModels: MuseModelDiscoveryState): {
   modelRoutes: unknown[];
   modelProviders: typeof MODEL_PROVIDERS;
   harnesses: unknown[];
   codexModels: CodexModelDiscoveryState;
+  museModels: MuseModelDiscoveryState;
 } {
   const settings = getSettings();
-  const modelRoutes = buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels.models).map((route) => {
+  const modelRoutes = buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels.models, museModels.models).map((route) => {
     const harnessId = route.harnessId;
     return { ...route, executionHarness: harnessId, permission: permissionDiscoveryFor(settings, harnessId) };
   });
@@ -244,6 +246,7 @@ function publicModelDiscovery(codexModels: CodexModelDiscoveryState): {
       permission: permissionDiscoveryFor(settings, harness.id),
     })),
     codexModels,
+    museModels,
   };
 }
 
@@ -496,7 +499,7 @@ export class AppController {
     await this.migratePartyGroups([workspacePath]);
     const settings = getSettings();
     const engine = this.engineFor(workspacePath);
-    const codexModels = await engine.listCodexModels();
+    const [codexModels, museModels] = await Promise.all([engine.listCodexModels(), engine.listMuseModels()]);
     const partyEngine = this.partyEngine(workspacePath);
     const sourceSessions = await engine.listWorkspaceSessions();
     const partySessions = partyEngine === engine ? [] : await partyEngine.listWorkspaceSessions();
@@ -507,9 +510,10 @@ export class AppController {
       workspace: this.workspaceDisplay(workspacePath),
       auth: await this.listAuthProviders(workspacePath),
       sessions: [...sessionsById.values()],
-      modelRoutes: buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels.models),
+      modelRoutes: buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels.models, museModels.models),
       modelProviders: [...MODEL_PROVIDERS],
       codexModels,
+      museModels,
       harnesses,
       router: { baseUrl: this.deps.getRouterBaseUrl() },
       automationApi: {
@@ -711,15 +715,24 @@ export class AppController {
    * reports which model catalog built the routes (remote/cache/bundled) so a
    * stale or failed remote fetch is visible to the UI and automation clients.
    */
-  async listModels(workspacePath: string): Promise<{ ok: true; modelRoutes: unknown[]; modelProviders: typeof MODEL_PROVIDERS; harnesses: unknown[]; codexModels: CodexModelDiscoveryState; catalog: RemoteCatalogStatus }> {
-    const codexModels = await this.engineFor(workspacePath).listCodexModels();
-    return { ok: true, ...publicModelDiscovery(codexModels), catalog: remoteModelCatalogStatus() };
+  async listModels(workspacePath: string): Promise<{ ok: true; modelRoutes: unknown[]; modelProviders: typeof MODEL_PROVIDERS; harnesses: unknown[]; codexModels: CodexModelDiscoveryState; museModels: MuseModelDiscoveryState; catalog: RemoteCatalogStatus }> {
+    const engine = this.engineFor(workspacePath);
+    const [codexModels, museModels] = await Promise.all([engine.listCodexModels(), engine.listMuseModels()]);
+    return { ok: true, ...publicModelDiscovery(codexModels, museModels), catalog: remoteModelCatalogStatus() };
   }
 
-  /** Re-runs Codex catalog discovery and returns the fresh state. */
-  async refreshCodexModels(workspacePath: string): Promise<{ ok: true; modelRoutes: unknown[]; modelProviders: typeof MODEL_PROVIDERS; harnesses: unknown[]; codexModels: CodexModelDiscoveryState }> {
-    const codexModels = await this.engineFor(workspacePath).listCodexModels(true);
-    return { ok: true, ...publicModelDiscovery(codexModels) };
+  /** Re-runs Codex catalog discovery and returns the fresh shared catalog. */
+  async refreshCodexModels(workspacePath: string) {
+    const engine = this.engineFor(workspacePath);
+    const [codexModels, museModels] = await Promise.all([engine.listCodexModels(true), engine.listMuseModels()]);
+    return { ok: true, ...publicModelDiscovery(codexModels, museModels) };
+  }
+
+  /** Re-runs Muse Code MSP model discovery and returns the fresh shared catalog. */
+  async refreshMuseModels(workspacePath: string) {
+    const engine = this.engineFor(workspacePath);
+    const [codexModels, museModels] = await Promise.all([engine.listCodexModels(), engine.listMuseModels(true)]);
+    return { ok: true as const, ...publicModelDiscovery(codexModels, museModels) };
   }
 
   /**
@@ -741,12 +754,11 @@ export class AppController {
   }
 
   /**
-   * Pushes rebuilt model routes to every window after a Codex catalog discovery
-   * settles (ready or error), so open pickers update live and a failure is
-   * visible instead of silently keeping the static fallback. Wired from the
-   * SessionManager `codex-models` event in main.ts.
+   * Pushes rebuilt model routes to every window after a provider catalog
+   * discovery settles (ready or error), so open pickers update live and a
+   * failure is visible instead of silently keeping the static fallback.
    */
-  async notifyCodexModelsChanged(): Promise<void> {
+  async notifyModelDiscoveryChanged(): Promise<void> {
     for (const entry of this.deps.windowRegistry.all()) {
       const payload = await this.listModels(entry.workspacePath);
       entry.window.webContents.send("models:update", payload);

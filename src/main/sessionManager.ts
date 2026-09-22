@@ -16,10 +16,13 @@ import { buildPartyPrimer } from "../shared/partyPrimer";
 import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../core/events";
 import { ModelRouteConfig, inferModelProvider } from "../core/modelRegistry";
 import { discoverCodexModels } from "../core/codexModelDiscovery";
+import { discoverMuseModels } from "../core/museModelDiscovery";
 import { EmbeddedHarnessRouter } from "../core/routerShim";
 import { CreateSessionInput, ResumableSessionInfo, SessionView, harnessDefaultsOf, type HostedPartySessionBinding } from "../shared/types";
 import type { CodexModelDiscoveryState } from "../shared/codexModels";
 import { CODEX_MODELS_PENDING } from "../shared/codexModels";
+import type { MuseModelDiscoveryState } from "../shared/museModels";
+import { MUSE_MODELS_PENDING } from "../shared/museModels";
 import type { CodexPolicy } from "../shared/codexPolicy";
 import type { CursorPolicy } from "../shared/cursorPolicy";
 import type { ImageAttachment } from "../shared/attachments";
@@ -199,6 +202,8 @@ export class SessionManager extends EventEmitter {
   private automationBaseUrlProvider?: () => string | undefined;
   private codexModels: CodexModelDiscoveryState = CODEX_MODELS_PENDING;
   private codexDiscovery: Promise<CodexModelDiscoveryState> | undefined;
+  private museModels: MuseModelDiscoveryState = MUSE_MODELS_PENDING;
+  private museDiscovery: Promise<MuseModelDiscoveryState> | undefined;
   /**
    * Stall watchdog: a turn that goes silent for this long (no event of any kind
    * from the harness, and not waiting on the user for an approval) is flagged so
@@ -801,6 +806,36 @@ export class SessionManager extends EventEmitter {
     }
     this.emit("codex-models", this.codexModels);
     return this.codexModels;
+  }
+
+  getMuseModelState(): MuseModelDiscoveryState {
+    if (!this.museDiscovery) this.museDiscovery = this.runMuseDiscovery();
+    return this.museModels;
+  }
+
+  async warmMuseModels(): Promise<MuseModelDiscoveryState> {
+    this.getMuseModelState();
+    return (await this.museDiscovery) || this.museModels;
+  }
+
+  async refreshMuseModels(): Promise<MuseModelDiscoveryState> {
+    this.museDiscovery = this.runMuseDiscovery();
+    return this.museDiscovery;
+  }
+
+  private async runMuseDiscovery(): Promise<MuseModelDiscoveryState> {
+    try {
+      const discovered = await discoverMuseModels({
+        cwd: this.userDataDir,
+        executablePath: getSettings().museExecutablePath,
+      });
+      this.museModels = { status: "ready", ...discovered, at: new Date().toISOString() };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.museModels = { status: "error", models: [], error: message, at: new Date().toISOString() };
+    }
+    this.emit("muse-models", this.museModels);
+    return this.museModels;
   }
 
   /**

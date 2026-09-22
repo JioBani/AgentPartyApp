@@ -5,6 +5,7 @@ import { HARNESS_IDS } from "../shared/types";
 import { defaultMemberProfileOf, harnessDefaultsOf, harnessForRuntime, normalizeServiceTierSelection } from "../shared/types";
 import { applyNativeCliAuthProgress, nativeCliAuthProgressCheck } from "../shared/nativeCliAuth";
 import { supersedesCodexDiscovery, type CodexModelDiscoveryState } from "../shared/codexModels";
+import { supersedesMuseDiscovery, type MuseModelDiscoveryState } from "../shared/museModels";
 import { shouldAutoCompact, type AutoCompactSetting } from "../shared/autoCompact";
 import type { IdleSleepSettings } from "../shared/idleSleep";
 import type { WorkbenchLayout } from "../shared/workbenchLayout";
@@ -188,8 +189,13 @@ export function App() {
    * mirror must never move backwards — see {@link supersedesCodexDiscovery}.
    */
   const appliedCodexDiscovery = useRef<CodexModelDiscoveryState | undefined>(undefined);
+  const appliedMuseDiscovery = useRef<MuseModelDiscoveryState | undefined>(undefined);
 
-  type ModelDiscoveryPayload = { modelRoutes?: unknown[]; codexModels?: CodexModelDiscoveryState };
+  type ModelDiscoveryPayload = {
+    modelRoutes?: unknown[];
+    codexModels?: CodexModelDiscoveryState;
+    museModels?: MuseModelDiscoveryState;
+  };
   /**
    * Takes a model-info payload — the boot snapshot, the `models:update` push, or
    * the catch-up fetch — unless it is older than what this window already shows.
@@ -197,11 +203,18 @@ export function App() {
    * caller merging a larger snapshot knows to keep the model fields it has.
    */
   const takeModelDiscovery = useCallback((payload: ModelDiscoveryPayload | undefined) => {
-    if (!Array.isArray(payload?.modelRoutes) || !supersedesCodexDiscovery(appliedCodexDiscovery.current, payload?.codexModels)) {
+    const codexFresh = supersedesCodexDiscovery(appliedCodexDiscovery.current, payload?.codexModels);
+    const museFresh = supersedesMuseDiscovery(appliedMuseDiscovery.current, payload?.museModels);
+    if (!Array.isArray(payload?.modelRoutes) || !codexFresh || !museFresh) {
       return undefined;
     }
     appliedCodexDiscovery.current = payload?.codexModels;
-    return { modelRoutes: payload?.modelRoutes as unknown[], codexModels: payload?.codexModels };
+    appliedMuseDiscovery.current = payload?.museModels;
+    return {
+      modelRoutes: payload.modelRoutes as unknown[],
+      codexModels: payload.codexModels,
+      museModels: payload.museModels,
+    };
   }, []);
   const applyModelDiscovery = useCallback((payload: ModelDiscoveryPayload | undefined) => {
     const models = takeModelDiscovery(payload);
@@ -770,6 +783,7 @@ export function App() {
           ...merged,
           modelRoutes: models ? models.modelRoutes : current.modelRoutes,
           codexModels: models ? models.codexModels : current.codexModels,
+          museModels: models ? models.museModels : current.museModels,
           settings: retainAppearanceOnInitialState(current.settings, merged.settings, committedTheme.current),
         };
       });
@@ -2326,7 +2340,9 @@ export function App() {
                 views={views}
                 routes={routes}
                 codexModels={state.codexModels}
+                museModels={state.museModels}
                 onRefreshCodexModels={() => void window.agentParty.refreshCodexModels().catch(noticeOnFailure("Codex 모델 목록을 새로고침하지 못했습니다"))}
+                onRefreshMuseModels={() => void window.agentParty.refreshMuseModels().catch(noticeOnFailure("Muse Code 모델 목록을 새로고침하지 못했습니다"))}
                 defaultProfile={defaultMemberProfileOf(state.settings)}
                 harnessDefaults={state.settings.harnessDefaults}
                 gateDefaults={state.settings.gateDefaults}
@@ -2402,7 +2418,9 @@ export function App() {
                   routes={routes}
                   settings={state.settings}
                   codexModels={state.codexModels}
+                  museModels={state.museModels}
                   onRefreshCodexModels={() => void window.agentParty.refreshCodexModels().catch(noticeOnFailure("Codex 모델 목록을 새로고침하지 못했습니다"))}
+                  onRefreshMuseModels={() => void window.agentParty.refreshMuseModels().catch(noticeOnFailure("Muse Code 모델 목록을 새로고침하지 못했습니다"))}
                   onSaveHarnessDefaults={saveHarnessDefaults}
                   onSetDefaultHarness={setDefaultHarness}
                   onSaveCompactDefault={saveCompactDefault}

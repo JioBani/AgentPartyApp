@@ -228,12 +228,21 @@ export function createFakeAgentParty(): FakeAgentParty {
       modelProviders: current().state.modelProviders,
       harnesses: current().state.harnesses,
       codexModels: current().state.codexModels,
+      museModels: current().state.museModels,
     }),
     refreshCodexModels: () => Promise.resolve({
       modelRoutes: current().state.modelRoutes,
       modelProviders: current().state.modelProviders,
       harnesses: current().state.harnesses,
       codexModels: current().state.codexModels,
+      museModels: current().state.museModels,
+    }),
+    refreshMuseModels: () => Promise.resolve({
+      modelRoutes: current().state.modelRoutes,
+      modelProviders: current().state.modelProviders,
+      harnesses: current().state.harnesses,
+      codexModels: current().state.codexModels,
+      museModels: current().state.museModels,
     }),
     getDiscordStatus: () => Promise.resolve(current().discord ?? {
       desktopName: "",

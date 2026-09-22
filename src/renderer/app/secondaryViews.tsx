@@ -14,6 +14,7 @@ import {
   type CursorPolicy,
 } from "../../shared/cursorPolicy";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { MuseModelDiscoveryState } from "../../shared/museModels";
 import type { GateReviewer } from "../../shared/messageGate";
 import type { AgentTabId, SettingsTabId } from "../../shared/runtimeTabs";
 import { HARNESS_IDS, normalizeServiceTierSelection } from "../../shared/types";
@@ -653,12 +654,14 @@ const AGENT_TABS: Array<{ id: AgentTabId; label: MessageKey; icon: ReactNode }> 
   { id: "discord", label: "runtime.tab.discord", icon: <DiscordGlyph size={14} /> },
 ];
 
-export function AgentSettingsView({ routes, settings, codexModels, discord, onRefreshCodexModels, onSaveHarnessDefaults, onSetDefaultHarness, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, tabRequest }: {
+export function AgentSettingsView({ routes, settings, codexModels, museModels, discord, onRefreshCodexModels, onRefreshMuseModels, onSaveHarnessDefaults, onSetDefaultHarness, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, tabRequest }: {
   routes: RouteLike[];
   settings: InitialAppState["settings"];
   codexModels?: CodexModelDiscoveryState;
+  museModels?: MuseModelDiscoveryState;
   discord?: DiscordBridgeStatus;
   onRefreshCodexModels?: () => void;
+  onRefreshMuseModels?: () => void;
   onSaveHarnessDefaults: (harnessId: HarnessId, patch: Partial<HarnessDefaults>) => void;
   onSetDefaultHarness: (harnessId: HarnessId) => void;
   onSaveCompactDefault: (setting: AutoCompactSetting) => void;
@@ -804,7 +807,9 @@ export function AgentSettingsView({ routes, settings, codexModels, discord, onRe
                     defaults={settings.harnessDefaults[id]}
                     routes={routes.filter((route) => (route.harnessId || "claude-code") === id)}
                     codexModels={id === "codex" ? codexModels : undefined}
+                    museModels={id === "muse" ? museModels : undefined}
                     onRefreshCodexModels={onRefreshCodexModels}
+                    onRefreshMuseModels={onRefreshMuseModels}
                     onSave={(patch) => onSaveHarnessDefaults(id, patch)}
                     onDirtyChange={(value) => markDirty(id, value)}
                   />
@@ -1638,7 +1643,7 @@ function GateDefaultsCard({ routes, reviewer, onSave }: { routes: RouteLike[]; r
 }
 
 /** One harness's editable creation defaults (model/effort/reasoning + permission). */
-function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, onRefreshCodexModels, onSave, onDirtyChange }: {
+function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, museModels, onRefreshCodexModels, onRefreshMuseModels, onSave, onDirtyChange }: {
   harnessId: HarnessId;
   label: string;
   defaults: HarnessDefaults;
@@ -1646,7 +1651,10 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   /** Codex-only: live account-catalog discovery state, so a still-loading or
    *  failed list is stated (never silently shows just the static fallback). */
   codexModels?: CodexModelDiscoveryState;
+  /** Muse-only: live MSP provider-catalog discovery state. */
+  museModels?: MuseModelDiscoveryState;
   onRefreshCodexModels?: () => void;
+  onRefreshMuseModels?: () => void;
   onSave: (patch: Partial<HarnessDefaults>) => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -1661,6 +1669,7 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
   const [saved, setSaved] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const isCodex = harnessId === "codex";
+  const isMuse = harnessId === "muse";
   const isCursor = harnessId === "cursor";
   const selectedRoute = routes.find((route) => route.model === model);
   // The catalog modal stays the place to *browse* models (search, cost, context);
@@ -1777,6 +1786,15 @@ function HarnessDefaultsCard({ harnessId, label, defaults, routes, codexModels, 
 
           <LocalizedText id="STR-1206" /> {codexModels.error}
           {onRefreshCodexModels && <button type="button" className="set-link-btn" onClick={onRefreshCodexModels}><RefreshCw size={12} />  <LocalizedText id="STR-1207" /></button>}
+        </div>
+      )}
+      {isMuse && museModels?.status === "pending" && (
+        <div className="set-inline-note is-soft">{localized("STR-1205").replace("Codex", "Muse Code")}</div>
+      )}
+      {isMuse && museModels?.status === "error" && (
+        <div className="set-inline-note is-error">
+          {localized("STR-1206").replace("Codex", "Muse Code")} {museModels.error}
+          {onRefreshMuseModels && <button type="button" className="set-link-btn" onClick={onRefreshMuseModels}><RefreshCw size={12} /> <LocalizedText id="STR-1207" /></button>}
         </div>
       )}
 

@@ -4,6 +4,26 @@ import { pathToFileURL } from "node:url";
 
 const root = path.resolve(import.meta.dirname, "..");
 const { MuseAdapter, museApprovalMode } = await import(pathToFileURL(path.join(root, "dist", "core", "museAdapter.js")).href);
+const { buildModelRoutes } = await import(pathToFileURL(path.join(root, "dist", "core", "modelRegistry.js")).href);
+const { MUSE_BUNDLED_MODELS, normalizeMuseModels, supersedesMuseDiscovery } = await import(pathToFileURL(path.join(root, "dist", "shared", "museModels.js")).href);
+
+const discoveredModels = normalizeMuseModels([
+  { modelId: "muse-spark-1.3", displayLabel: "Muse Spark 1.3", isDefault: false, isActive: true, providerId: "meta", profileId: "tbh", contextLimit: 1_007_997, outputLimit: 128_000 },
+  { modelId: "muse-spark-1.3-contributor", displayLabel: "Muse Spark 1.3 Contributor", isDefault: true, isActive: true, providerId: "meta", profileId: "tbh", contextLimit: 1_007_997, outputLimit: 128_000 },
+  { modelId: "muse-spark-1.2", displayLabel: "Muse Spark 1.2", isDefault: false, isActive: true, providerId: "meta", profileId: "tbh", contextLimit: 1_007_997, outputLimit: 128_000 },
+  { modelId: "muse-spark-1.2-contributor", displayLabel: "Muse Spark 1.2 Contributor", isDefault: false, isActive: true, providerId: "meta", profileId: "tbh", contextLimit: 1_007_997, outputLimit: 128_000 },
+]);
+assert.equal(discoveredModels.length, 4, "all account-visible Muse models survive normalization");
+assert.deepEqual(new Set(MUSE_BUNDLED_MODELS.map((model) => model.model)), new Set(discoveredModels.map((model) => model.model)), "the host-without-profile fallback contains every measured public Muse model");
+assert.equal(discoveredModels[0].model, "muse-spark-1.3-contributor", "Muse provider default is ordered first");
+const museRoutes = buildModelRoutes("sonnet", [], [], undefined, discoveredModels).filter((route) => route.harnessId === "muse");
+assert.deepEqual(museRoutes.map((route) => route.model), discoveredModels.map((model) => model.model), "every discovered Muse model becomes a selectable route");
+assert(!museRoutes.some((route) => route.model === "muse-default"), "the compatibility fallback does not hide or duplicate a ready provider catalog");
+assert(museRoutes.every((route) => route.capabilities.effort.options.some((option) => option.id === "ultra")), "Muse routes expose the CLI's full effort vocabulary");
+assert.equal(museRoutes[0].pricing.context, "1.01M", "Muse context limit is carried into the catalog");
+assert.equal(buildModelRoutes("sonnet", [], [], undefined, []).filter((route) => route.harnessId === "muse")[0].model, "muse-default", "discovery failure keeps the explicit compatibility fallback");
+assert(supersedesMuseDiscovery({ status: "pending", models: [] }, { status: "ready", models: discoveredModels, at: "2026-09-22T01:00:00.000Z" }), "a settled Muse discovery replaces pending routes");
+assert(!supersedesMuseDiscovery({ status: "ready", models: discoveredModels, at: "2026-09-22T01:00:00.000Z" }, { status: "pending", models: [] }), "a late pending snapshot cannot replace settled Muse routes");
 
 assert.equal(museApprovalMode("default"), "onRequest");
 assert.equal(museApprovalMode("acceptEdits"), "promptUnmatched");

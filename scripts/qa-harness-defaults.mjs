@@ -119,6 +119,7 @@ assert(!("claudeModel" in live), "flat claudeModel is gone from settings (fully 
 assert(S.isKnownHarnessDefaultModel("grok", "grok-4.7") && S.isKnownHarnessDefaultModel("grok", "grok-4.7-build-fast"), "current Grok Build routes are valid saved defaults");
 assert(S.isKnownHarnessDefaultModel("grok", "grok-4.6") && S.isKnownHarnessDefaultModel("grok", "grok-4.5"), "existing Grok 4.6 / 4.5 defaults survive upgrade without migration");
 assert(S.isKnownHarnessDefaultModel("muse", "muse-default"), "Muse provider-owned default is a valid saved default");
+assert(S.isKnownHarnessDefaultModel("muse", "muse-spark-1.3-contributor"), "a discovered Muse model remains a valid saved default before async discovery settles");
 assert(!S.isKnownHarnessDefaultModel("grok", "grok-no-such-model"), "unknown Grok defaults are still healed instead of becoming dead routes");
 
 console.log("\nlegacy settings.json migration:");

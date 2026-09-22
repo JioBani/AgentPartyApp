@@ -1,5 +1,6 @@
 import type { ClaudeSessionSnapshot } from "../core/events";
 import type { CodexModelDiscoveryState } from "./codexModels";
+import type { MuseModelDiscoveryState } from "./museModels";
 import type { CodexPolicy } from "./codexPolicy";
 import type { CursorPolicy } from "./cursorPolicy";
 import type { AutoCompactSetting } from "./autoCompact";
@@ -728,6 +729,8 @@ export interface InitialAppState {
   modelProviders: ModelProviderDescriptor[];
   /** Live Codex account-catalog discovery state (pending/ready/error). */
   codexModels?: CodexModelDiscoveryState;
+  /** Live Muse Code provider catalog discovered through MSP `model/list`. */
+  museModels?: MuseModelDiscoveryState;
   harnesses: unknown[];
   router: { baseUrl: string };
   automationApi?: { baseUrl: string; spec: string };

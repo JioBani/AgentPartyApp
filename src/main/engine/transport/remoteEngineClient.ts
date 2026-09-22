@@ -247,6 +247,7 @@ export class RemoteEngineClient implements EngineConnection {
   getPartyLayout(partyId?: string) { return this.call<Result<"getPartyLayout">>("getPartyLayout", partyId); }
   setPartyLayout(layout: unknown, partyId?: string) { return this.call<Result<"setPartyLayout">>("setPartyLayout", layout, partyId); }
   listCodexModels(refresh?: boolean) { return this.call<Result<"listCodexModels">>("listCodexModels", refresh); }
+  listMuseModels(refresh?: boolean) { return this.call<Result<"listMuseModels">>("listMuseModels", refresh); }
   getCursorStatus() { return this.call<Result<"getCursorStatus">>("getCursorStatus"); }
   getClaudeNativeAuth(force?: boolean) { return this.call<Result<"getClaudeNativeAuth">>("getClaudeNativeAuth", force); }
   createSession(input?: CreateSessionInput | string) { return this.call<Result<"createSession">>("createSession", input); }

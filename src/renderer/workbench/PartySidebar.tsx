@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from
 import { Check, ChevronsLeft, ChevronsRight, ExternalLink, FolderInput, Moon, PencilLine, Pin, Play, Plus, RotateCcw, Star, Sun, Terminal, Trash2, UserRound, Users, X } from "lucide-react";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { MuseModelDiscoveryState } from "../../shared/museModels";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import type { PermissionModeSetting } from "../../shared/types";
@@ -79,6 +80,8 @@ interface PartySidebarProps {
   /** Live Codex catalog discovery state, surfaced by the member wizard. */
   codexModels?: CodexModelDiscoveryState;
   onRefreshCodexModels?: () => void;
+  museModels?: MuseModelDiscoveryState;
+  onRefreshMuseModels?: () => void;
   defaultProfile: DefaultMemberProfile;
   harnessDefaults: Record<string, HarnessDefaults>;
   onSelectParty: (partyId: string) => void;
@@ -350,7 +353,7 @@ export function PartySidebar(props: PartySidebarProps) {
   const ssh = useSshServers();
   const [sshReviewing, setSshReviewing] = useState<string | undefined>();
   const sshReview = sshReviewing ? ssh.servers?.find((entry) => entry.name === sshReviewing) : undefined;
-  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, views, openMembers, tabGroups, defaultTabGroupId, drawers, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onReorderParties, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
+  const { groups, partySummaries, cwdPrefs, appWorkspaceRoot, now, activePartyId, views, openMembers, tabGroups, defaultTabGroupId, drawers, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, routes, codexModels, museModels, onRefreshCodexModels, onRefreshMuseModels, defaultProfile, harnessDefaults, onSelectParty, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onReorderParties, onBrowseCwd, wsl, onCreateMember, onOpenMember, onRestartMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyGate, onOpenPartyInNewWindow } = props;
   /**
    * The width being dragged RIGHT NOW, if any.
    *
@@ -675,7 +678,9 @@ export function PartySidebar(props: PartySidebarProps) {
             tabGroups={tabGroups}
             defaultTabGroupId={defaultTabGroupId}
             codexModels={codexModels}
+            museModels={museModels}
             onRefreshCodexModels={onRefreshCodexModels}
+            onRefreshMuseModels={onRefreshMuseModels}
             defaultProfile={defaultProfile}
             harnessDefaults={harnessDefaults}
             cwdPrefs={cwdPrefs}

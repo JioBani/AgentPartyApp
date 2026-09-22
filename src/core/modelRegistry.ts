@@ -12,6 +12,7 @@ import {
   type ReasoningThinkingSpec,
 } from "../shared/modelCatalog";
 import type { CodexModelInfo } from "../shared/codexModels";
+import type { MuseModelInfo } from "../shared/museModels";
 import { SERVICE_TIER_INHERIT } from "../shared/types";
 import { CODEX_BAI_PROVIDER, CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_DEEPSEEK_PROVIDER, CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
 import { crossHarnessLockReason } from "../shared/modelIdentity";
@@ -188,7 +189,7 @@ export const harnesses: HarnessDescriptor[] = [
   },
 ];
 
-export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] = [], customRoutes: ModelRouteConfig[] = [], codexModels?: CodexModelInfo[]): ModelRoute[] {
+export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] = [], customRoutes: ModelRouteConfig[] = [], codexModels?: CodexModelInfo[], museModels?: MuseModelInfo[]): ModelRoute[] {
   const routes: ModelRoute[] = [];
   const seen = new Set<string>();
 
@@ -230,7 +231,11 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   for (const route of grokHarnessRoutes()) {
     addRoute(routes, seen, route);
   }
-  addRoute(routes, seen, museHarnessRoute());
+  if (museModels?.length) {
+    for (const model of museModels) addRoute(routes, seen, museRouteFromModel(model));
+  } else {
+    addRoute(routes, seen, museHarnessRoute());
+  }
   addRoute(routes, seen, cursorAutoRoute());
   for (const model of modelCatalog().filter((entry) => entry.provider !== "bai" && Boolean(entry.cursorModel))) {
     addRoute(routes, seen, cursorRouteFromCatalog(model));
@@ -629,12 +634,7 @@ export function grokHarnessRoutes(): ModelRoute[] {
   ];
 }
 
-/**
- * Muse's signed-in plan selects the concrete Muse Spark route. The stable MSP
- * catalog is allowed to be empty (and is empty for current subscription builds),
- * so AgentParty exposes the provider-owned default rather than inventing a
- * selectable model id that another plan may reject.
- */
+/** Compatibility route used only while live MSP model discovery is unavailable. */
 export function museHarnessRoute(): ModelRoute {
   return {
     harnessId: "muse",
@@ -648,7 +648,7 @@ export function museHarnessRoute(): ModelRoute {
         supported: true,
         mutableDuringSession: true,
         defaultValue: "high",
-        options: ["none", "low", "medium", "high", "xhigh", "max"].map((level) => ({ id: level, label: effortLabel(level) })),
+        options: ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"].map((level) => ({ id: level, label: effortLabel(level) })),
       },
       thinking: { supported: false, mutableDuringSession: false },
       permission: standardPermissionCapability(),
@@ -656,6 +656,42 @@ export function museHarnessRoute(): ModelRoute {
     },
     enabled: true,
   };
+}
+
+/** One concrete model returned by the signed-in Muse Code provider catalog. */
+export function museRouteFromModel(model: MuseModelInfo): ModelRoute {
+  const context = formatTokenLimit(model.contextLimit);
+  return {
+    harnessId: "muse",
+    // AgentParty's stable catalog provider id for Muse is `meta`; keep the raw
+    // provider id in discovery diagnostics rather than creating unknown UI groups.
+    providerId: "meta",
+    model: model.model,
+    runtimeModel: model.model,
+    label: model.displayName,
+    description: model.description || `Muse Code provider model${model.releaseDate ? ` released ${model.releaseDate}` : ""}.`,
+    pricing: { billing: "subscription", directPrice: "Muse Code subscription", context },
+    capabilities: {
+      effort: {
+        supported: true,
+        mutableDuringSession: true,
+        defaultValue: "high",
+        options: ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"].map((level) => ({ id: level, label: effortLabel(level) })),
+      },
+      thinking: { supported: false, mutableDuringSession: false },
+      permission: standardPermissionCapability(),
+      vision: { image: true },
+    },
+    meta: { context },
+    enabled: true,
+  };
+}
+
+function formatTokenLimit(tokens: number | undefined): string | undefined {
+  if (!tokens) return undefined;
+  if (tokens >= 1_000_000) return `${Math.round(tokens / 10_000) / 100}M`;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
+  return String(tokens);
 }
 
 function unavailableCursorHarnessRoute(model: CatalogModel): ModelRoute {

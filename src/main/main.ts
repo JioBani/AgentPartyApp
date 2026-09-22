@@ -660,10 +660,13 @@ ${body}
   sessionManager.on("party", (payload: { workspace: string }) => {
     void appController?.notifyPartyChanged(payload.workspace);
   });
-  // Codex catalog discovery settled (ready or error): push rebuilt model routes
-  // so pickers update live and a failure is visible (no silent fallback).
+  // A provider catalog discovery settled (ready or error): push rebuilt model
+  // routes so pickers update live and a failure is visible (no silent fallback).
   sessionManager.on("codex-models", () => {
-    void appController?.notifyCodexModelsChanged();
+    void appController?.notifyModelDiscoveryChanged();
+  });
+  sessionManager.on("muse-models", () => {
+    void appController?.notifyModelDiscoveryChanged();
   });
   // The model catalog is APP state, not something a window fetches for itself.
   // Warming it here — rather than leaving the first window's state request to
@@ -676,6 +679,15 @@ ${body}
       status: state.status,
       models: state.models.length,
       ms: Date.now() - codexDiscoveryStartedAt,
+      ...(state.error ? { error: state.error } : {}),
+    });
+  });
+  const museDiscoveryStartedAt = Date.now();
+  void sessionManager.warmMuseModels().then((state) => {
+    log(state.status === "error" ? "warn" : "info", "muse", "provider catalog discovery settled", {
+      status: state.status,
+      models: state.models.length,
+      ms: Date.now() - museDiscoveryStartedAt,
       ...(state.error ? { error: state.error } : {}),
     });
   });
@@ -808,7 +820,7 @@ ${body}
   // catalog lands, rebuilt model routes are pushed to every window through the
   // same path Codex discovery uses — open pickers update live.
   startRemoteModelCatalog(() => {
-    void appController?.notifyCodexModelsChanged();
+    void appController?.notifyModelDiscoveryChanged();
   });
   automationApi = new AutomationApiServer({
     port: settings.automationApiPort,
@@ -950,7 +962,11 @@ function forwardRemoteEvent(workspacePath: string, channel: string, payload: any
   }
   if (channel === "codex-models:changed") {
     // The remote engine's codex catalog settled: rebuild and push model routes.
-    void appController?.notifyCodexModelsChanged();
+    void appController?.notifyModelDiscoveryChanged();
+    return;
+  }
+  if (channel === "muse-models:changed") {
+    void appController?.notifyModelDiscoveryChanged();
     return;
   }
   if (channel === "usage") {
@@ -1152,6 +1168,7 @@ function registerIpc(): void {
 
   handle("models:list", async (event) => controller().listModels(senderWorkspace(event)));
   handle("models:refreshCodex", async (event) => controller().refreshCodexModels(senderWorkspace(event)));
+  handle("models:refreshMuse", async (event) => controller().refreshMuseModels(senderWorkspace(event)));
 
   handle("discord:get", async () => controller().discordStatus());
   handle("discord:update", async (_event, patch) => controller().updateDiscordSettings(patch as any));

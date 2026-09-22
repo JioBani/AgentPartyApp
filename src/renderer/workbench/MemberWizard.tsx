@@ -8,6 +8,7 @@ import type { RouteEntry } from "./modelMeters";
 import type { CreateMemberInput, MemberTabGroupOption } from "./PartySidebar";
 import { ModelCatalogModal, type ModelCatalogValue } from "./ModelCatalogModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { MuseModelDiscoveryState } from "../../shared/museModels";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { HarnessId, PermissionModeSetting } from "../../shared/types";
 import { SERVICE_TIER_INHERIT, harnessLabel, normalizeServiceTierSelection } from "../../shared/types";
@@ -41,6 +42,9 @@ interface MemberWizardProps {
    *  codex list is still loading or failed (fallback-only), never silently. */
   codexModels?: CodexModelDiscoveryState;
   onRefreshCodexModels?: () => void;
+  /** Live Muse MSP catalog state; fallback-only lists must be explicit. */
+  museModels?: MuseModelDiscoveryState;
+  onRefreshMuseModels?: () => void;
   /** Seed values so "next, next, next" creates a member with the saved defaults. */
   defaultProfile: DefaultMemberProfile;
   /** Per-harness defaults — switching harness seeds THAT harness's default. */
@@ -142,7 +146,7 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: "runtime", label: "실행 구성" },
   { id: "permission", label: "권한" },
 ];
-export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, submitting = false, createError, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexModels, museModels, onRefreshCodexModels, onRefreshMuseModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, submitting = false, createError, onCancel, onCreate }: MemberWizardProps) {
   const [name, setName] = useState("");
   const [tabGroup, setTabGroup] = useState(() => (
     defaultTabGroupId && tabGroups.some((group) => group.id === defaultTabGroupId)
@@ -519,6 +523,19 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
                   {onRefreshCodexModels && (
                     <button type="button" className="wb-btn wb-btn-ghost" onClick={onRefreshCodexModels}>
                       <RefreshCw size={13} />  <LocalizedText id="STR-1762" />
+                    </button>
+                  )}
+                </p>
+              )}
+              {harness === "muse" && museModels?.status === "pending" && (
+                <p className="wb-wizard-hint">{localized("STR-1760").replace("Codex", "Muse Code")}</p>
+              )}
+              {harness === "muse" && museModels?.status === "error" && (
+                <p className="wb-wizard-error">
+                  {localized("STR-1761").replace("Codex", "Muse Code")} {museModels.error}
+                  {onRefreshMuseModels && (
+                    <button type="button" className="wb-btn wb-btn-ghost" onClick={onRefreshMuseModels}>
+                      <RefreshCw size={13} /> <LocalizedText id="STR-1762" />
                     </button>
                   )}
                 </p>

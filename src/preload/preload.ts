@@ -105,6 +105,7 @@ const api = {
   disconnectSubscription: (provider: "codex" | "claude" | "cursor") => ipcRenderer.invoke("auth:disconnectSubscription", provider),
   listModels: () => ipcRenderer.invoke("models:list"),
   refreshCodexModels: () => ipcRenderer.invoke("models:refreshCodex"),
+  refreshMuseModels: () => ipcRenderer.invoke("models:refreshMuse"),
   getDiscordStatus: () => ipcRenderer.invoke("discord:get"),
   updateDiscordSettings: (patch: unknown) => ipcRenderer.invoke("discord:update", patch),
   getUsageLimits: () => ipcRenderer.invoke("usage:get"),
