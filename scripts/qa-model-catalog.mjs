@@ -45,6 +45,11 @@ const liveAstraRoute = buildModelRoutes("sonnet", [], [], [{ model: "gpt-6-astra
 assert(liveAstraRoute?.label === "GPT-6 Astra", "live Astra discovery keeps the shared catalog label");
 assert(liveAstraRoute?.capabilities.effort.options.at(-1)?.id === "ultra", "live Astra discovery preserves Codex-only ultra effort");
 assert(liveAstraRoute?.capabilities.serviceTier?.options.some((option) => option.id === "priority"), "live Astra discovery preserves the Fast tier");
+const liveSol6Route = buildModelRoutes("sonnet", [], [], [{ model: "gpt-6-sol", displayName: "GPT-6-Sol", isDefault: false, hidden: false, defaultReasoningEffort: "medium", reasoningEfforts: [{ id: "low" }, { id: "medium" }, { id: "high" }, { id: "xhigh" }, { id: "max" }, { id: "ultra" }], serviceTiers: [{ id: "priority", name: "Fast", description: "1.5x speed" }] }])
+  .find((r) => r.harnessId === "codex" && r.model === "gpt-6-sol");
+assert(liveSol6Route?.label === "GPT-6 Sol", "live Sol 6 discovery keeps the shared catalog label");
+assert(liveSol6Route?.capabilities.effort.defaultValue === "medium" && liveSol6Route.capabilities.effort.options.at(-1)?.id === "ultra", "live Sol 6 discovery preserves medium default and Codex-only ultra effort");
+assert(liveSol6Route?.capabilities.serviceTier?.options.some((option) => option.id === "priority"), "live Sol 6 discovery preserves the Fast tier");
 assert(PROVIDER_LABELS.anthropic === "Claude" && PROVIDER_LABELS.openai === "Codex" && PROVIDER_LABELS.cursor === "Cursor" && PROVIDER_LABELS.openrouter === "OpenRouter", "model groups use the same provider names as Authentication");
 const baiEffort = routes.find((route) => route.harnessId === "codex" && route.providerId === "bai")?.capabilities.effort;
 assert(matchingCapabilityOption(baiEffort, "MAX") === "max", "effort matching returns the catalog's canonical id");
@@ -178,6 +183,10 @@ assert(astra?.runtimeModel === "claude-gpt-6-astra", "Astra has the Claude Code 
 assert(astra?.meta?.context === "1.05M" && astra.meta.inPerM === 10 && astra.meta.outPerM === 50, "Astra carries the official context and token prices");
 assert(astra?.capabilities.effort.defaultValue === "medium" && astra.capabilities.effort.options.map((o) => o.id).join() === "low,medium,high,xhigh,max", "Astra static route exposes the cross-harness effort subset with measured medium default");
 assert(astra?.capabilities.vision.image === true, "Astra static route reports image input support");
+const sol6 = routes.find((route) => route.harnessId === "claude-code" && route.providerId === "openai" && route.model === "GPT-6 Sol");
+assert(sol6?.runtimeModel === "claude-gpt-6-sol" && sol6?.meta?.context === "272K", "Sol 6 has the Claude Code subscription-proxy alias and CLI-reported context");
+assert(sol6?.capabilities.effort.defaultValue === "medium" && sol6.capabilities.effort.options.map((o) => o.id).join() === "low,medium,high,xhigh,max", "Sol 6 static route exposes the transportable effort subset with medium default");
+assert(sol6?.capabilities.vision.image === true, "Sol 6 static route reports image input support");
 
 assert(routes.some((route) => route.harnessId === "codex" && route.model === "gpt-5.4" && route.enabled), "Codex default route is exposed");
 
@@ -263,7 +272,7 @@ assert(cursorRoutes.find((route) => route.model === "Grok 4.5")?.capabilities.se
 const cursorBridgeRoute = routes.find((route) => route.harnessId === "claude-code" && route.providerId === "cursor" && route.model === "Grok 4.5 Cursor");
 assert(cursorBridgeRoute?.enabled === false && cursorBridgeRoute.locked === true, "Claude Code keeps the executable Cursor ACP bridge visible but beta-locked");
 assert(!routes.some((route) => route.harnessId === "claude-code" && route.providerId === "cursor" && route.model === "Grok 4.5" && route.enabled === false), "Claude Code omits the obsolete disabled Cursor Grok duplicate");
-for (const [id, slug, perf, costTier] of [["GPT-6 Astra", "gpt-6-astra", 5, 5], ["GPT-5.6 Sol", "gpt-5.6-sol", 5, 5], ["GPT-5.6 Terra", "gpt-5.6-terra", 4, 4], ["GPT-5.6 Luna", "gpt-5.6-luna", 3, 3]]) {
+for (const [id, slug, perf, costTier] of [["GPT-6 Astra", "gpt-6-astra", 5, 5], ["GPT-6 Sol", "gpt-6-sol", 5, 5], ["GPT-5.6 Sol", "gpt-5.6-sol", 5, 5], ["GPT-5.6 Terra", "gpt-5.6-terra", 4, 4], ["GPT-5.6 Luna", "gpt-5.6-luna", 3, 3]]) {
   const codexRoute = routes.find((route) => route.harnessId === "codex" && route.model === slug);
   assert(Boolean(codexRoute), `'${slug}' is selectable on the codex harness without discovery`);
   assert(codexRoute?.meta?.perf === perf && codexRoute?.meta?.costTier === costTier, `'${slug}' carries leaderboard meta perf ${perf} / cost ${costTier}`);

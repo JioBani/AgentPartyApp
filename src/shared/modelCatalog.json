@@ -320,6 +320,35 @@
       }
     },
     {
+      "id": "GPT-6 Sol",
+      "label": "GPT-6 Sol",
+      "provider": "openai",
+      "codexModel": "gpt-6-sol",
+      "runtimeModel": "claude-gpt-6-sol",
+      "subscription": true,
+      "description": "GPT-6 generation Codex model for everyday agentic coding and computer work. Both harnesses use the signed-in Codex/ChatGPT subscription.",
+      "context": "272K",
+      "perf": 5,
+      "costTier": 5,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "medium"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
+    },
+    {
       "id": "GPT-5.6 Sol",
       "label": "GPT-5.6 Sol",
       "provider": "openai",

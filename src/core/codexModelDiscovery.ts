@@ -23,7 +23,11 @@ export interface CodexModelDiscoveryOptions {
   timeoutMs?: number;
 }
 
-const DEFAULT_TIMEOUT_MS = 20000;
+// Codex 0.155.1 can spend roughly 50 seconds backfilling a brand-new isolated
+// state database before it answers initialize/model-list. Keep discovery
+// bounded, but allow that first-run migration to complete instead of killing
+// it at 20 seconds and leaving every retry with another incomplete database.
+const DEFAULT_TIMEOUT_MS = 90000;
 
 export async function discoverCodexModels(options: CodexModelDiscoveryOptions): Promise<CodexModelInfo[]> {
   return withAgentPartyCodexStartup(() => discoverCodexModelsWithStartupLease(options));
