@@ -165,7 +165,10 @@ node scripts/release-publish.mjs --publish-existing --notes "사용자에게 보
 
 이 명령은 빌드하거나 패키징하지 않는다. 게시 직전에 release manifest, 현재 source
 fingerprint, 태그, `HEAD`, `origin/master`가 모두 일치하는지 확인한다. 이후 draft를
-만들어 네 자산을 업로드하고, 원격 크기와 UTF-8 본문이 일치할 때만 공개한다.
+만들기 전에 공개 저장소의 `v<version>` Git 태그를 현재 기본 브랜치 커밋에 생성하거나
+기존 태그를 확인한다. 그 뒤 네 자산을 업로드하고, 원격 크기와 UTF-8 본문이 일치할
+때만 공개한다. 실제 Git 태그 없이 릴리스를 만들면 GitHub가 이를 `untagged-*`로 바꿔
+자동 업데이트 URL이 404가 될 수 있으므로 태그 생성은 draft보다 반드시 먼저다.
 
 `--skip-build`는 호환성을 위해 남은 레거시 옵션이며 빌드는 생략해도 패키징은 다시
 수행한다. 새 절차에서는 사용하지 않는다.

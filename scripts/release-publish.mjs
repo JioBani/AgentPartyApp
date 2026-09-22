@@ -81,6 +81,21 @@ async function findRelease() {
   return releases.find((release) => release.tag_name === tag) ?? null;
 }
 
+async function ensureReleaseRepositoryTag() {
+  const refName = `refs/tags/${tag}`;
+  const refs = await api("GET", `${API}/git/matching-refs/tags/${encodeURIComponent(tag)}`);
+  if (refs.some((ref) => ref.ref === refName)) return;
+
+  // A release created without a real tag can be published under an
+  // `untagged-*` fallback, which makes every expected updater URL return 404.
+  // Pin the release repository's current default-branch commit before a draft
+  // exists so GitHub never has to synthesize or later detach the release tag.
+  const repository = await api("GET", API);
+  const commit = await api("GET", `${API}/commits/${encodeURIComponent(repository.default_branch)}`);
+  await api("POST", `${API}/git/refs`, { ref: refName, sha: commit.sha });
+  console.log(`created release repository tag ${tag} at ${commit.sha.slice(0, 12)}`);
+}
+
 async function createOrReuseDraft() {
   const existing = await findRelease();
   if (existing && !existing.draft) throw new Error(`${tag} is already public; never replace assets for a published version`);
@@ -152,6 +167,8 @@ async function anonymousHead(url, attempts = 6) {
 lintReleaseSource(root, { checkWorkingTree: !publishExisting });
 let assets = expectedReleaseAssets(root);
 let draft;
+
+await ensureReleaseRepositoryTag();
 
 if (publishExisting) {
   await lintReleaseArtifacts(root);
