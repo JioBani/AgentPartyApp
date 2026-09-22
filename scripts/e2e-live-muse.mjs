@@ -90,6 +90,7 @@ try {
   if (!calls.length) console.error("Muse transcript without MCP call:", body);
   assert(calls.some((call) => call.member === memberName && call.name === "list"), "Muse invoked the real session-scoped AgentParty MCP server");
   assert(!/not logged in|authRequired|unknown MCP server/i.test(body), "Muse turn has no auth or MCP wiring failure");
+  assert(!body.includes("Muse usage could not be read"), "an expected pre-call empty usage snapshot does not create a stale warning");
   // Muse's MSP usage surface is last-observed: a fresh host truthfully returns
   // no subscription snapshot until the provider has completed its first call.
   const usage = await waitForMuseUsage();

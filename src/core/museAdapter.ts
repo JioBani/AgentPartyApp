@@ -361,23 +361,17 @@ export class MuseAdapter extends EventEmitter {
       sourceId: this.options.usageSourceId,
       at: now(),
     });
-    if (windows.length > 0) {
-      this.lastUsageStatus = "";
-    } else {
-      this.emitUsageUnavailable("Muse MSP returned no observed subscription usage.", false);
-    }
+    this.lastUsageStatus = "";
   }
 
-  private emitUsageUnavailable(detail: string, emitEmpty = true): void {
-    if (emitEmpty) {
-      this.emitEvent({
-        type: "usage_limit",
-        provider: "muse",
-        windows: [],
-        sourceId: this.options.usageSourceId,
-        at: now(),
-      });
-    }
+  private emitUsageUnavailable(detail: string): void {
+    this.emitEvent({
+      type: "usage_limit",
+      provider: "muse",
+      windows: [],
+      sourceId: this.options.usageSourceId,
+      at: now(),
+    });
     if (detail === this.lastUsageStatus) return;
     this.lastUsageStatus = detail;
     this.emitEvent({
