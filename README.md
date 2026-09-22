@@ -4,7 +4,7 @@ AgentParty Desktop is an Electron client for local multi-agent coding sessions.
 
 The app currently ports the AgentParty Native VS Code extension core into a desktop shell:
 
-- Claude Code session harness
+- Claude Code, Codex, Cursor CLI, Grok Build, and Muse Code session harnesses
 - Embedded OpenRouter-compatible router
 - Auth panel for subscription and API-key based providers
 - AgentParty member list/create/send/start/resume/close/remove controls

@@ -159,6 +159,8 @@
     "test:codex-fast-mode": "node scripts/qa-codex-fast-mode.mjs",
     "test:cursor": "npm run build && node scripts/qa-cursor-adapter.mjs",
     "test:grok-tools": "node scripts/qa-grok-tool-normalization.mjs",
+    "test:muse": "npm run build && node scripts/qa-muse-adapter.mjs",
+    "test:e2e:live-muse": "npm run build && node scripts/e2e-live-muse.mjs",
     "test:codex-dedup": "node scripts/qa-codex-dedup.mjs",
     "test:codex-sqlite-isolation": "node scripts/qa-codex-sqlite-isolation.mjs",
     "test:codex-party-tools": "node scripts/qa-codex-party-tools.mjs",

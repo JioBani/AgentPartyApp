@@ -35,6 +35,8 @@ const settings = {
     "claude-code": { model: "sonnet", effort: "high", reasoning: "adaptive", permissionMode: "plan" },
     codex: { model: "gpt-5.4-mini", effort: "low", codexPolicy: { sandbox: "read-only", approval: "on-request", guardian: false } },
     cursor: { model: "Grok 4.5", effort: "high", cursorPolicy: { mode: "agent", approval: "allowlist" } },
+    grok: { model: "grok-4.7", effort: "high", permissionMode: "default" },
+    muse: { model: "muse-default", effort: "high", permissionMode: "default" },
   },
 };
 
@@ -45,11 +47,11 @@ console.log("\nharness accessors:");
 assert(T.harnessDefaultsOf(settings).model === "sonnet", "harnessDefaultsOf defaults to the selected harness");
 assert(T.harnessDefaultsOf(settings, "codex").model === "gpt-5.4-mini", "harnessDefaultsOf resolves a specific harness");
 assert(T.defaultMemberProfileOf(settings, "codex").codexPolicy?.sandbox === "read-only", "codex profile carries the codex policy default");
-assert(T.HARNESS_IDS.join() === "claude-code,codex,cursor,grok", "HARNESS_IDS lists every harness (drives the settings UI + iteration)");
+assert(T.HARNESS_IDS.join() === "claude-code,codex,cursor,grok,muse", "HARNESS_IDS lists every harness (drives the settings UI + iteration)");
 // A member's stored runtime must resolve to a harness for EVERY spelling. The
 // hand-written ternaries this replaced knew only codex/cursor, so a Grok member
 // fell through to Claude Code and was shown Claude Code's model catalog.
-assert(T.harnessForRuntime("grok") === "grok" && T.harnessForRuntime("cursor") === "cursor" && T.harnessForRuntime("codex") === "codex", "harnessForRuntime maps each runtime to its own harness");
+assert(T.harnessForRuntime("muse") === "muse" && T.harnessForRuntime("grok") === "grok" && T.harnessForRuntime("cursor") === "cursor" && T.harnessForRuntime("codex") === "codex", "harnessForRuntime maps each runtime to its own harness");
 assert(T.harnessForRuntime("claude") === "claude-code" && T.harnessForRuntime(undefined) === "claude-code", "the legacy 'claude' spelling and an unset runtime both mean Claude Code");
 assert(T.HARNESS_IDS.every((id) => Boolean(T.harnessLabel(id))), "every harness has a UI label");
 assert(CP.cursorPolicyFromLegacyPermission("plan").mode === "plan", "legacy Cursor plan keeps Plan mode");
@@ -77,6 +79,8 @@ try {
   invalidCursorPolicyError = error instanceof Error ? error.message : String(error);
 }
 assert(invalidCursorPolicyError.includes("Cursor") && invalidCursorPolicyError.includes("approval"), "incomplete Cursor policy is rejected at the domain boundary");
+const museMember = D.buildPartyMember({ partyId: "p1", name: "muse", role: "r", runtime: "muse" }, settings);
+assert(museMember.model === "muse-default" && museMember.effort === "high" && museMember.permissionMode === "default", "Muse member inherits its Muse Code defaults and permission mode");
 // Explicit input still overrides the harness default.
 const override = D.buildPartyMember({ partyId: "p1", name: "cx2", role: "r", runtime: "codex", model: "z-ai/glm-5.2" }, settings);
 assert(override.model === "z-ai/glm-5.2", "explicit input model overrides the harness default");
@@ -114,6 +118,7 @@ assert(typeof live.harnessDefaults.codex.model === "string" && live.harnessDefau
 assert(!("claudeModel" in live), "flat claudeModel is gone from settings (fully abstracted)");
 assert(S.isKnownHarnessDefaultModel("grok", "grok-4.7") && S.isKnownHarnessDefaultModel("grok", "grok-4.7-build-fast"), "current Grok Build routes are valid saved defaults");
 assert(S.isKnownHarnessDefaultModel("grok", "grok-4.6") && S.isKnownHarnessDefaultModel("grok", "grok-4.5"), "existing Grok 4.6 / 4.5 defaults survive upgrade without migration");
+assert(S.isKnownHarnessDefaultModel("muse", "muse-default"), "Muse provider-owned default is a valid saved default");
 assert(!S.isKnownHarnessDefaultModel("grok", "grok-no-such-model"), "unknown Grok defaults are still healed instead of becoming dead routes");
 
 console.log("\nlegacy settings.json migration:");

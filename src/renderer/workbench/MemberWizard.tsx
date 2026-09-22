@@ -24,6 +24,7 @@ const PERMISSION_HINTS: Record<HarnessId, string> = {
   codex: "Codex 하니스에서 사용할 Sandbox와 승인 정책, Guardian을 지정합니다. 선택한 모델 공급자와 관계없이 이 권한 정책이 유지됩니다.",
   cursor: "Cursor CLI의 작업 모드와 승인 모드를 그대로 설정합니다.",
   grok: "Grok Build는 도구 실행을 클라이언트에 묻지 않습니다. 플랜 모드만 적용되고, 나머지 권한 설정은 이 하니스에 영향을 주지 않습니다.",
+  muse: "Muse Code의 네이티브 승인 모드를 설정합니다. 기본값은 작업별 승인 요청입니다.",
 };
 import { cursorPolicyOf, type CursorPolicy } from "../../shared/cursorPolicy";
 import { HarnessIcon } from "./HarnessIcon";
@@ -102,7 +103,14 @@ const GROK_HARNESS: HarnessChoice = {
   icon: <HarnessIcon harness="grok" size={16} />,
   hint: "xAI Grok Build CLI · 구독 · 도구를 스스로 승인",
 };
-const ALL_HARNESSES = [...HARNESSES, CURSOR_HARNESS, GROK_HARNESS];
+const MUSE_HARNESS: HarnessChoice = {
+  id: "muse",
+  label: "Muse Code",
+  status: "available",
+  icon: <HarnessIcon harness="muse" size={16} />,
+  hint: "Meta Muse Code CLI · MSP · 구독 로그인",
+};
+const ALL_HARNESSES = [...HARNESSES, CURSOR_HARNESS, GROK_HARNESS, MUSE_HARNESS];
 /**
  * Phase 1 runs only Codex and Claude Code on an SSH server. The others stay in
  * the list, visibly unavailable, because nothing the user does can make them work
@@ -221,7 +229,7 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
   const thinkingOn = Boolean(thinkingMode) && thinkingMode !== "disabled";
   const showBudget = Boolean(thinkingCap?.budget) && thinkingOn;
   const selectedHarness = ALL_HARNESSES.find((item) => item.id === harness);
-  const executionHarness = harness === "codex" ? "codex" : harness === "cursor" ? "cursor" : harness === "grok" ? "grok" : "claude-code";
+  const executionHarness = harness === "codex" ? "codex" : harness === "cursor" ? "cursor" : harness === "grok" ? "grok" : harness === "muse" ? "muse" : "claude-code";
 
   useEffect(() => {
     if (executionHarness === "codex") {

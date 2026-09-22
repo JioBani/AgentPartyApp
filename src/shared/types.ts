@@ -32,8 +32,8 @@ export function isPermissionModeSetting(value: unknown): value is PermissionMode
   return typeof value === "string" && (PERMISSION_MODE_SETTINGS as readonly string[]).includes(value);
 }
 export type EffortSetting = "none" | "low" | "medium" | "high" | "xhigh" | "max";
-export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
-export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
+export type HarnessId = "claude-code" | "codex" | "cursor" | "grok" | "muse";
+export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "meta" | "custom";
 
 /**
  * The per-harness member-creation defaults. Each harness owns its own default
@@ -110,6 +110,8 @@ export interface AppSettings {
   cursorExecutablePath: string;
   /** Optional override for the official `grok` binary; resolved automatically when empty. */
   grokExecutablePath?: string;
+  /** Optional override for the official `muse` binary; resolved automatically when empty. */
+  museExecutablePath?: string;
   /** Optional override for the `codex` binary; empty = PATH lookup (a `.cmd` shim on Windows). */
   codexExecutablePath?: string;
   claudeSafeMode: boolean;
@@ -209,13 +211,13 @@ export interface AppSettings {
 }
 
 /** All harnesses that have defaults, in a stable order. */
-export const HARNESS_IDS: HarnessId[] = ["claude-code", "codex", "cursor", "grok"];
+export const HARNESS_IDS: HarnessId[] = ["claude-code", "codex", "cursor", "grok", "muse"];
 
 /**
  * What a member's `runtime` field may say. `claude` is the legacy spelling of
  * `claude-code` kept for parties written before the rename.
  */
-export type MemberRuntime = "codex" | "claude" | "claude-code" | "cursor" | "grok";
+export type MemberRuntime = "codex" | "claude" | "claude-code" | "cursor" | "grok" | "muse";
 
 /**
  * The harness that runs a given member runtime.
@@ -232,6 +234,7 @@ const HARNESS_BY_RUNTIME = {
   codex: "codex",
   cursor: "cursor",
   grok: "grok",
+  muse: "muse",
   claude: "claude-code",
   "claude-code": "claude-code",
 } as const satisfies Record<MemberRuntime, HarnessId>;
@@ -247,6 +250,7 @@ export const HARNESS_LABELS = {
   codex: "Codex",
   cursor: "Cursor CLI",
   grok: "Grok Build",
+  muse: "Muse Code",
 } as const satisfies Record<HarnessId, string>;
 
 export function harnessLabel(harnessId: HarnessId): string {
@@ -311,7 +315,7 @@ export interface AuthProviderState {
       };
 }
 
-export type NativeCliAuthProvider = "claude" | "codex" | "cursor" | "grok";
+export type NativeCliAuthProvider = "claude" | "codex" | "cursor" | "grok" | "muse";
 export type NativeCliAuthHost = "windows" | "wsl";
 
 /** Result shared by the Authentication button, IPC, and local automation API. */

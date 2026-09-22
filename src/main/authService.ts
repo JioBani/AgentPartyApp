@@ -7,6 +7,7 @@ import { BAI_API_KEY_ENV, BAI_BASE_URL } from "../shared/baiDefaults";
 import { cursorAgentAuthStatus, resolveCursorAgentCommand, type CursorAgentAuthStatus } from "../core/cursorAgentCli";
 import { grokCliInstalledPath } from "../core/grokAgentCli";
 import { grokSubscriptionAvailable } from "../core/grokSubscriptionAuth";
+import { museCliInstalledPath } from "../core/museCli";
 import { codexExecutable, resolveCodexExecutable } from "../core/codexExec";
 import { isFile, probeCommand, resolveOnPath } from "../core/commandProbe";
 import type { ClaudeNativeAuthState } from "../core/claudeNativeAuth";
@@ -175,6 +176,7 @@ export function getAuthState(): AuthProviderState[] {
   }
   const grokCli = grokCliInstalledPath(settings.grokExecutablePath);
   const grokLogin = grokSubscriptionAvailable();
+  const museCli = museCliInstalledPath(settings.museExecutablePath);
   return [
     {
       id: "claude-native",
@@ -289,6 +291,34 @@ export function getAuthState(): AuthProviderState[] {
       detail: "연결 테스트를 누르면 기본 WSL 배포판을 시작해 실제 CLI와 로그인을 확인합니다.",
       host: "WSL · 기본 배포판",
       action: { type: "nativeCliTest", provider: "grok", host: "wsl", label: "연결 테스트" },
+    },
+    {
+      id: "muse",
+      label: "Muse",
+      kind: "subscription",
+      surface: "native-cli",
+      status: museCli ? "available" : "missing",
+      authenticated: museCli ? undefined : false,
+      description: "Uses the account signed in to Muse Code on Windows.",
+      source: museCli,
+      host: "Windows",
+      command: "muse exec",
+      action: { type: "nativeCliTest", provider: "muse", host: "windows", label: "연결 테스트" },
+      detail: museCli
+        ? "Muse Code is installed. Run the connection test to verify the current login."
+        : "Muse Code is not installed. Install it from the official Meta developer installer, then run `muse` and `/login`.",
+    },
+    {
+      id: "muse-wsl",
+      label: "Muse - WSL",
+      kind: "subscription",
+      surface: "native-cli",
+      status: "unknown",
+      authenticated: false,
+      description: "Runs Muse Code and verifies its login inside the default WSL distribution.",
+      detail: "Run the connection test to verify the actual Muse CLI and login in WSL.",
+      host: "WSL · default distribution",
+      action: { type: "nativeCliTest", provider: "muse", host: "wsl", label: "연결 테스트" },
     },
     {
       id: "openrouter",

@@ -314,6 +314,7 @@ export function AuthView({ auth, drafts, onDraft, onSave, onTest, onClear, onTes
       codex: "Codex",
       cursor: "Cursor",
       grok: "Grok",
+      muse: "Muse",
     };
     return nativeCliGroups.map(({ provider, cards }) => (
       <div className="set-card set-native-provider" key={provider} data-native-provider={provider}>
@@ -631,7 +632,7 @@ function DiscordBridgeCard({ status, onSave, onDirtyChange }: { status?: Discord
   );
 }
 
-const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor CLI", grok: "Grok Build" };
+const HARNESS_LABELS: Record<HarnessId, string> = { "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor CLI", grok: "Grok Build", muse: "Muse Code" };
 
 /** Discord's wordmark glyph — lucide has no Discord icon and a generic speech
  *  bubble would read as "chat", not "the Discord bridge". */
@@ -885,12 +886,13 @@ const ENVIRONMENT_STATUS_LABEL: Record<EnvironmentStatus, string> = {
 };
 
 /** The executable overrides the environment tab exposes, in harness order. */
-type ExecutableField = "claudeExecutablePath" | "codexExecutablePath" | "cursorExecutablePath" | "grokExecutablePath";
+type ExecutableField = "claudeExecutablePath" | "codexExecutablePath" | "cursorExecutablePath" | "grokExecutablePath" | "museExecutablePath";
 const EXECUTABLE_FIELDS: Array<{ field: ExecutableField; label: string }> = [
   { field: "claudeExecutablePath", label: "Claude Code 실행 파일" },
   { field: "codexExecutablePath", label: "Codex 실행 파일" },
   { field: "cursorExecutablePath", label: "Cursor Agent 실행 파일" },
   { field: "grokExecutablePath", label: "Grok Build 실행 파일" },
+  { field: "museExecutablePath", label: "Muse Code 실행 파일" },
 ];
 
 /**

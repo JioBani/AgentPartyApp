@@ -197,10 +197,11 @@ const expectedRouteCount =
   + deepseekCodexCount             // codex: DeepSeek's own API
   + baiModels().length             // codex: verified B.AI Responses models
   + grokHarnessRoutes().length     // grok: what the Grok Build CLI serves
+  + 1                              // muse: provider-owned default MSP route
   + modelCatalog().filter((m) => m.provider !== "bai").length // cursor: B.AI is Codex-only
   + unavailableCursorProviderCount // cursor-provider models parked on other harnesses
   + 1;                             // cursor: the Auto route
-assert(expectedRouteCount === routes.length, `all catalog combinations plus executable Cursor and Grok routes are produced (expected ${expectedRouteCount}, got ${routes.length})`);
+assert(expectedRouteCount === routes.length, `all catalog combinations plus executable Cursor, Grok, and Muse routes are produced (expected ${expectedRouteCount}, got ${routes.length})`);
 // DeepSeek direct API: claude-code reaches every model through the Anthropic
 // endpoint; codex only reaches the ones DeepSeek serves on the Responses wire.
 console.log("\nDeepSeek direct API routes:");
@@ -248,6 +249,10 @@ assert(grok47Fast?.capabilities.effort.defaultValue === "high" && grok47Fast.cap
 assert(grok46?.capabilities.effort.supported && grok46.capabilities.effort.defaultValue === "high" && grok46.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high,xhigh", "Grok 4.6 exposes its measured effort menu and high default");
 assert(grok45?.capabilities.effort.supported && grok45.capabilities.effort.defaultValue === "high" && grok45.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high", "Grok 4.5 exposes its measured effort menu and high default");
 assert(grokRoutes.every((route) => route.capabilities.effort.mutableDuringSession === false && route.capabilities.thinking.supported === false), "Grok effort is start-time-only and reasoning has no separate toggle");
+const museRoute = routes.find((route) => route.harnessId === "muse" && route.model === "muse-default");
+assert(museRoute?.providerId === "meta", "Muse Code exposes one provider-owned default MSP route");
+assert(museRoute?.capabilities.effort.mutableDuringSession === true, "Muse Code effort is mutable through MSP");
+assert(museRoute?.capabilities.permission.supported === true && museRoute?.capabilities.vision.image === true, "Muse Code bridges approvals and image input");
 assert(cursorRoutes.find((route) => route.model === "Grok 4.5")?.capabilities.serviceTier?.options.map((o) => o.id).join() === "standard,fast", "Cursor Grok exposes independent Standard/Fast service modes");
 const cursorBridgeRoute = routes.find((route) => route.harnessId === "claude-code" && route.providerId === "cursor" && route.model === "Grok 4.5 Cursor");
 assert(cursorBridgeRoute?.enabled === false && cursorBridgeRoute.locked === true, "Claude Code keeps the executable Cursor ACP bridge visible but beta-locked");

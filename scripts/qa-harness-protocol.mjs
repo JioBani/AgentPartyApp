@@ -127,7 +127,10 @@ try {
 }
 
 console.log(failures.length ? `\nHARNESS PROTOCOL FAILED (${failures.length})` : "\nHARNESS PROTOCOL PASSED");
-process.exit(failures.length ? 1 : 0);
+// Let Node drain fetch/http handles naturally. Calling process.exit() while
+// undici is closing an async handle can trip a Windows libuv assertion even
+// after every contract assertion has passed.
+process.exitCode = failures.length ? 1 : 0;
 
 function listen(server) {
   return new Promise((resolve, reject) => {

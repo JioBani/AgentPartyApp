@@ -5,7 +5,7 @@ import type { CursorPolicy } from "../../shared/cursorPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
 
-export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
+export type HarnessId = "claude-code" | "codex" | "cursor" | "grok" | "muse";
 
 export interface HarnessSession extends EventEmitter {
   start(): void;
@@ -94,5 +94,11 @@ export const harnesses: HarnessDescriptor[] = [
     label: "Grok Build",
     status: "available",
     description: "xAI's Grok Build CLI over ACP, on your Grok subscription. Approves its own tool calls.",
+  },
+  {
+    id: "muse",
+    label: "Muse Code",
+    status: "available",
+    description: "Meta Muse Code CLI over the durable Muse Session Protocol.",
   },
 ];

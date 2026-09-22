@@ -27,6 +27,7 @@ const PROVIDER_MARK: Partial<Record<ModelProvider, VendorMark>> = {
   cursor: "cursor",
   openrouter: "openrouter",
   deepseek: "deepseek",
+  meta: "meta",
 };
 
 export function ProviderIcon({ provider, size = 15, className = "", ...props }: ProviderIconProps) {

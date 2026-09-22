@@ -52,6 +52,9 @@ const HARNESS_DEFAULTS: Record<HarnessId, HarnessDefaults> = {
   // starts. Grok owns only normal/plan modes; its adapter enforces finer permission
   // choices when ACP session/request_permission requests arrive.
   grok: { model: "grok-4.7", effort: "high", permissionMode: "default" },
+  // Muse's signed-in plan chooses the concrete Muse Spark route. MSP exposes
+  // reasoning effort and approval mode independently of that provider route.
+  muse: { model: "muse-default", effort: "high", permissionMode: "default" },
 };
 
 const defaults: AppSettings = {
@@ -60,6 +63,7 @@ const defaults: AppSettings = {
   updateChannel: DEFAULT_UPDATE_CHANNEL,
   claudeExecutablePath: "",
   cursorExecutablePath: "",
+  museExecutablePath: "",
   claudeSafeMode: false,
   selectedHarnessId: "claude-code",
   harnessDefaults: HARNESS_DEFAULTS,
@@ -168,6 +172,7 @@ export function migrateSettings(stored: Record<string, any>): Partial<AppSetting
       codex: { ...HARNESS_DEFAULTS.codex },
       cursor: { ...HARNESS_DEFAULTS.cursor },
       grok: { ...HARNESS_DEFAULTS.grok },
+      muse: { ...HARNESS_DEFAULTS.muse },
     },
   };
 }
@@ -210,6 +215,8 @@ function normalizeGateDefaults(value: unknown): GateReviewer {
 export function isKnownHarnessDefaultModel(harness: HarnessId, model: string): boolean {
   return harness === "grok"
     ? isKnownGrokModel(model)
+    : harness === "muse"
+      ? model === "muse-default"
     : Boolean(catalogModelById(model) || catalogModelByRuntime(model));
 }
 

@@ -17,8 +17,8 @@ import { CODEX_BAI_PROVIDER, CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_DEEPSEEK_
 import { crossHarnessLockReason } from "../shared/modelIdentity";
 import { grokReasoningEfforts } from "./grokAgentCli";
 
-export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
-export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "deepseek" | "xai" | "bai" | "custom";
+export type HarnessId = "claude-code" | "codex" | "cursor" | "grok" | "muse";
+export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "deepseek" | "xai" | "meta" | "bai" | "custom";
 
 export interface HarnessDescriptor {
   id: HarnessId;
@@ -180,6 +180,12 @@ export const harnesses: HarnessDescriptor[] = [
     enabled: true,
     description: "xAI's Grok Build CLI over ACP, on your Grok subscription.",
   },
+  {
+    id: "muse",
+    label: "Muse Code",
+    enabled: true,
+    description: "Meta Muse Code CLI over its durable MSP session protocol.",
+  },
 ];
 
 export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] = [], customRoutes: ModelRouteConfig[] = [], codexModels?: CodexModelInfo[]): ModelRoute[] {
@@ -224,6 +230,7 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   for (const route of grokHarnessRoutes()) {
     addRoute(routes, seen, route);
   }
+  addRoute(routes, seen, museHarnessRoute());
   addRoute(routes, seen, cursorAutoRoute());
   for (const model of modelCatalog().filter((entry) => entry.provider !== "bai" && Boolean(entry.cursorModel))) {
     addRoute(routes, seen, cursorRouteFromCatalog(model));
@@ -620,6 +627,35 @@ export function grokHarnessRoutes(): ModelRoute[] {
       { perf: 3, costTier: 5, inPerM: 0, outPerM: 0, ioPerM: 0, context: "500K" },
     ),
   ];
+}
+
+/**
+ * Muse's signed-in plan selects the concrete Muse Spark route. The stable MSP
+ * catalog is allowed to be empty (and is empty for current subscription builds),
+ * so AgentParty exposes the provider-owned default rather than inventing a
+ * selectable model id that another plan may reject.
+ */
+export function museHarnessRoute(): ModelRoute {
+  return {
+    harnessId: "muse",
+    providerId: "meta",
+    model: "muse-default",
+    label: "Muse Spark (Muse Code)",
+    description: "The current Muse Spark model selected by the signed-in Muse Code plan, using Muse's native durable session protocol.",
+    pricing: { billing: "subscription", directPrice: "Muse Code subscription" },
+    capabilities: {
+      effort: {
+        supported: true,
+        mutableDuringSession: true,
+        defaultValue: "high",
+        options: ["none", "low", "medium", "high", "xhigh", "max"].map((level) => ({ id: level, label: effortLabel(level) })),
+      },
+      thinking: { supported: false, mutableDuringSession: false },
+      permission: standardPermissionCapability(),
+      vision: { image: true },
+    },
+    enabled: true,
+  };
 }
 
 function unavailableCursorHarnessRoute(model: CatalogModel): ModelRoute {

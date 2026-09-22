@@ -83,7 +83,7 @@ function fieldError(errors: SshFieldError[] | undefined, field: SshDraftField): 
 
 function agentLabel(id: string): string {
   const harness = id.slice("agent:".length);
-  return harness === "claude-code" ? "Claude Code" : harness === "codex" ? "Codex" : harness === "cursor" ? "Cursor" : harness === "grok" ? "Grok Build" : harness;
+  return harness === "claude-code" ? "Claude Code" : harness === "codex" ? "Codex" : harness === "cursor" ? "Cursor" : harness === "grok" ? "Grok Build" : harness === "muse" ? "Muse Code" : harness;
 }
 
 /** One test line, worded from its kind (§7.4). */

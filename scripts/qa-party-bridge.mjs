@@ -120,8 +120,8 @@ assert(models.data.harnesses.every((h) => h.permission?.kind), "each harness exp
 // per-route fields to keep discovery compact.
 const detailedModels = await bridge.listModels({ query: "gpt" });
 assert(detailedModels.data.models.some((m) => m.reasoning && (m.reasoning.effort || m.reasoning.thinking)), "at least one detailed model exposes reasoning options");
-assert(detailedModels.data.models.every((m) => ["claude-code", "codex", "cursor", "grok"].includes(m.harness)), "every detailed model states its harness (member-create needs it)");
-assert(detailedModels.data.models.every((m) => ["claude-code", "codex", "cursor", "grok"].includes(m.executionHarness)), "every detailed model states its concrete execution harness");
+assert(detailedModels.data.models.every((m) => ["claude-code", "codex", "cursor", "grok", "muse"].includes(m.harness)), "every detailed model states its harness (member-create needs it)");
+assert(detailedModels.data.models.every((m) => ["claude-code", "codex", "cursor", "grok", "muse"].includes(m.executionHarness)), "every detailed model states its concrete execution harness");
 const codexListed = detailedModels.data.models.filter((m) => m.harness === "codex");
 assert(codexListed.some((m) => m.id === "gpt-5.5"), "the live codex catalog rides into list-models");
 assert(codexListed.find((m) => m.id === "gpt-5.5")?.reasoning?.effort?.options?.length === 4, "codex models expose effort options (effort-only reasoning)");

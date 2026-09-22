@@ -7,6 +7,7 @@ import { ClaudeAdapter } from "../core/claudeAdapter";
 import { CodexAdapter, resolvePartyMcpServerScript, spawnableNodeCommand } from "../core/codexAdapter";
 import { partyMcpRuntimeEnv } from "../core/partyMcpRuntime";
 import { GrokAdapter } from "../core/grokAdapter";
+import { MuseAdapter } from "../core/museAdapter";
 import { agentPartyCodexSqliteHome } from "../core/codexSqliteHome";
 import { CursorAdapter } from "../core/cursorAdapter";
 import { prepareCursorPartyRuntime } from "../core/cursorPartyPlugin";
@@ -1587,6 +1588,37 @@ export class SessionManager extends EventEmitter {
         // of the first turn (the Cursor arrangement).
         partyPrimer,
         usageSourceId,
+      }) as unknown as HarnessSession;
+    }
+    if (selectedHarness === "muse") {
+      // Muse MSP accepts native per-session MCP configuration. Keep the party
+      // relay scoped to this member; never modify the user's global Muse config.
+      const automationBaseUrl = this.codexAutomationBaseUrl(settings.automationApiPort);
+      const partyServers = binding && automationBaseUrl
+        ? {
+            "agentparty-app": {
+              command: spawnableNodeCommand(),
+              args: [resolvePartyMcpServerScript()],
+              env: {
+                ...partyMcpRuntimeEnv(),
+                AGENTPARTY_AUTOMATION_BASE_URL: automationBaseUrl,
+                AGENTPARTY_MEMBER: binding.identity.member,
+                AGENTPARTY_PARTY: binding.identity.party,
+                ...(process.env.AGENTPARTY_CODEX_MCP_OUT ? { AGENTPARTY_CODEX_MCP_OUT: process.env.AGENTPARTY_CODEX_MCP_OUT } : {}),
+              },
+            },
+          }
+        : undefined;
+      return new MuseAdapter({
+        id,
+        cwd,
+        executablePath: settings.museExecutablePath,
+        resumeSessionId,
+        model: selectedModel,
+        effort: request.effort || harnessDefaults.effort,
+        permissionMode: request.permissionMode || harnessDefaults.permissionMode,
+        mcpServers: partyServers,
+        partyPrimer,
       }) as unknown as HarnessSession;
     }
     if (selectedHarness === "codex") {

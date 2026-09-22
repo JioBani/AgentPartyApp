@@ -13,6 +13,7 @@ const HARNESS_MARK: Record<string, VendorMark> = {
   codex: "openai",
   cursor: "cursor",
   grok: "grok",
+  muse: "meta",
 };
 
 /**

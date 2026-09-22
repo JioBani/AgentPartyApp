@@ -1,7 +1,7 @@
 /*
  * Real-process E2E for Authentication's native CLI / cross-harness split.
- * The Windows buttons execute the real installed CLIs; no provider prompt is
- * sent, so this proves auth/runtime readiness without consuming model tokens.
+ * The Windows buttons execute the real installed CLIs. Muse has no token-free
+ * login-status command, so testing Muse explicitly sends one minimal prompt.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -72,10 +72,10 @@ try {
   const initial = await providers();
   const native = initial.filter((item) => item.action?.type === "nativeCliTest");
   assert(
-    native.map((item) => item.id).join(",") === "claude-native,claude-native-wsl,codex,codex-wsl,cursor,cursor-wsl,grok,grok-wsl",
+    native.map((item) => item.id).join(",") === "claude-native,claude-native-wsl,codex,codex-wsl,cursor,cursor-wsl,grok,grok-wsl,muse,muse-wsl",
     "Authentication returns one Windows/WSL pair for every CLI subscription",
   );
-  assert(native.every((item) => item.surface === "native-cli"), "all eight native rows belong to the CLI subscription surface");
+  assert(native.every((item) => item.surface === "native-cli"), "all ten native rows belong to the CLI subscription surface");
   assert(native.filter((item) => item.action.host === "wsl").every((item) => item.status === "unknown"), "WSL stays 확인 필요 before an explicit test");
 
   const proxies = initial.filter((item) => item.surface === "cross-harness");
@@ -86,7 +86,7 @@ try {
   await delay(600);
   const before = path.join(shotDir, "auth-layout.png");
   assert((await app.post("/api/capture", { path: before })).bytes > 0 && fs.existsSync(before), "real Authentication screen captured");
-  for (const provider of ["claude", "codex", "cursor", "grok"]) {
+  for (const provider of ["claude", "codex", "cursor", "grok", "muse"]) {
     assert((await app.post("/api/capture", { selector: `[data-native-provider="${provider}"]` })).bytes > 0, `${provider} renders as one grouped Windows/WSL card`);
   }
   const crossHarnessShot = path.join(shotDir, "cross-harness.png");
@@ -141,7 +141,7 @@ try {
   }
 
   if (process.env.AGENTPARTY_E2E_INCLUDE_WSL === "1") {
-    for (const provider of ["claude", "codex", "cursor", "grok"]) {
+    for (const provider of ["claude", "codex", "cursor", "grok", "muse"]) {
       const wsl = await app.post(`/api/auth/native/${provider}/test`, { host: "wsl" });
       assert(wsl.host === "wsl", `${provider} WSL test executes the WSL path`);
       assert(wsl.check.steps?.[0]?.id === "distribution", `${provider} WSL test starts with explicit distribution discovery`);

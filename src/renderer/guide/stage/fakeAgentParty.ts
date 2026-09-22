@@ -35,6 +35,7 @@ export const EMPTY_GUIDE_SNAPSHOT: GuideSnapshot = {
       updateChannel: "stable",
       claudeExecutablePath: "",
       cursorExecutablePath: "",
+      museExecutablePath: "",
       claudeSafeMode: false,
       selectedHarnessId: "claude-code",
       harnessDefaults: {
@@ -42,6 +43,7 @@ export const EMPTY_GUIDE_SNAPSHOT: GuideSnapshot = {
         codex: { model: "gpt-5.4", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } },
         cursor: { model: "Grok 4.5", effort: "high", cursorPolicy: { mode: "agent", approval: "allowlist" } },
         grok: { model: "grok-4.7", effort: "high", permissionMode: "default" },
+        muse: { model: "muse-default", effort: "high", permissionMode: "default" },
       },
       debugEnabled: false,
       routerBaseUrl: "http://127.0.0.1:3455",

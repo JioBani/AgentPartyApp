@@ -41,6 +41,7 @@ import {
 import { resolveCursorAgentCommand } from "../core/cursorAgentCli";
 import { grokCliInstalledPath } from "../core/grokAgentCli";
 import { grokHomeDir, grokSubscriptionAvailable } from "../core/grokSubscriptionAuth";
+import { resolveMuseCli } from "../core/museCli";
 import { isEnvironmentBlockedError } from "../core/environmentError";
 import { workspaceKey } from "../shared/workspaceLocation";
 import { parseWorkspaceLocation } from "../shared/workspaceLocation";
@@ -194,7 +195,9 @@ export async function probeNativeCliAuthentication(options: {
         ? await codexCheck(workspacePath, observe)
         : options.provider === "cursor"
           ? await cursorCheck(workspacePath, observe)
-          : await grokCliAuthenticationCheck(workspacePath, observe);
+          : options.provider === "grok"
+            ? await grokCliAuthenticationCheck(workspacePath, observe)
+            : await museCliAuthenticationCheck(workspacePath, observe);
     const hosted = { ...check, host: windowsExecutionHost(workspacePath) };
     const completed = nativeCliAuthProgressCheck(options.provider, options.host, hosted.steps || [], "complete", hosted);
     publish(completed.steps || [], "complete", completed);
@@ -283,6 +286,7 @@ async function harnessChecks(sdkVersion: string | undefined, workspacePath: stri
     await codexCheck(workspacePath),
     await cursorCheck(workspacePath),
     await grokCheck(workspacePath),
+    await museCheck(workspacePath),
   ].map((check) => ({ ...check, host }));
 }
 
@@ -1076,6 +1080,67 @@ async function grokCliAuthenticationCheck(workspacePath: string, observer?: Nati
   };
 }
 
+const MUSE_INSTALL_COMMAND = process.platform === "win32"
+  ? "irm https://dev.meta.ai/install.ps1 | iex"
+  : "curl -fsSL https://dev.meta.ai/install.sh | bash";
+
+async function museCheck(workspacePath: string, observer?: NativeCliStepObserver): Promise<EnvironmentCheck> {
+  const cwd = windowsExecutionHost(workspacePath).workspace || process.cwd();
+  const steps = observedSteps([], observer);
+  let cli: Awaited<ReturnType<typeof resolveMuseCli>>;
+  try {
+    cli = await resolveMuseCli(getSettings().museExecutablePath);
+  } catch (error) {
+    steps.push({
+      id: "executable", label: "실행 파일", status: "failed",
+      detail: error instanceof Error ? error.message : String(error),
+      command: String(getSettings().museExecutablePath || "muse"), cwd, failureKind: "not-found",
+    });
+    return {
+      id: "harness.muse", group: "harness", label: "Muse Code", status: "missing",
+      detail: "Muse Code CLI를 찾지 못했습니다.", steps,
+      remedies: [
+        { kind: "command", label: "설치 명령 복사", command: MUSE_INSTALL_COMMAND },
+        { kind: "docs", label: "설치 안내", url: "https://dev.meta.ai/docs/muse-code" },
+        { kind: "settings", label: "실행 파일 경로 지정", settingsField: "museExecutablePath" },
+      ],
+    };
+  }
+  steps.push({ id: "executable", label: "실행 파일", status: "ok", detail: cli.command, command: cli.command, cwd });
+  steps.push({
+    id: "version", label: "버전 확인", status: "ok", detail: `Muse Code ${cli.version} (${cli.release})`,
+    command: displayCommand(cli.command, ["--version"]), cwd,
+  });
+  return {
+    id: "harness.muse", group: "harness", label: "Muse Code", status: "warn",
+    detail: "Muse Code가 설치되어 있습니다. 인증 화면의 연결 테스트로 로그인을 확인할 수 있습니다.",
+    version: cli.version, path: cli.command, steps,
+  };
+}
+
+async function museCliAuthenticationCheck(workspacePath: string, observer?: NativeCliStepObserver): Promise<EnvironmentCheck> {
+  const base = await museCheck(workspacePath, observer);
+  if (!base.path || base.status === "missing" || base.status === "error") return base;
+  const cwd = windowsExecutionHost(workspacePath).workspace || process.cwd();
+  const args = ["exec", "--json", "--reasoning-effort", "none", "--max-model-steps", "1", "--disable-write", "--disable-shell", "Reply exactly MUSE_AUTH_OK."];
+  const startedAt = Date.now();
+  const probe = await probeCommand(base.path, args, { cwd, timeoutMs: 90_000 });
+  const output = combinedProbeOutput(probe);
+  const authFailure = /not logged in|login|auth|credential|unauthorized|forbidden|401|403/i.test(output);
+  const steps = observedSteps(base.steps || [], observer, false);
+  steps.push(probe.ok
+    ? successfulStep("authentication", "로그인", "Muse Code가 구독 계정으로 응답했습니다.", startedAt, { command: displayCommand(base.path, args), cwd })
+    : { ...failedCommandStep("authentication", "로그인", "Muse Code 로그인 확인", probe, startedAt, { command: displayCommand(base.path, args), cwd }), failureKind: authFailure ? "authentication" : commandProbeFailureKind(probe) });
+  return {
+    ...base,
+    status: probe.ok ? "ok" : authFailure ? "missing" : "error",
+    detail: probe.ok ? "Windows에서 Muse Code 실행과 구독 로그인을 확인했습니다." : "Muse Code 로그인 확인에 실패했습니다.",
+    raw: probe.ok ? undefined : output,
+    steps,
+    remedies: probe.ok ? undefined : [{ kind: "command", label: "로그인 명령 복사", command: "muse" }],
+  };
+}
+
 // ---------------------------------------------------------------- repair
 
 export interface EnvironmentRepairResult {
@@ -1250,7 +1315,7 @@ async function probeWslNativeCliAuthentication(
     ? available.find((name) => name.toLocaleLowerCase() === requested.toLocaleLowerCase())
     : available.find((name) => name.toLocaleLowerCase() === defaultSelection?.name?.toLocaleLowerCase()) || available[0];
   const defaultFallback = Boolean(!requested && distro && !defaultSelection?.name);
-  const providerLabel = provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : provider === "cursor" ? "Cursor" : "Grok";
+  const providerLabel = provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : provider === "cursor" ? "Cursor" : provider === "grok" ? "Grok" : "Muse";
   const distributionStep: EnvironmentProbeStep = distro
     ? {
         id: "distribution",
@@ -1327,7 +1392,9 @@ async function probeWslNativeCliAuthentication(
       ? await wslCodexCheck(target, observe)
       : provider === "cursor"
         ? await wslCursorCheck(target, observe)
-        : await wslGrokCheck(target, observe);
+        : provider === "grok"
+          ? await wslGrokCheck(target, observe)
+          : await wslMuseCheck(target, observe);
   const completed: EnvironmentCheck = {
       ...check,
       id: `native.${provider}.wsl`,
@@ -1428,6 +1495,7 @@ async function wslDistroChecks(target: WslTarget, sdkVersion: string | undefined
     checks.push(await wslClaudeCheck(target, sdk.binary));
   }
   checks.push(await wslCodexCheck(target));
+  checks.push(await wslMuseCheck(target, undefined, false));
   return checks;
 }
 
@@ -1886,6 +1954,56 @@ async function wslGrokCheck(target: WslTarget, observer?: NativeCliStepObserver)
     raw: signedIn ? undefined : authProbe.error,
     steps,
     remedies: signedIn ? undefined : [{ kind: "command", label: "WSL 로그인 명령 복사", command: `wsl -d ${target.distro} -e ${binary} login` }],
+  };
+}
+
+async function wslMuseCheck(target: WslTarget, observer?: NativeCliStepObserver, authenticate = true): Promise<EnvironmentCheck> {
+  const resolveScript = 'command -v muse 2>/dev/null || { echo AGENTPARTY_MUSE_NOT_FOUND >&2; exit 44; }';
+  const resolveStartedAt = Date.now();
+  const resolved = await wslShellProbe(target, resolveScript);
+  const steps = observedSteps([{ id: "workspace", label: "작업공간", status: "ok", detail: target.workspace, cwd: target.workspace }], observer);
+  if (!resolved.ok) {
+    const missing = classifyWslProbeFailure(resolved, "AGENTPARTY_MUSE_NOT_FOUND") === "not-found";
+    steps.push(wslFailedStep(target, "executable", "실행 파일", resolveScript, resolved, resolveStartedAt, missing ? "WSL PATH에서 Muse Code CLI를 찾지 못했습니다." : undefined, missing ? "not-found" : undefined));
+    return {
+      id: `wsl.${target.distro}.muse`, group: "wsl", label: `${target.distro} · Muse`, status: missing ? "missing" : "error",
+      detail: missing ? "이 WSL 배포판에 Muse Code CLI가 없습니다." : wslFailureDetail(target, "Muse 실행 파일 검색", resolved),
+      host: target.host, raw: resolved.error, steps,
+      remedies: missing ? [{ kind: "command", label: "WSL 설치 명령 복사", command: `wsl -d ${target.distro} -e bash -lc "curl -fsSL https://dev.meta.ai/install.sh | bash"` }] : undefined,
+    };
+  }
+  const binary = firstLine(resolved.stdout);
+  steps.push(successfulStep("executable", "실행 파일", binary, resolveStartedAt, { command: wslDisplayCommand(target, resolveScript), cwd: target.workspace }));
+  const versionScript = `${bashQuote(binary)} --version`;
+  const versionStartedAt = Date.now();
+  const versionProbe = await wslShellProbe(target, versionScript);
+  if (!versionProbe.ok) {
+    steps.push(wslFailedStep(target, "version", "버전 확인", versionScript, versionProbe, versionStartedAt));
+    return wslHarnessFailure(target, "muse", "Muse", "버전 확인", binary, steps, versionProbe);
+  }
+  const version = firstLine(versionProbe.stdout);
+  steps.push(successfulStep("version", "버전 확인", version, versionStartedAt, { command: wslDisplayCommand(target, versionScript), cwd: target.workspace }));
+  if (!authenticate) {
+    return {
+      id: `wsl.${target.distro}.muse`, group: "wsl", label: `${target.distro} · Muse`, status: "warn",
+      detail: "Muse Code가 설치되어 있습니다. 인증 화면의 연결 테스트로 로그인을 확인할 수 있습니다.",
+      version, path: binary, host: target.host, steps,
+    };
+  }
+  const authScript = `${bashQuote(binary)} exec --json --reasoning-effort none --max-model-steps 1 --disable-write --disable-shell ${bashQuote("Reply exactly MUSE_AUTH_OK.")}`;
+  const authStartedAt = Date.now();
+  const authProbe = await wslShellProbe(target, authScript);
+  const output = combinedProbeOutput(authProbe);
+  const authFailure = /not logged in|login|auth|credential|unauthorized|forbidden|401|403/i.test(output);
+  steps.push(authProbe.ok
+    ? successfulStep("authentication", "로그인", "WSL의 Muse Code가 구독 계정으로 응답했습니다.", authStartedAt, { command: wslDisplayCommand(target, authScript), cwd: target.workspace })
+    : wslFailedStep(target, "authentication", "로그인", authScript, authProbe, authStartedAt, "Muse Code 로그인 확인에 실패했습니다.", authFailure ? "authentication" : commandProbeFailureKind(authProbe)));
+  return {
+    id: `wsl.${target.distro}.muse`, group: "wsl", label: `${target.distro} · Muse`,
+    status: authProbe.ok ? "ok" : authFailure ? "missing" : "error",
+    detail: authProbe.ok ? "실제 WSL 작업공간에서 Muse Code 실행과 구독 로그인을 확인했습니다." : "Muse Code 로그인 확인에 실패했습니다.",
+    version, path: binary, host: target.host, raw: authProbe.ok ? undefined : output, steps,
+    remedies: authProbe.ok ? undefined : [{ kind: "command", label: "WSL 로그인 명령 복사", command: `wsl -d ${target.distro} -e ${binary}` }],
   };
 }
 

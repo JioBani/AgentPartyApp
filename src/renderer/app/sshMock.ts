@@ -30,6 +30,7 @@ let servers: SshServerView[] = [
       { id: "agent:claude-code", status: "ok", installed: true },
       { id: "agent:cursor", status: "fail", installed: false },
       { id: "agent:grok", status: "fail", installed: false },
+      { id: "agent:muse", status: "fail", installed: false },
     ] },
   },
   {
@@ -74,6 +75,7 @@ const AGENTS: SshCheckItem[] = [
   { id: "agent:claude-code", status: "ok", installed: true },
   { id: "agent:cursor", status: "fail", installed: false },
   { id: "agent:grok", status: "fail", installed: false },
+  { id: "agent:muse", status: "fail", installed: false },
 ];
 
 function saveServer(draft: SshServerDraft, auth: SshServerView["auth"], items: SshCheckItem[]) {
@@ -91,7 +93,7 @@ function runTest(id: string, auth: SshServerView["auth"]) {
   const entry = attempts.get(id);
   if (!entry) return;
   const base: SshCheckItem[] = [{ id: "connect", status: "ok" }, { id: "login", status: "ok" }];
-  push(id, { phase: "testing", steps: [...base, { id: "agent:codex", status: "checking" }, { id: "agent:claude-code", status: "pending" }, { id: "agent:cursor", status: "pending" }, { id: "agent:grok", status: "pending" }] });
+  push(id, { phase: "testing", steps: [...base, { id: "agent:codex", status: "checking" }, { id: "agent:claude-code", status: "pending" }, { id: "agent:cursor", status: "pending" }, { id: "agent:grok", status: "pending" }, { id: "agent:muse", status: "pending" }] });
   later(id, 1400, () => {
     const items = [...base, ...AGENTS];
     push(id, { phase: "done", steps: items });

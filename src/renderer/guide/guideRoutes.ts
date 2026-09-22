@@ -12,7 +12,7 @@ import type { RouteLike } from "../workbench/routes";
 import type { HarnessId } from "../../shared/types";
 
 /** Only harnesses the guide can actually run on are offered. */
-export const GUIDE_HARNESSES: HarnessId[] = ["claude-code", "codex", "cursor", "grok"];
+export const GUIDE_HARNESSES: HarnessId[] = ["claude-code", "codex", "cursor", "grok", "muse"];
 
 /** A model's HOME harness — the one whose vendor actually makes it. Picking a
  *  model should connect the harness it belongs to, not whichever sorts first. */
@@ -21,6 +21,7 @@ const HOME_BY_PROVIDER: Record<string, HarnessId> = {
   openai: "codex",
   cursor: "cursor",
   xai: "grok",
+  meta: "muse",
 };
 
 /** Lower is better. A route on the model's home harness always wins; models with
