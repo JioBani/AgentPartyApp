@@ -4,6 +4,20 @@ import * as path from "node:path";
 
 let startupTail: Promise<void> = Promise.resolve();
 
+/** Brief backoff while Codex releases or finishes backfilling its state DB. */
+export const CODEX_SQLITE_STARTUP_RETRY_DELAYS_MS = [250, 750, 2_000, 5_000] as const;
+
+export function isSqliteStateRuntimeStartupError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /failed to initialize (?:sqlite )?state runtime/iu.test(message)
+    || /failed to initialize state runtime at/iu.test(message);
+}
+
+export function isStalledSqliteBackfillError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /timed out waiting for state db backfill/iu.test(message);
+}
+
 /**
  * Codex backfills a new state DB from the shared CODEX_HOME during initialize.
  * Starting several fresh app-servers at once can make those backfills observe

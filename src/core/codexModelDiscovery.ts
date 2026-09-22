@@ -3,7 +3,13 @@ import * as fs from "node:fs";
 import readline from "node:readline";
 import { normalizeCodexModels, type CodexModelInfo } from "../shared/codexModels";
 import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "./codexExec";
-import { withAgentPartyCodexStartup } from "./codexSqliteHome";
+import {
+  CODEX_SQLITE_STARTUP_RETRY_DELAYS_MS,
+  isSqliteStateRuntimeStartupError,
+  isStalledSqliteBackfillError,
+  nextAgentPartyCodexSqliteHome,
+  withAgentPartyCodexStartup,
+} from "./codexSqliteHome";
 
 /**
  * Live Codex account-catalog discovery: spawns a short-lived `codex app-server`,
@@ -30,7 +36,23 @@ export interface CodexModelDiscoveryOptions {
 const DEFAULT_TIMEOUT_MS = 90000;
 
 export async function discoverCodexModels(options: CodexModelDiscoveryOptions): Promise<CodexModelInfo[]> {
-  return withAgentPartyCodexStartup(() => discoverCodexModelsWithStartupLease(options));
+  return withAgentPartyCodexStartup(async () => {
+    let sqliteHome = options.sqliteHome;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await discoverCodexModelsWithStartupLease({ ...options, sqliteHome });
+      } catch (error) {
+        const delayMs = CODEX_SQLITE_STARTUP_RETRY_DELAYS_MS[attempt];
+        if (delayMs === undefined || !sqliteHome || !isSqliteStateRuntimeStartupError(error)) {
+          throw error;
+        }
+        if (isStalledSqliteBackfillError(error)) {
+          sqliteHome = nextAgentPartyCodexSqliteHome(sqliteHome);
+        }
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  });
 }
 
 async function discoverCodexModelsWithStartupLease(options: CodexModelDiscoveryOptions): Promise<CodexModelInfo[]> {
