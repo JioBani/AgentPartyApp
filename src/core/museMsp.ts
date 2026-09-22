@@ -266,6 +266,10 @@ export class MuseMspSession {
     return this.request("approval/listPending", { sessionId: this.sessionId });
   }
 
+  readUsage(): Promise<{ usage?: unknown }> {
+    return this.request("usage/read", {});
+  }
+
   dispose(): void {
     this.closed = true;
     this.failAll(new Error("Muse Code MSP session disposed."));

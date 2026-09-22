@@ -56,9 +56,16 @@ interface ManagedSession {
   id: string;
   workspace: string;
   adapter: HarnessSession;
-  /** The account-usage provider this session draws from — lets the background
-   *  usage poller reuse a live session instead of spawning a duplicate. */
+  /** The account-usage provider this session draws from. Together with
+   *  {@link ownsUsageSource}, this lets the background poller reuse a local
+   *  live session without mistaking a cross-host proxy for a reader. */
   provider?: UsageProviderId;
+  /**
+   * Whether this process owns the provider's usage reader for this session.
+   * Cross-host sessions are transport proxies only: the remote engine owns the
+   * real harness and forwards its aggregated usage snapshot separately.
+   */
+  ownsUsageSource: boolean;
   queuedEvents: ClaudeNormalizedEvent[];
   /** Epoch + contiguous batch position for idempotent transcript consumers. */
   eventStreamId: string;
@@ -296,8 +303,8 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Registers a local session whose HarnessSession is only a transport proxy.
-   * Party state, queues, transcripts and usage ownership stay in this manager;
-   * only the provider harness process is hosted by `target`.
+   * Party state, queues and transcripts stay in this manager; provider usage is
+   * owned by the remote engine that hosts the real harness process.
    */
   createCrossHostSession(
     target: string,
@@ -323,7 +330,14 @@ export class SessionManager extends EventEmitter {
       binding: { ownerWorkspace: workspace, identity: binding.identity },
     });
     const requestedHarness = request.selectedHarnessId || settings.selectedHarnessId;
-    return this.registerSession(id, workspace, adapter, providerOfHarness(requestedHarness), binding.identity);
+    return this.registerSession(
+      id,
+      workspace,
+      adapter,
+      providerOfHarness(requestedHarness),
+      binding.identity,
+      false,
+    );
   }
 
   /** Builds the function-bearing binding after its serializable descriptor crosses RPC. */
@@ -524,7 +538,7 @@ export class SessionManager extends EventEmitter {
   /** True when a non-closed session already reports this provider's usage. */
   private hasLiveSessionForProvider(provider: UsageProviderId): boolean {
     for (const session of this.sessions.values()) {
-      if (!session.closed && session.provider === provider) {
+      if (!session.closed && session.ownsUsageSource && session.provider === provider) {
         return true;
       }
     }
@@ -543,7 +557,7 @@ export class SessionManager extends EventEmitter {
       backoffUntil[provider] = until;
     }
     const liveProviders: UsageProviderId[] = [];
-    for (const p of ["claude", "codex", "cursor", "grok"] as UsageProviderId[]) {
+    for (const p of ["claude", "codex", "cursor", "grok", "muse"] as UsageProviderId[]) {
       if (this.hasLiveSessionForProvider(p)) {
         liveProviders.push(p);
       }
@@ -584,7 +598,8 @@ export class SessionManager extends EventEmitter {
         selectedHarnessId:
           provider === "codex" ? "codex" :
           provider === "cursor" ? "cursor" :
-          provider === "grok" ? "grok" : "claude-code",
+          provider === "grok" ? "grok" :
+          provider === "muse" ? "muse" : "claude-code",
       }, undefined, SessionManager.USAGE_SOURCE_BG(provider));
     } catch (error) {
       this.noteUsageAdapterFailure(provider, error);
@@ -907,12 +922,20 @@ export class SessionManager extends EventEmitter {
     return session.adapter;
   }
 
-  private registerSession(id: string, workspace: string, adapter: HarnessSession, provider?: UsageProviderId, identity?: PartyIdentity): SessionView {
+  private registerSession(
+    id: string,
+    workspace: string,
+    adapter: HarnessSession,
+    provider?: UsageProviderId,
+    identity?: PartyIdentity,
+    ownsUsageSource = true,
+  ): SessionView {
     const session: ManagedSession = {
       id,
       workspace,
       adapter,
       provider,
+      ownsUsageSource,
       identity,
       queuedEvents: [],
       eventStreamId: randomUUID(),
@@ -933,12 +956,12 @@ export class SessionManager extends EventEmitter {
     // so the new session's first readings were dropped ("dropped usage_limit
     // from non-active source") and the titlebar kept the background poller's
     // empty/not-logged-in state.
-    if (provider) {
+    if (provider && ownsUsageSource) {
       this.activeUsageSource.set(provider, id);
     }
     adapter.start();
     this.emit("sessions", this.listSessions());
-    if (provider) {
+    if (provider && ownsUsageSource) {
       this.reconcileUsageAdapters();
     }
     return this.toView(session);
@@ -1356,19 +1379,19 @@ export class SessionManager extends EventEmitter {
     this.emit("sessions", this.listSessions());
     // Release source ownership but preserve the account-global value while
     // another live session or the background poller takes over immediately.
-    if (session.provider && this.activeUsageSource.get(session.provider) === id) {
+    if (session.ownsUsageSource && session.provider && this.activeUsageSource.get(session.provider) === id) {
       this.activeUsageSource.delete(session.provider);
       // If another member for the same account remains open, hand ownership to
       // it now instead of waiting up to 60s for its next polling tick.
       const replacement = Array.from(this.sessions.values()).find(
-        (candidate) => !candidate.closed && candidate.provider === session.provider,
+        (candidate) => !candidate.closed && candidate.ownsUsageSource && candidate.provider === session.provider,
       );
       if (replacement) {
         this.activeUsageSource.set(session.provider, replacement.id);
         void replacement.adapter.refreshUsageLimits?.();
       }
     }
-    if (session.provider) {
+    if (session.provider && session.ownsUsageSource) {
       this.reconcileUsageAdapters();
     }
     return true;
@@ -1654,6 +1677,7 @@ export class SessionManager extends EventEmitter {
         permissionMode: request.permissionMode || harnessDefaults.permissionMode,
         mcpServers: partyServers,
         partyPrimer,
+        usageSourceId,
       }) as unknown as HarnessSession;
     }
     if (selectedHarness === "codex") {

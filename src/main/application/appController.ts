@@ -26,7 +26,7 @@ import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { QueueCommand } from "../../shared/messageQueue";
 import type { McpServerSnapshot } from "../../shared/mcp";
-import { USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageWindow } from "../../shared/usageLimits";
+import { USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageProviderId, type UsageWindow } from "../../shared/usageLimits";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import { isWslLocation, parseWorkspaceLocation, serializeWorkspaceLocation, workspaceKey, wslUncPath } from "../../shared/workspaceLocation";
 import type { PartyDefinition, PartyMember } from "../../shared/types";
@@ -3561,9 +3561,11 @@ export class AppController {
    */
   qaEmitUsage(body: { provider?: string; windows?: Array<{ kind?: string; utilization?: number; resetsAt?: number }>; available?: boolean }): { ok: true; usage: UsageLimitsSnapshot } {
     this.requireQa();
-    const provider = body?.provider === "codex" ? "codex" : body?.provider === "claude" ? "claude" : body?.provider === "cursor" ? "cursor" : undefined;
+    const provider = USAGE_PROVIDER_ORDER.includes(body?.provider as UsageProviderId)
+      ? body.provider as UsageProviderId
+      : undefined;
     if (!provider) {
-      throw new Error("usage injection requires provider 'claude', 'codex', or 'cursor'.");
+      throw new Error("usage injection requires provider 'claude', 'codex', 'cursor', 'grok', or 'muse'.");
     }
     const windows: UsageWindow[] = [];
     for (const w of Array.isArray(body?.windows) ? body.windows : []) {

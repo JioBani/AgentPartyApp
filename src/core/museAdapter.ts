@@ -6,6 +6,7 @@ import { currentSpawnHost, shortCwd, spawnFailureSummary } from "../shared/sessi
 import { errorEventPayload } from "./environmentError";
 import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { resolveMuseCli } from "./museCli";
+import { museUsageWindows } from "./museUsage";
 import {
   MuseMspSession,
   type MuseApprovalRequest,
@@ -24,6 +25,7 @@ export interface MuseAdapterOptions {
   permissionMode?: string;
   mcpServers?: Record<string, MuseMcpServer>;
   partyPrimer?: string;
+  usageSourceId?: string;
   sessionFactory?: (options: ConstructorParameters<typeof MuseMspSession>[0]) => MuseMspSession;
   cliResolver?: typeof resolveMuseCli;
 }
@@ -59,6 +61,8 @@ export class MuseAdapter extends EventEmitter {
   private desiredModel: string;
   private desiredEffort: ClaudeEffort;
   private desiredPermissionMode: string;
+  private usageRefreshTimer?: NodeJS.Timeout;
+  private lastUsageStatus = "";
 
   constructor(private readonly options: MuseAdapterOptions) {
     super();
@@ -142,6 +146,8 @@ export class MuseAdapter extends EventEmitter {
     this.emitSpawn("running", undefined, actualModel);
     await this.refreshSkills();
     await this.refreshPendingRequests();
+    void this.refreshUsageLimits();
+    this.startUsagePolling();
   }
 
   sendUserTurn(text: string, attachments?: ImageAttachment[]): void {
@@ -194,6 +200,10 @@ export class MuseAdapter extends EventEmitter {
 
   dispose(): void {
     this.disposed = true;
+    if (this.usageRefreshTimer) {
+      clearInterval(this.usageRefreshTimer);
+      this.usageRefreshTimer = undefined;
+    }
     this.session?.dispose();
     this.session = undefined;
     this.patch({ status: "closed", harnessAlive: false, turnState: "idle" });
@@ -223,6 +233,19 @@ export class MuseAdapter extends EventEmitter {
     this.desiredPermissionMode = permissionMode;
     void this.session?.setApprovalMode(museApprovalMode(permissionMode)).catch((error) => this.emitEvent({ type: "error", message: String(error), at: now() }));
     this.patch({ permissionMode });
+  }
+
+  async refreshUsageLimits(): Promise<void> {
+    if (this.disposed || !this.session) return;
+    try {
+      const result = await this.session.readUsage();
+      if (this.disposed) return;
+      this.emitMuseUsage(result?.usage);
+    } catch (error) {
+      if (!this.disposed) {
+        this.emitUsageUnavailable(`Muse usage read failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   }
 
   respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): boolean {
@@ -295,6 +318,9 @@ export class MuseAdapter extends EventEmitter {
       case "session/tokenUsage":
         this.turnUsage.set(String(params.turnId || ""), usageBreakdown(params));
         break;
+      case "usage/changed":
+        this.emitMuseUsage(params);
+        break;
       case "approval/requested":
         this.rememberApproval(params as MuseApprovalRequest);
         break;
@@ -323,6 +349,51 @@ export class MuseAdapter extends EventEmitter {
         this.emitEvent({ type: "diagnostic", severity: "warning", category: "muse-view-gap", title: "Muse Code event gap", detail: "The harness reported a gap in its live event stream. Restart the member to reconcile its durable session history.", at: now() });
         break;
     }
+  }
+
+  private emitMuseUsage(payload: unknown): void {
+    const windows = museUsageWindows(payload);
+    this.emitEvent({
+      type: "usage_limit",
+      provider: "muse",
+      windows,
+      available: windows.length > 0 ? true : undefined,
+      sourceId: this.options.usageSourceId,
+      at: now(),
+    });
+    if (windows.length > 0) {
+      this.lastUsageStatus = "";
+    } else {
+      this.emitUsageUnavailable("Muse MSP returned no observed subscription usage.", false);
+    }
+  }
+
+  private emitUsageUnavailable(detail: string, emitEmpty = true): void {
+    if (emitEmpty) {
+      this.emitEvent({
+        type: "usage_limit",
+        provider: "muse",
+        windows: [],
+        sourceId: this.options.usageSourceId,
+        at: now(),
+      });
+    }
+    if (detail === this.lastUsageStatus) return;
+    this.lastUsageStatus = detail;
+    this.emitEvent({
+      type: "diagnostic",
+      severity: "info",
+      category: "rate-limit",
+      title: "Muse usage could not be read",
+      detail,
+      at: now(),
+    });
+  }
+
+  private startUsagePolling(): void {
+    if (this.usageRefreshTimer) return;
+    this.usageRefreshTimer = setInterval(() => void this.refreshUsageLimits(), 60_000);
+    this.usageRefreshTimer.unref?.();
   }
 
   private onItem(method: string, item: MuseItem): void {

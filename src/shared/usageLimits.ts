@@ -12,7 +12,7 @@
  * suites build the identical view from the same code.
  */
 
-export type UsageProviderId = "claude" | "codex" | "cursor" | "grok";
+export type UsageProviderId = "claude" | "codex" | "cursor" | "grok" | "muse";
 
 /**
  * The rolling windows the indicator can show. Claude/Codex report 5-hour +
@@ -23,7 +23,7 @@ export type UsageWindowKind = "five_hour" | "weekly" | "monthly";
 
 export interface UsageWindow {
   kind: UsageWindowKind;
-  /** Percent of the window consumed, 0–100 (provider-reported). */
+  /** Percent consumed (provider-reported; some providers may report over 100). */
   utilization: number;
   /** When the window resets, epoch ms. Absent when the provider didn't report it. */
   resetsAt?: number;
@@ -56,6 +56,7 @@ export type UsageLimitsSnapshot = {
   codex?: ProviderUsage;
   cursor?: ProviderUsage;
   grok?: ProviderUsage;
+  muse?: ProviderUsage;
 };
 
 /** Maximum age for a persisted no-window status (e.g. a transient login failure). */
@@ -80,7 +81,6 @@ export function restoreUsageSnapshot(raw: unknown, nowMs: number): UsageLimitsSn
       && PROVIDER_WINDOW_KINDS[provider].includes(window.kind)
       && Number.isFinite(window.utilization)
       && window.utilization >= 0
-      && window.utilization <= 100
       && (window.resetsAt == null || (Number.isFinite(window.resetsAt) && window.resetsAt > nowMs)),
     );
     if (!windows.length && nowMs - (value.updatedAt as number) > EMPTY_USAGE_CACHE_MAX_AGE_MS) continue;
@@ -106,10 +106,11 @@ export const USAGE_PROVIDERS: Record<UsageProviderId, { label: string; brand: st
   codex: { label: "Codex", brand: "#2bb67e" },
   cursor: { label: "Cursor", brand: "#8e92a3" },
   grok: { label: "Grok", brand: "var(--text-1)" },
+  muse: { label: "Muse", brand: "#0866ff" },
 };
 
 /** Fixed display order (matches the design). */
-export const USAGE_PROVIDER_ORDER: UsageProviderId[] = ["claude", "codex", "cursor", "grok"];
+export const USAGE_PROVIDER_ORDER: UsageProviderId[] = ["claude", "codex", "cursor", "grok", "muse"];
 
 /**
  * The windows each provider actually has. Rendering the union for everyone
@@ -123,6 +124,7 @@ export const PROVIDER_WINDOW_KINDS: Record<UsageProviderId, UsageWindowKind[]> =
   // Grok Build's authenticated billing extension reports the current
   // subscription credit period; SuperGrok currently identifies it as weekly.
   grok: ["weekly"],
+  muse: ["five_hour", "weekly"],
 };
 
 /** The usage provider a party member's runtime draws its account quota from. */
@@ -136,6 +138,9 @@ export function providerOfRuntime(runtime: string | undefined): UsageProviderId 
   if (runtime === "grok") {
     return "grok";
   }
+  if (runtime === "muse") {
+    return "muse";
+  }
   if (runtime === "claude-code" || runtime === "claude") {
     return "claude";
   }
@@ -147,6 +152,7 @@ export function providerOfHarness(harnessId: string | undefined): UsageProviderI
   if (harnessId === "codex") return "codex";
   if (harnessId === "cursor") return "cursor";
   if (harnessId === "grok") return "grok";
+  if (harnessId === "muse") return "muse";
   if (harnessId === "claude-code" || harnessId === "claude") return "claude";
   return undefined;
 }
@@ -379,6 +385,7 @@ export function buildUsageView(
     // its weekly window (e.g. an exhausted account) must not render "—".
     const primary = notApplicable ? undefined : providerWindows[0];
     const primaryPct = primary?.utilization;
+    const primaryFill = primaryPct == null ? undefined : Math.min(100, Math.max(0, primaryPct));
     const primaryCol = usageLevelColor(primaryPct, brand);
     pills.push({
       key: provider,
@@ -386,9 +393,9 @@ export function buildUsageView(
       brand,
       pctLabel: notApplicable ? "N/A" : loggedOut ? "로그아웃" : primaryPct == null ? "—" : `${Math.round(primaryPct)}%`,
       ring:
-        primaryPct == null
+        primaryFill == null
           ? "var(--bg-4)"
-          : `conic-gradient(${primaryCol} 0 ${primaryPct}%, var(--bg-4) ${primaryPct}% 100%)`,
+          : `conic-gradient(${primaryCol} 0 ${primaryFill}%, var(--bg-4) ${primaryFill}% 100%)`,
       holeBg: "var(--bg-2)",
       labelCol: "var(--text-1)",
       pctCol: primaryPct == null ? "var(--text-3)" : primaryCol,
@@ -417,7 +424,7 @@ export function buildUsageView(
       return {
         kind,
         name: WINDOW_LABELS[kind],
-        pctWidth: `${w.utilization}%`,
+        pctWidth: `${Math.min(100, Math.max(0, w.utilization))}%`,
         col: usageLevelColor(w.utilization, brand),
         right: countdown ? `${pct}% · ${countdown} 후 리셋` : `${pct}%`,
         known: true,

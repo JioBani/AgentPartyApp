@@ -11,6 +11,7 @@ const port = Number(process.env.AGENTPARTY_LIVE_MUSE_PORT || "") || 48958;
 const base = `http://127.0.0.1:${port}`;
 const runId = `${process.pid}-${Date.now()}`;
 const userData = path.join(os.tmpdir(), `agentparty-live-muse-${runId}-user-data`);
+const screenshot = path.join(os.tmpdir(), `agentparty-live-muse-${runId}-usage.png`);
 const workspace = `/tmp/agentparty-live-muse-${runId}`;
 const mcpOut = `/tmp/agentparty-live-muse-mcp-${runId}.jsonl`;
 const workspaceUri = `wsl+${distro}:${workspace}`;
@@ -89,6 +90,14 @@ try {
   if (!calls.length) console.error("Muse transcript without MCP call:", body);
   assert(calls.some((call) => call.member === memberName && call.name === "list"), "Muse invoked the real session-scoped AgentParty MCP server");
   assert(!/not logged in|authRequired|unknown MCP server/i.test(body), "Muse turn has no auth or MCP wiring failure");
+  // Muse's MSP usage surface is last-observed: a fresh host truthfully returns
+  // no subscription snapshot until the provider has completed its first call.
+  const usage = await waitForMuseUsage();
+  assert(usage.available === true, "Muse subscription usage is available after the first provider call");
+  assert(usage.windows.some((window) => window.kind === "five_hour" && Number.isFinite(window.utilization)), "Muse current-window utilization reached /api/usage");
+  assert(usage.windows.some((window) => window.kind === "weekly" && Number.isFinite(window.utilization)), "Muse weekly utilization reached /api/usage");
+  await post("/api/capture", { path: screenshot });
+  assert(fs.existsSync(screenshot), "Muse usage UI rendered in the real app window");
 
   await post(`/api/party/members/${memberName}/close`, {}).catch(() => undefined);
   console.log("LIVE MUSE APP E2E PASSED");
@@ -129,13 +138,24 @@ async function waitForReply(sessionId) {
   const deadline = Date.now() + 240_000;
   while (Date.now() < deadline) {
     const transcript = await get(`/api/party/members/${memberName}/transcript`).catch(() => ({}));
-    if (JSON.stringify(transcript).includes(sentinel)) return transcript;
+    const body = JSON.stringify(transcript);
+    if (body.includes(sentinel) && body.includes("turn complete")) return transcript;
     const state = await get("/api/state").catch(() => ({}));
     const session = state.sessions?.find((item) => item.id === sessionId);
     if (session?.snapshot?.status === "error") throw new Error(session.snapshot.lastError || "Muse turn failed.");
     await delay(1000);
   }
   throw new Error("Muse response did not arrive within 240 seconds.");
+}
+
+async function waitForMuseUsage() {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    const usage = (await get("/api/usage").catch(() => ({}))).usage?.muse;
+    if (usage?.windows?.length >= 2) return usage;
+    await delay(1000);
+  }
+  throw new Error("Muse subscription usage did not reach /api/usage within 60 seconds.");
 }
 
 async function get(route) {

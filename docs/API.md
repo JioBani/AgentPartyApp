@@ -1806,9 +1806,9 @@ that provider), not per-session or per-workspace, so this endpoint takes no
 parameters. AgentParty first asks a newly-started harness for its current usage
 when the harness exposes a read API (Claude SDK `/usage`, Codex
 `account/rateLimits/read`, Cursor `DashboardService/GetCurrentPeriodUsage` with
-the CLI's own stored credential), then keeps the snapshot fresh from each
+the CLI's own stored credential, Muse MSP `usage/read`), then keeps the snapshot fresh from each
 harness's own event stream (Claude `rate_limit_event`, Codex
-`account/rateLimits/updated`) or a 60s poll (Cursor).
+`account/rateLimits/updated`, Muse `usage/changed`) or a 60s poll (Cursor and Muse).
 Reports are merged per provider; a provider absent from the response simply
 hasn't reported yet (show an unknown/loading state, never a fabricated 0%). A
 read that answers but carries no usable windows is published as an explicit
@@ -1863,17 +1863,20 @@ rate-limit event. Expired reset windows and malformed cache entries are discarde
       "updatedAt": 1751900000000,
       "windows": [ { "kind": "monthly", "utilization": 42, "resetsAt": 1753900000000 } ]
     },
-    "grok": { "provider": "grok", "available": true, "updatedAt": 1786550000000, "windows": [ { "kind": "weekly", "utilization": 14, "resetsAt": 1786896635397 } ] }
+    "grok": { "provider": "grok", "available": true, "updatedAt": 1786550000000, "windows": [ { "kind": "weekly", "utilization": 14, "resetsAt": 1786896635397 } ] },
+    "muse": { "provider": "muse", "available": true, "updatedAt": 1790060000000, "windows": [ { "kind": "five_hour", "utilization": 21, "resetsAt": 1790078000000 }, { "kind": "weekly", "utilization": 37, "resetsAt": 1790664800000 } ] }
   }
 }
 ```
 
-`utilization` is 0–100; `resetsAt` is epoch **ms** (omitted when the provider
+`utilization` is non-negative and may exceed 100 when a provider reports over-quota usage; `resetsAt` is epoch **ms** (omitted when the provider
 didn't report a reset). Claude/Codex report `five_hour` + `weekly` windows;
 Cursor reports one `monthly` window — the signed-in account's billing-cycle plan
 meter (reset at `billingCycleEnd`). Grok Build reports a `weekly` subscription
-credit window and reset from `_x.ai/billing`; its completed-turn tokens/cost
-remain separately available in `/api/token-usage`.
+credit window and reset from `_x.ai/billing`. Muse reports its current
+5-hour-class window and rolling weekly window from the official MSP subscription
+usage surface. Completed-turn tokens/cost remain separately available in
+`/api/token-usage`.
 `available:false` means the provider-reported limit is not applicable or not
 exposed — render "해당 없음", not 0%. Missing provider data is rendered as
 loading/unknown until a read or push update arrives. Windows update live over
@@ -4210,8 +4213,8 @@ consuming a real quota. Returns the merged snapshot (same shape as
 }
 ```
 
-`provider` must be `"claude"`, `"codex"`, or `"cursor"`; each window needs a `kind`
-(`"five_hour"` | `"weekly"` | `"monthly"`) and numeric `utilization` (0–100). `resetsAt` (epoch
+`provider` must be `"claude"`, `"codex"`, `"cursor"`, `"grok"`, or `"muse"`; each window needs a `kind`
+(`"five_hour"` | `"weekly"` | `"monthly"`) and non-negative numeric `utilization`. `resetsAt` (epoch
 ms) is optional. Windows merge by kind, so repeated calls update one window at a
 time — mirroring how real providers report.
 

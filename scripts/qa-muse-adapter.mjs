@@ -69,6 +69,13 @@ const sessionFactory = (options) => {
     async cancelUserInput(request) { calls.push({ method: "cancel", request }); },
     async listSkills() { return { skills: [{ selector: "review", displayName: "Review", description: "Review changes", source: "user" }] }; },
     async listPending() { return { approvals: [], userInputs: [] }; },
+    async readUsage() {
+      return { usage: {
+        observedAtMs: Date.now(), tier: "contributor",
+        window: { usedPercent: 21, resetsAtMs: Date.now() + 18_000_000, windowDurationMins: 300 },
+        weekly: { usedPercent: 37, resetsAtMs: Date.now() + 604_800_000 },
+      } };
+    },
     dispose() { calls.push({ method: "dispose" }); },
   };
 };
@@ -88,6 +95,7 @@ const events = [];
 adapter.on("event", (event) => events.push(event));
 adapter.start();
 await waitFor(() => adapter.getSnapshot().harnessAlive);
+await waitFor(() => events.some((event) => event.type === "usage_limit" && event.provider === "muse"));
 assert.equal(wire.command, "fake-muse");
 assert.equal(wire.modelId, undefined, "muse-default delegates concrete model selection to Muse");
 assert.equal(wire.approvalMode, "onRequest");
@@ -95,6 +103,8 @@ assert.equal(wire.mcpServers["agentparty-app"].command, "node", "party MCP is se
 assert.equal(adapter.getSnapshot().sessionId, "muse-session-qa");
 assert.equal(adapter.getSnapshot().model, "muse-spark-qa", "provider-selected concrete model reaches the snapshot");
 assert.equal(adapter.getSnapshot().slashCommands[0].name, "review", "Muse skills feed the command palette");
+const museUsage = events.find((event) => event.type === "usage_limit" && event.provider === "muse");
+assert.deepEqual(museUsage.windows.map((window) => [window.kind, window.utilization]), [["five_hour", 21], ["weekly", 37]], "Muse subscription usage feeds both titlebar windows");
 
 const image = { kind: "image", mediaType: "image/png", dataBase64: "aGVsbG8=", name: "tiny.png" };
 adapter.sendUserTurn("hello", [image]);

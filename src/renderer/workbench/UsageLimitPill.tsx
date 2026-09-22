@@ -10,6 +10,7 @@ const PROVIDER_HARNESS: Record<UsageProviderId, string> = {
   codex: "codex",
   cursor: "cursor",
   grok: "grok",
+  muse: "muse",
 };
 
 interface UsageLimitPillProps {

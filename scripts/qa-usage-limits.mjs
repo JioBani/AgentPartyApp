@@ -78,6 +78,7 @@ assert(providerOfRuntime("claude-code") === "claude", "claude-code runtime → c
 assert(providerOfRuntime("claude") === "claude", "claude runtime → claude");
 assert(providerOfRuntime("cursor") === "cursor", "cursor runtime → cursor");
 assert(providerOfRuntime("grok") === "grok", "grok runtime → grok");
+assert(providerOfRuntime("muse") === "muse", "muse runtime → muse");
 assert(providerOfRuntime("mock") === undefined, "unknown runtime → no provider");
 assert(providerOfHarness("codex") === "codex" && providerOfHarness("claude-code") === "claude" && providerOfHarness("cursor") === "cursor", "harness id → provider");
 
@@ -102,6 +103,18 @@ assert(grokWin?.kind === "weekly" && grokWin.utilization === 14, "Grok credit pe
 assert(grokWin?.resetsAt === Date.parse("2026-08-16T16:10:35Z"), "Grok period end becomes resetsAt");
 assert(GU.grokUsageWindow({ config: { creditUsagePercent: 5 } }) === undefined, "Grok response without a known period is not fabricated");
 
+const MU = await loadModule("src/core/museUsage.ts", "muse-usage.mjs");
+console.log("\nMuse subscription usage mapping:");
+const museWins = MU.museUsageWindows({
+  observedAtMs: 1_790_000_000_000,
+  tier: "contributor",
+  window: { usedPercent: 21, resetsAtMs: 1_790_018_000_000, windowDurationMins: 300 },
+  weekly: { usedPercent: 37, resetsAtMs: 1_790_604_800_000 },
+});
+assert(museWins.length === 2 && museWins[0].kind === "five_hour" && museWins[0].utilization === 21, "Muse current window becomes the five-hour meter");
+assert(museWins[1].kind === "weekly" && museWins[1].utilization === 37, "Muse weekly window becomes the weekly meter");
+assert(MU.museUsageWindows({ window: { usedPercent: -1, resetsAtMs: 1 } }).length === 0, "invalid Muse usage is not fabricated");
+
 // reconcileUsageTargets — the pure background-poller decision
 console.log("\nBackground usage poller — reconcile decision:");
 const R = (o) => reconcileUsageTargets({ backoffUntil: {}, now: 1000, ...o });
@@ -117,8 +130,8 @@ d = R({ desired: ["codex"], liveProviders: [], running: [], backoffUntil: { code
 assert(d.start.length === 0, "a backed-off provider is not restarted before its retry time");
 d = R({ desired: ["codex"], liveProviders: [], running: [], backoffUntil: { codex: 5000 }, now: 6000 });
 assert(d.start.join() === "codex", "past the backoff window → restart is allowed");
-d = R({ desired: ["claude", "codex", "cursor", "grok"], liveProviders: [], running: [] });
-assert(d.start.join() === "claude,codex,cursor,grok", "all titlebar providers resolve even with no party members");
+d = R({ desired: ["claude", "codex", "cursor", "grok", "muse"], liveProviders: [], running: [] });
+assert(d.start.join() === "claude,codex,cursor,grok,muse", "all titlebar providers resolve even with no party members");
 
 // available derivation: reported windows are ground truth. Claude's proactive
 // usage read can answer "not available for this auth mode" on the very account
@@ -165,7 +178,7 @@ const snapshot = {
   ] },
 };
 const view = buildUsageView(snapshot, { claude: 3, codex: 2 }, now);
-assert(view.pills.length === 4, "one pill per provider (claude · codex · cursor · grok)");
+assert(view.pills.length === 5, "one pill per provider (claude · codex · cursor · grok · muse)");
 assert(view.pills[0].pctLabel === "63%" && view.pills[0].pctCol === "#c5835f", "claude pill shows 63% in brand color");
 assert(view.pills[0].ring.includes("63%"), "claude ring conic-gradient reflects 63%");
 assert(view.rows[0].sub === "3명 사용" && view.rows[1].sub === "2명 사용", "member counts shown per provider");
@@ -179,7 +192,7 @@ assert(high.pills[0].pctCol === "var(--live)", "82% pill percent uses warning co
 
 // buildUsageView — unknown (no data yet)
 const unknown = buildUsageView({}, { claude: 1 }, now);
-assert(unknown.pills.length === 4 && unknown.pills.every((pill) => pill.pctLabel === "—"), "providers with no data → pill shows — (not 0%)");
+assert(unknown.pills.length === 5 && unknown.pills.every((pill) => pill.pctLabel === "—"), "providers with no data → pill shows — (not 0%)");
 assert(unknown.pills[0].ring === "var(--bg-4)", "unknown ring is a muted track, no fabricated fill");
 assert(unknown.rows[0].meters[0].known === false && unknown.rows[0].meters[0].right === "불러오는 중…", "unknown meter reads loading, not a number");
 assert(unknown.empty === true, "no window data anywhere → empty");
@@ -222,7 +235,7 @@ assert(cursorView.pills.find((pill) => pill.key === "cursor").pctLabel === "42%"
 
 // buildUsageView — fully empty still shows every provider as loading
 const empty = buildUsageView({}, {}, now);
-assert(empty.pills.length === 4 && empty.rows.length === 4, "no data + no members → every provider still visible");
+assert(empty.pills.length === 5 && empty.rows.length === 5, "no data + no members → every provider still visible");
 
 // --- 2) jsdom render of <UsageLimitPill> ----------------------------------
 const dom = new JSDOM("<!doctype html><html><body><div id=\"root\"></div></body></html>", { url: "http://localhost/", pretendToBeVisual: true });
@@ -284,8 +297,8 @@ try {
 assert(!crashed, `render did not throw${crashed ? `: ${crashed.stack || crashed}` : ""}`);
 
 const root = window.document.getElementById("root");
-assert(root.querySelectorAll(".usage-seg").length === 4, "pill renders one segment per provider");
-assert(root.querySelectorAll(".usage-seg .wb-harness-icon").length === 4, "each pill segment carries its harness icon");
+assert(root.querySelectorAll(".usage-seg").length === 5, "pill renders one segment per provider");
+assert(root.querySelectorAll(".usage-seg .wb-harness-icon").length === 5, "each pill segment carries its harness icon");
 assert((root.textContent || "").includes("63%"), "pill shows the 5-hour percent");
 assert(root.querySelector(".usage-pop") === null, "popover closed until clicked");
 
@@ -294,8 +307,8 @@ window.document.querySelector(".usage-pill").dispatchEvent(new window.MouseEvent
 await new Promise((r) => setTimeout(r, 60));
 const pop = root.querySelector(".usage-pop");
 assert(Boolean(pop), "clicking the pill opens the popover");
-assert(root.querySelectorAll(".usage-meter").length === 6, "popover shows Claude/Codex windows plus Cursor and Grok meters (2+2+1+1)");
-assert(root.querySelectorAll(".usage-row-header .wb-harness-icon").length === 4, "each popover row leads with its harness icon");
+assert(root.querySelectorAll(".usage-meter").length === 8, "popover shows Claude/Codex/Muse windows plus Cursor and Grok meters (2+2+2+1+1)");
+assert(root.querySelectorAll(".usage-row-header .wb-harness-icon").length === 5, "each popover row leads with its harness icon");
 assert((pop?.textContent || "").includes("5시간 한도") && (pop?.textContent || "").includes("주간 한도"), "both window labels rendered");
 assert((pop?.textContent || "").includes("2시간 12분 후 리셋"), "reset countdown rendered in the meter");
 const refreshBtn = [...root.querySelectorAll(".usage-settings-btn")].find((button) => /새로고침/.test(button.textContent || ""));
