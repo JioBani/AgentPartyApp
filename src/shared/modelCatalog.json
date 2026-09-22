@@ -79,6 +79,44 @@
       }
     },
     {
+      "id": "claude-opus-5-5[1m]",
+      "label": "Opus 5.5",
+      "provider": "anthropic",
+      "subscription": true,
+      "claudeSubscriptionModel": "claude-opus-5-5",
+      "description": "Opus 5.5 preview with 1M context. Requires Claude Code 2.1.280 or newer. Adaptive thinking is always on; effort defaults to medium and can be raised through max. Verified against the Claude Code next channel on 23 Sep '26.",
+      "context": "1M",
+      "perf": 5,
+      "costTier": 5,
+      "inPerM": 4,
+      "outPerM": 20,
+      "ioPerM": 8,
+      "cacheReadPerM": 0.2,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "default": "medium"
+        },
+        "thinking": {
+          "modes": [
+            "adaptive"
+          ],
+          "default": "adaptive"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
+    },
+    {
       "id": "claude-opus-5[1m]",
       "label": "Opus 5",
       "provider": "anthropic",
