@@ -114,6 +114,11 @@ console.log("\nAssembly order (filter → favourites → provider groups):");
 
   const none = buildCatalogView({ entries: ENTRIES, query: "llama", favorites: FAVS, provOpen: {}, selectedKey: "" });
   assert(none.groups.length === 0 && none.matched === 0, "no match renders no group at all (empty state's job)");
+
+  const museRoute = route("muse-default", "Muse Spark (Muse Code)", "meta", 4);
+  const muse = buildCatalogView({ entries: [{ route: museRoute, meta: meta(museRoute) }], query: "", favorites: [], provOpen: { meta: true }, selectedKey: "" });
+  assert(groupIds(muse).join() === "meta" && modelsIn(groupNamed(muse, "meta")).join() === "muse-default",
+    "Meta-backed Muse models render in their provider group instead of an empty catalog");
 }
 
 // --- 2. search axes -------------------------------------------------------
