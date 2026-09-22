@@ -77,6 +77,7 @@ for (const [model, mark] of [
   ["Laguna XS 2.1", "poolside"],
   ["GLM-5.2", "zai"],
   ["MiniMax M3", "minimax"],
+  ["Grok 4.7", "grok"],
   ["Grok 4.5 Cursor", "grok"],
 ]) {
   assert(modelMarkForModel(model) === mark, `${model} resolves to the ${mark} model mark`);
@@ -125,6 +126,12 @@ assert(gemini37?.runtimeModel === "claude-gemini-3-7-flash", "Gemini 3.7 Flash h
 assert(alias["claude-gemini-3-7-flash"] === "google/gemini-3.7-flash", "Gemini 3.7 Flash alias resolves to its exact OpenRouter id");
 assert(gemini37Codex?.modelProvider === "openrouter" && gemini37Codex.enabled, "Gemini 3.7 Flash is selectable on Codex through OpenRouter");
 assert(gemini37?.pricing?.inputUsdPerM === 0.375 && gemini37?.pricing?.outputUsdPerM === 1.875, "Gemini 3.7 Flash exposes current OpenRouter token prices");
+const grok47OpenRouter = routes.find((route) => route.harnessId === "claude-code" && route.model === "Grok 4.7");
+const grok47OpenRouterCodex = routes.find((route) => route.harnessId === "codex" && route.model === "x-ai/grok-4.7");
+assert(grok47OpenRouter?.runtimeModel === "claude-grok-4-7" && grok47OpenRouter.enabled, "Grok 4.7 has an enabled Claude Code route through OpenRouter");
+assert(grok47OpenRouterCodex?.modelProvider === "openrouter" && grok47OpenRouterCodex.enabled, "Grok 4.7 has an enabled Codex route through OpenRouter");
+assert(grok47OpenRouter?.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high,xhigh", "Grok 4.7 OpenRouter route exposes the documented effort levels");
+assert(grok47OpenRouter?.pricing?.inputUsdPerM === 1.6 && grok47OpenRouter?.pricing?.outputUsdPerM === 4.8, "Grok 4.7 OpenRouter route exposes current token prices");
 const gptMiniClaudeRoute = routes.find((route) => route.harnessId === "claude-code" && route.model === "GPT-5.4 mini");
 assert(alias["claude-gpt-5.4-mini"] === undefined, "Claude Code GPT mini is absent from the OpenRouter alias map");
 assert(routerTargetForModel("claude-gpt-5.4-mini")?.kind === "codex-subscription", "Claude Code GPT mini targets the Codex subscription proxy");
@@ -230,10 +237,14 @@ assert(cursorRoutes.length === modelCatalog().filter((m) => m.provider !== "bai"
 assert(cursorRoutes.find((route) => route.model === "Auto")?.runtimeModel === "auto", "Cursor Auto route carries the CLI auto slug");
 assert(cursorRoutes.find((route) => route.model === "Grok 4.5")?.runtimeModel === "cursor-grok-4.5-high", "Cursor Grok route carries the verified named-model slug");
 const grokRoutes = grokHarnessRoutes();
-assert(grokRoutes.map((route) => route.model).join(",") === "grok-4.6,grok-4.5", "Grok Build exposes 4.6 first and retains 4.5");
+assert(grokRoutes.map((route) => route.model).join(",") === "grok-4.7,grok-4.7-build-fast,grok-4.6,grok-4.5", "Grok Build exposes both 4.7 routes first and retains 4.6 / 4.5");
 assert(grokRoutes.every((route) => route.pricing.context === "500K"), "Grok Build routes carry the ACP-reported 500K context");
+const grok47 = grokRoutes.find((route) => route.model === "grok-4.7");
+const grok47Fast = grokRoutes.find((route) => route.model === "grok-4.7-build-fast");
 const grok46 = grokRoutes.find((route) => route.model === "grok-4.6");
 const grok45 = grokRoutes.find((route) => route.model === "grok-4.5");
+assert(grok47?.capabilities.effort.defaultValue === "high" && grok47.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high,xhigh", "Grok 4.7 exposes the documented effort menu and high default");
+assert(grok47Fast?.capabilities.effort.defaultValue === "high" && grok47Fast.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high,xhigh", "Grok 4.7 Fast keeps the same effort menu");
 assert(grok46?.capabilities.effort.supported && grok46.capabilities.effort.defaultValue === "high" && grok46.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high,xhigh", "Grok 4.6 exposes its measured effort menu and high default");
 assert(grok45?.capabilities.effort.supported && grok45.capabilities.effort.defaultValue === "high" && grok45.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high", "Grok 4.5 exposes its measured effort menu and high default");
 assert(grokRoutes.every((route) => route.capabilities.effort.mutableDuringSession === false && route.capabilities.thinking.supported === false), "Grok effort is start-time-only and reasoning has no separate toggle");

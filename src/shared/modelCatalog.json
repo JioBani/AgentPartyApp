@@ -739,6 +739,38 @@
       }
     },
     {
+      "id": "Grok 4.7",
+      "label": "Grok 4.7",
+      "provider": "openrouter",
+      "runtimeModel": "claude-grok-4-7",
+      "orModelId": "x-ai/grok-4.7",
+      "subscription": false,
+      "description": "SpaceXAI's frontier model for coding, agentic tasks, and knowledge work. This route is billed through OpenRouter.",
+      "context": "500K",
+      "perf": 5,
+      "costTier": 4,
+      "inPerM": 1.6,
+      "outPerM": 4.8,
+      "ioPerM": 2.4,
+      "cacheReadPerM": 0.4,
+      "reasoning": {
+        "effort": {
+          "options": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "default": "high"
+        }
+      },
+      "vision": {
+        "image": true,
+        "maxImages": 20,
+        "maxBytesPerImage": 5242880
+      }
+    },
+    {
       "id": "Grok 4.5",
       "label": "Grok 4.5",
       "provider": "openrouter",

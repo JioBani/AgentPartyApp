@@ -119,7 +119,7 @@ const members = [
 
 const initialState = {
   ok: true,
-  settings: { workspacePath: "/dev/acme-api", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "claude-sonnet-4.5", effort: "high", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } }, cursor: { model: "auto", effort: "" }, grok: { model: "grok-4.6", effort: "high", permissionMode: "default" } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831,
+  settings: { workspacePath: "/dev/acme-api", claudeExecutablePath: "", claudeSafeMode: false, selectedHarnessId: "claude-code", harnessDefaults: { "claude-code": { model: "claude-sonnet-4.5", effort: "high", permissionMode: "default" }, codex: { model: "gpt-5.5", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } }, cursor: { model: "auto", effort: "" }, grok: { model: "grok-4.7", effort: "high", permissionMode: "default" } }, debugEnabled: false, routerBaseUrl: "", routerAuthToken: "", openRouterApiKey: "", automationApiPort: 47831,
     // Settings the real app always fills in (main/settings.ts normalizes them on
     // read). They were absent here while nothing rendered the settings screen;
     // the 유휴 슬립 assertions below do, and the cards read these directly.

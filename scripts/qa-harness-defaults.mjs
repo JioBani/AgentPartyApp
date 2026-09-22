@@ -112,6 +112,9 @@ const live = S.getSettings();
 assert(live.harnessDefaults && live.harnessDefaults["claude-code"] && live.harnessDefaults.codex, "getSettings always returns a full per-harness defaults map");
 assert(typeof live.harnessDefaults.codex.model === "string" && live.harnessDefaults.codex.codexPolicy, "codex defaults include a model + 2-axis policy");
 assert(!("claudeModel" in live), "flat claudeModel is gone from settings (fully abstracted)");
+assert(S.isKnownHarnessDefaultModel("grok", "grok-4.7") && S.isKnownHarnessDefaultModel("grok", "grok-4.7-build-fast"), "current Grok Build routes are valid saved defaults");
+assert(S.isKnownHarnessDefaultModel("grok", "grok-4.6") && S.isKnownHarnessDefaultModel("grok", "grok-4.5"), "existing Grok 4.6 / 4.5 defaults survive upgrade without migration");
+assert(!S.isKnownHarnessDefaultModel("grok", "grok-no-such-model"), "unknown Grok defaults are still healed instead of becoming dead routes");
 
 console.log("\nlegacy settings.json migration:");
 const migrated = S.migrateSettings({ selectedHarnessId: "claude-code", claudeModel: "MiniMax M3", claudeEffort: "high", claudeReasoning: "enabled", claudePermissionMode: "plan", debugEnabled: true });

@@ -124,14 +124,21 @@ export function grokCliInstalledPath(explicit?: string): string | undefined {
  * why argument order is fixed here rather than left to callers.
  */
 export const GROK_REASONING_EFFORTS = {
+  "grok-4.7": ["low", "medium", "high", "xhigh"],
+  "grok-4.7-build-fast": ["low", "medium", "high", "xhigh"],
   "grok-4.6": ["low", "medium", "high", "xhigh"],
   "grok-4.5": ["low", "medium", "high"],
 } as const;
 
 export type GrokReasoningEffort = (typeof GROK_REASONING_EFFORTS)[keyof typeof GROK_REASONING_EFFORTS][number];
 
+export function isKnownGrokModel(model: string): model is keyof typeof GROK_REASONING_EFFORTS {
+  return Object.prototype.hasOwnProperty.call(GROK_REASONING_EFFORTS, model);
+}
+
 export function grokReasoningEfforts(model: string): readonly GrokReasoningEffort[] {
-  return model === "grok-4.5" ? GROK_REASONING_EFFORTS["grok-4.5"] : GROK_REASONING_EFFORTS["grok-4.6"];
+  return GROK_REASONING_EFFORTS[model as keyof typeof GROK_REASONING_EFFORTS]
+    ?? GROK_REASONING_EFFORTS["grok-4.7"];
 }
 
 export function validateGrokReasoningEffort(model: string, effort: string): GrokReasoningEffort {

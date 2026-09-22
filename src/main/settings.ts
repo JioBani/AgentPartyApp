@@ -23,6 +23,7 @@ import { normalizePartyPrimerSettings } from "../shared/partyPrimer";
 import { DEFAULT_UPDATE_CHANNEL, normalizeUpdateChannel } from "../shared/appUpdate";
 import { DEFAULT_APP_LOCALE, normalizeAppLocale } from "../shared/appLocale";
 import { DEFAULT_SIDEBAR_DRAWERS, normalizeSidebarDrawers } from "../shared/sidebarDrawers";
+import { isKnownGrokModel } from "../core/grokAgentCli";
 
 /**
  * Built-in Message Gate reviewer default. Headless (no harness), and low effort
@@ -47,10 +48,10 @@ const HARNESS_DEFAULTS: Record<HarnessId, HarnessDefaults> = {
   // selectable even before live model/list discovery lands.
   codex: { model: "gpt-5.4", effort: "medium", codexPolicy: { ...DEFAULT_CODEX_POLICY } },
   cursor: { model: "Grok 4.5", effort: "high", serviceTier: "standard", cursorPolicy: { ...DEFAULT_CURSOR_POLICY } },
-  // Grok Build defaults to 4.6/high. Effort is applied when its ACP process
+  // Grok Build defaults to 4.7/high. Effort is applied when its ACP process
   // starts. Grok owns only normal/plan modes; its adapter enforces finer permission
   // choices when ACP session/request_permission requests arrive.
-  grok: { model: "grok-4.6", effort: "high", permissionMode: "default" },
+  grok: { model: "grok-4.7", effort: "high", permissionMode: "default" },
 };
 
 const defaults: AppSettings = {
@@ -205,13 +206,20 @@ function normalizeGateDefaults(value: unknown): GateReviewer {
   return reviewer;
 }
 
+/** Grok Build owns a CLI model list that deliberately does not live in the routed API catalog. */
+export function isKnownHarnessDefaultModel(harness: HarnessId, model: string): boolean {
+  return harness === "grok"
+    ? isKnownGrokModel(model)
+    : Boolean(catalogModelById(model) || catalogModelByRuntime(model));
+}
+
 function sanitizeSettings(settings: AppSettings): AppSettings {
   const envAutomationPort = Number(process.env.AGENTPARTY_AUTOMATION_PORT || "");
   const withRuntimeOverrides = envAutomationPort > 0 ? { ...settings, automationApiPort: envAutomationPort } : settings;
   const harnessDefaults = { ...withRuntimeOverrides.harnessDefaults };
   for (const id of HARNESS_IDS) {
     const model = harnessDefaults[id]?.model;
-    if (model && !catalogModelById(model) && !catalogModelByRuntime(model)) {
+    if (model && !isKnownHarnessDefaultModel(id, model)) {
       harnessDefaults[id] = { ...harnessDefaults[id], model: HARNESS_DEFAULTS[id].model };
     }
   }

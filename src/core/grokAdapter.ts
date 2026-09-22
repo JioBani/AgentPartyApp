@@ -7,7 +7,7 @@
  *
  *  - Its native execution modes are only normal/plan. ACP permission requests
  *    are therefore resolved here according to the app's permission setting.
- *  - Reasoning effort is a process-start setting. Grok 4.6 accepts
+ *  - Reasoning effort is a process-start setting. Grok 4.7/4.6 accept
  *    low/medium/high/xhigh and Grok 4.5 accepts low/medium/high; ACP does not
  *    expose a live mutation method.
  *  - It loads the user's Claude Code hooks and permission rules from ~/.claude
@@ -91,7 +91,7 @@ export class GrokAdapter extends EventEmitter {
       id: options.sessionId,
       harnessAlive: false,
       cwd: options.cwd,
-      model: options.model || "grok-4.6",
+      model: options.model || "grok-4.7",
       effort: options.effort || "high",
       permissionMode: options.permissionMode || "default",
       status: "starting",
@@ -521,7 +521,7 @@ export class GrokAdapter extends EventEmitter {
   }
 
   private reasoningEffort(effort: string): GrokReasoningEffort {
-    const model = this.session ? this.snapshot.model : this.options.model || "grok-4.6";
+    const model = this.session ? this.snapshot.model : this.options.model || "grok-4.7";
     return validateGrokReasoningEffort(model, effort);
   }
 

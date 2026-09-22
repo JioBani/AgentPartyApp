@@ -172,7 +172,7 @@ export const harnesses: HarnessDescriptor[] = [
     id: "cursor",
     label: "Cursor CLI",
     enabled: true,
-    description: "Cursor Agent CLI with Cursor Auto or the Grok 4.5 named model.",
+    description: "Cursor Agent CLI with Cursor Auto or a supported named model.",
   },
   {
     id: "grok",
@@ -557,17 +557,19 @@ export function cursorRouteFromCatalog(model: CatalogModel): ModelRoute {
 /**
  * What the Grok Build CLI itself serves. It owns its model list — the catalog
  * does not route it — so these entries mirror what `session/new` reports.
- * Measured 2026-08-13: grok-4.6 is the default and both 4.6 / 4.5 expose a
- * 500k context window.
+ * Measured 2026-09-22 against Grok Build 1.0.3: grok-4.7 is the default and
+ * the CLI exposes a separate grok-4.7-build-fast route alongside 4.6 / 4.5.
+ * All expose a 500k context window.
  *
- * Measured against the official CLI: 4.6 accepts low/medium/high/xhigh and 4.5
- * accepts low/medium/high. Effort is immutable within an ACP process because
- * the CLI consumes it as a startup flag. There is no separate reasoning-off
- * toggle. AgentParty bridges ACP permission requests into its approval flow.
+ * Official model docs and the authenticated CLI agree that 4.7 accepts
+ * low/medium/high/xhigh (default high); 4.6 accepts the same set and 4.5 accepts
+ * low/medium/high. Effort is immutable within an ACP process because the CLI
+ * consumes it as a startup flag. There is no separate reasoning-off toggle.
+ * AgentParty bridges ACP permission requests into its approval flow.
  */
 export function grokHarnessRoutes(): ModelRoute[] {
   const route = (
-    model: "grok-4.6" | "grok-4.5",
+    model: "grok-4.7" | "grok-4.7-build-fast" | "grok-4.6" | "grok-4.5",
     label: string,
     description: string,
     meta?: ModelRoute["meta"],
@@ -595,10 +597,21 @@ export function grokHarnessRoutes(): ModelRoute[] {
   });
   return [
     route(
+      "grok-4.7",
+      "Grok 4.7 (Grok Build)",
+      "SpaceXAI's latest frontier model through the Grok Build CLI and your Grok subscription. " +
+        "It is the CLI default and supports 500K context with low through xhigh reasoning effort.",
+    ),
+    route(
+      "grok-4.7-build-fast",
+      "Grok 4.7 Fast (Grok Build)",
+      "The same Grok 4.7 model on Grok Build's faster serving route. It consumes subscription credits at the fast-route rate.",
+    ),
+    route(
       "grok-4.6",
       "Grok 4.6 (Grok Build)",
-      "SpaceXAI's latest frontier model through the Grok Build CLI and your Grok subscription. " +
-        "It approves its own tool calls and loads your ~/.claude hooks and permission rules.",
+      "SpaceXAI's previous Grok Build model on your Grok subscription. It remains selectable for compatibility.",
+      { perf: 4, costTier: 5, inPerM: 0, outPerM: 0, ioPerM: 0, context: "500K" },
     ),
     route(
       "grok-4.5",

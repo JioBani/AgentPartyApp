@@ -242,7 +242,7 @@ export function baseState(party: InitialAppState["party"], sessions: SessionView
         "claude-code": { model: "sonnet", effort: "medium", permissionMode: "default" },
         codex: { model: "GPT-5.4", effort: "medium", codexPolicy: { sandbox: "workspace-write", approval: "on-request", guardian: false } },
         cursor: { model: "Grok 4.5 Cursor", effort: "high", cursorPolicy: { mode: "agent", approval: "allowlist" } },
-        grok: { model: "grok-4.6", effort: "high", permissionMode: "default" },
+        grok: { model: "grok-4.7", effort: "high", permissionMode: "default" },
       },
       debugEnabled: false,
       routerBaseUrl: "http://127.0.0.1:3455",
