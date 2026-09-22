@@ -1888,8 +1888,14 @@ running. Users or automation can request an immediate refresh:
 ### `POST /api/usage/refresh`
 
 Asks every live harness that exposes usage reads to refresh now, then returns the
-same shape as `GET /api/usage`. Failures are surfaced as session status events
-instead of silently clearing existing usage.
+same shape as `GET /api/usage`. Muse's official `usage/read` is last-observed and
+cannot populate a fresh host, so every explicit refresh also performs exactly
+one minimal Muse provider turn in an isolated hidden MSP session. This consumes
+a small amount of Muse quota but never changes a member conversation or appears
+in its transcript. Automatic 60s polling remains read-only and never performs a
+model turn. For WSL/SSH members the probe runs in the remote engine that owns the
+real Muse harness. Probe failures reject the refresh request and are surfaced to
+the user instead of silently clearing existing usage.
 
 ### `GET /api/token-usage`
 

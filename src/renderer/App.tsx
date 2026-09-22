@@ -2271,6 +2271,8 @@ export function App() {
       if (res?.usage) {
         setUsageLimits(res.usage);
       }
+    } catch (error) {
+      noticeOnFailure("사용량을 새로고침하지 못했습니다")(error);
     } finally {
       setUsageRefreshing(false);
     }

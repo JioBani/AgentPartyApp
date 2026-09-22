@@ -27,7 +27,7 @@ import type { CodexPolicy } from "../shared/codexPolicy";
 import type { CursorPolicy } from "../shared/cursorPolicy";
 import type { ImageAttachment } from "../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
-import { mergeProviderUsage, providerOfHarness, reconcileUsageTargets, restoreUsageSnapshot, USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
+import { mergeProviderUsage, providerOfHarness, reconcileUsageTargets, restoreUsageSnapshot, USAGE_PROVIDER_ORDER, type ProviderUsage, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
 import { HarnessSession } from "./harness/types";
 import { MockHarnessSession } from "./harness/mockHarness";
 import { UsageLedger } from "./usageLedger";
@@ -420,8 +420,72 @@ export class SessionManager extends EventEmitter {
         tasks.push(adapter.refreshUsageLimits());
       }
     }
-    await Promise.allSettled(tasks);
+    // Muse's stable MSP exposes only the host's last-observed usage. A fresh
+    // host therefore has nothing to read until a provider turn occurs. The user
+    // explicitly requested that EVERY manual refresh make that observation, so
+    // run exactly one isolated minimal Muse turn after the free reads. Never do
+    // this from the 60s poller: only this user-invoked method reaches the probe.
+    const museProbe = this.museUsageProbeTarget();
+    if (!museProbe) {
+      throw new Error("Muse usage refresh is unavailable because no Muse harness could be started.");
+    }
+    // Free reads and the explicit Muse probe are independent. Start them
+    // together so a slow Codex/Claude refresh does not add its latency on top
+    // of the provider turn the user is already waiting for.
+    const [, probed] = await Promise.all([
+      Promise.allSettled(tasks),
+      museProbe.adapter.probeUsageLimits!(),
+    ]);
+    if (museProbe.remote && probed) {
+      // The event and RPC result share one transport but are consumed through
+      // separate paths. Merge the returned snapshot too, so the HTTP response
+      // cannot race ahead of the pushed remote event.
+      this.mergeRemoteUsage({ muse: probed });
+    }
     return this.usageLimits;
+  }
+
+  /** Explicit remote-engine entry for a cross-host Muse session facade. */
+  async probeSessionUsage(id: string): Promise<ProviderUsage | undefined> {
+    const session = this.sessions.get(id);
+    if (!session || session.closed) {
+      throw new Error(`Session '${id}' was not found.`);
+    }
+    if (typeof session.adapter.probeUsageLimits !== "function") {
+      throw new Error(`Session '${id}' does not support an explicit usage probe.`);
+    }
+    return session.adapter.probeUsageLimits();
+  }
+
+  /** Selects one Muse host so one click always means one provider call. */
+  private museUsageProbeTarget(): { adapter: HarnessSession; remote: boolean } | undefined {
+    const active = this.activeUsageSource.get("muse");
+    if (active && active !== SessionManager.USAGE_SOURCE_REMOTE("muse") && active !== SessionManager.USAGE_SOURCE_BG("muse")) {
+      const owned = this.sessions.get(active);
+      if (!owned?.closed && typeof owned?.adapter.probeUsageLimits === "function") {
+        return { adapter: owned.adapter, remote: false };
+      }
+    }
+    // If Muse physically runs in WSL/SSH, probe there. The local facade forwards
+    // to the real remote adapter, whose usage event is already merged globally.
+    const remote = Array.from(this.sessions.values()).find((session) =>
+      !session.closed
+      && session.provider === "muse"
+      && !session.ownsUsageSource
+      && typeof session.adapter.probeUsageLimits === "function",
+    );
+    if (remote) return { adapter: remote.adapter, remote: true };
+
+    const local = Array.from(this.sessions.values()).find((session) =>
+      !session.closed
+      && session.provider === "muse"
+      && session.ownsUsageSource
+      && typeof session.adapter.probeUsageLimits === "function",
+    );
+    if (local) return { adapter: local.adapter, remote: false };
+
+    const background = this.usageAdapters.get("muse");
+    return typeof background?.probeUsageLimits === "function" ? { adapter: background, remote: false } : undefined;
   }
 
   /**

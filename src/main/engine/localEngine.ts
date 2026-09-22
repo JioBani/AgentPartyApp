@@ -329,6 +329,10 @@ export class LocalEngine implements EngineConnection {
     this.deps.sessionManager.setSessionDebugMode(sessionId, enabled);
   }
 
+  async probeSessionUsage(sessionId: string) {
+    return this.deps.sessionManager.probeSessionUsage(sessionId);
+  }
+
   async setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void> {
     const validated = requireCodexPolicy(policy);
     this.deps.sessionManager.setCodexPolicy(sessionId, validated);

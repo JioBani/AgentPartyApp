@@ -41,6 +41,18 @@ const sessionFactory = (options) => {
     },
     async startTurn(text, effort, attachments) {
       calls.push({ method: "turn/start", text, effort, attachments });
+      if (text === "Reply exactly: OK") {
+        queueMicrotask(() => {
+          options.onNotification("turn/started", { turnId: "turn-probe" });
+          options.onNotification("turn/completed", { turnId: "turn-probe", terminal: "completed", reason: "stop" });
+          options.onNotification("usage/changed", {
+            observedAtMs: Date.now(), tier: "contributor",
+            window: { usedPercent: 21, resetsAtMs: Date.now() + 18_000_000, windowDurationMins: 300 },
+            weekly: { usedPercent: 37, resetsAtMs: Date.now() + 604_800_000 },
+          });
+        });
+        return { turnId: "turn-probe" };
+      }
       if (text === "stop me") {
         queueMicrotask(() => options.onNotification("turn/started", { turnId: "turn-stop" }));
         setTimeout(() => options.onNotification("turn/completed", { turnId: "turn-stop", terminal: "cancelled", reason: "interrupted" }), 20);
@@ -160,6 +172,17 @@ await waitFor(() => calls.some((call) => call.method === "setModel"));
 assert(calls.some((call) => call.method === "setEffort" && call.effort === "xhigh"));
 assert(calls.some((call) => call.method === "setApprovalMode" && call.mode === "denyUnmatched"));
 assert(calls.some((call) => call.method === "setModel" && call.model === "muse-spark-next"));
+
+const visibleDeltasBeforeProbe = events.filter((event) => event.type === "assistant_text_delta").length;
+await adapter.probeUsageLimits();
+const probeTurn = calls.find((call) => call.method === "turn/start" && call.text === "Reply exactly: OK");
+assert(probeTurn, "manual Muse usage refresh makes one minimal provider turn");
+assert.equal(probeTurn.effort, "low", "usage probe uses the lowest provider-observed reasoning effort");
+assert.equal(
+  events.filter((event) => event.type === "assistant_text_delta").length,
+  visibleDeltasBeforeProbe,
+  "isolated usage probe output never enters the member transcript stream",
+);
 adapter.dispose();
 
 console.log("MUSE ADAPTER QA PASSED");

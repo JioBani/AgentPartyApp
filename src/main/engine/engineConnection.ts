@@ -26,6 +26,7 @@ import type { ClaudeNativeAuthState } from "../../core/claudeNativeAuth";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import type { ApprovalDelivery } from "../../shared/approvals";
 import type { PartyMcpToolSpec, PartyToolResult } from "../../core/partyBridge";
+import type { ProviderUsage } from "../../shared/usageLimits";
 
 /**
  * The engine surface — everything addressed by **workspace**. For a local
@@ -246,6 +247,8 @@ export interface EngineConnection {
   setSessionThinking(sessionId: string, mode: string, budget?: number): Promise<void>;
   setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void>;
   setSessionDebugMode(sessionId: string, enabled: boolean): Promise<void>;
+  /** Runs a provider-specific explicit usage probe for this session's harness. */
+  probeSessionUsage(sessionId: string): Promise<ProviderUsage | undefined>;
   setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void>;
   setSessionCursorPolicy(sessionId: string, policy: CursorPolicy): Promise<void>;
   /** Answers a pending approval and reports whether the harness took it. */

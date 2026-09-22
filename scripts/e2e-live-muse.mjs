@@ -75,6 +75,15 @@ try {
   const sessionId = await waitForSession(started.session?.id);
   assert(sessionId, "Muse member session started in WSL");
 
+  // This is intentionally BEFORE the member's first visible turn. Manual
+  // refresh must make its own isolated minimal provider call on the WSL engine.
+  const refreshed = await post("/api/usage/refresh", {});
+  const refreshedMuse = refreshed.usage?.muse;
+  assert(refreshedMuse?.windows?.some((window) => window.kind === "five_hour"), "manual refresh observes Muse usage before any member response");
+  assert(refreshedMuse?.windows?.some((window) => window.kind === "weekly"), "manual refresh returns Muse weekly usage");
+  const preTurnTranscript = await get(`/api/party/members/${memberName}/transcript`);
+  assert(!JSON.stringify(preTurnTranscript).includes("Reply exactly: OK"), "hidden Muse usage probe does not enter the member transcript");
+
   await post(`/api/party/members/${memberName}/message`, {
     text: [
       "You MUST call the tool named `list` from the MCP server `agentparty-app` exactly once before answering.",
@@ -91,8 +100,8 @@ try {
   assert(calls.some((call) => call.member === memberName && call.name === "list"), "Muse invoked the real session-scoped AgentParty MCP server");
   assert(!/not logged in|authRequired|unknown MCP server/i.test(body), "Muse turn has no auth or MCP wiring failure");
   assert(!body.includes("Muse usage could not be read"), "an expected pre-call empty usage snapshot does not create a stale warning");
-  // Muse's MSP usage surface is last-observed: a fresh host truthfully returns
-  // no subscription snapshot until the provider has completed its first call.
+  // The explicit refresh above made the first isolated provider call; the
+  // member's later visible response also updates the same account-global meter.
   const usage = await waitForMuseUsage();
   assert(usage.available === true, "Muse subscription usage is available after the first provider call");
   assert(usage.windows.some((window) => window.kind === "five_hour" && Number.isFinite(window.utilization)), "Muse current-window utilization reached /api/usage");

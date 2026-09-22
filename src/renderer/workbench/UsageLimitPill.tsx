@@ -123,7 +123,7 @@ export function UsageLimitPill({ usage, membersByProvider, onOpenSettings, onRef
             </div>
           ))}
           <div className="usage-pop-actions">
-            <button type="button" className="usage-settings-btn" onClick={onRefresh} disabled={refreshing}>
+            <button type="button" className="usage-settings-btn" onClick={onRefresh} disabled={refreshing} title="Muse는 실제 최소 호출 1회를 사용합니다">
               <RefreshCw size={12} />
               {refreshing ? "새로고침 중" : "새로고침"}
             </button>

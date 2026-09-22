@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { ImageAttachment } from "../shared/attachments";
+import type { ProviderUsage } from "../shared/usageLimits";
 import { approvalAnswers } from "../shared/approvalRequest";
 import type { TurnTokenBreakdown } from "../shared/tokenUsage";
 import { currentSpawnHost, shortCwd, spawnFailureSummary } from "../shared/sessionSpawn";
@@ -7,6 +8,7 @@ import { errorEventPayload } from "./environmentError";
 import type { ClaudeEffort, ClaudeNormalizedEvent, ClaudeSessionSnapshot, HarnessCommand } from "./events";
 import { resolveMuseCli } from "./museCli";
 import { museUsageWindows } from "./museUsage";
+import { probeMuseSubscriptionUsage } from "./museUsageProbe";
 import {
   MuseMspSession,
   type MuseApprovalRequest,
@@ -248,6 +250,19 @@ export class MuseAdapter extends EventEmitter {
     }
   }
 
+  /** Explicit user refresh: make one isolated minimal provider call first. */
+  async probeUsageLimits(): Promise<ProviderUsage | undefined> {
+    if (this.disposed) return;
+    const usage = await probeMuseSubscriptionUsage({
+      cwd: this.options.cwd,
+      executablePath: this.options.executablePath,
+      model: this.desiredModel,
+      cliResolver: this.options.cliResolver,
+      sessionFactory: this.options.sessionFactory,
+    });
+    return this.emitMuseUsage(usage);
+  }
+
   respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): boolean {
     const userInput = this.pendingUserInputs.get(requestId);
     if (userInput) {
@@ -351,17 +366,24 @@ export class MuseAdapter extends EventEmitter {
     }
   }
 
-  private emitMuseUsage(payload: unknown): void {
+  private emitMuseUsage(payload: unknown): ProviderUsage {
     const windows = museUsageWindows(payload);
+    const updatedAt = Date.now();
     this.emitEvent({
       type: "usage_limit",
       provider: "muse",
       windows,
       available: windows.length > 0 ? true : undefined,
       sourceId: this.options.usageSourceId,
-      at: now(),
+      at: new Date(updatedAt).toISOString(),
     });
     this.lastUsageStatus = "";
+    return {
+      provider: "muse",
+      windows,
+      available: windows.length > 0 ? true : undefined,
+      updatedAt,
+    };
   }
 
   private emitUsageUnavailable(detail: string): void {
