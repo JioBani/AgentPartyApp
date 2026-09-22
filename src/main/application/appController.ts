@@ -1686,7 +1686,14 @@ export class AppController {
       // process cannot make.
       throw new Error("이 프로세스는 승인 요청 색인을 보유하지 않습니다 (데스크톱 앱에서 호출하세요).");
     }
-    const pending = approvals.pending(this.globalPartyMode() ? this.partyStorageWorkspace(workspacePath || "") : workspacePath);
+    // No workspace means ALL approvals on this desktop. In global-party mode
+    // the old `workspacePath || ""` conversion turned that into the hidden
+    // party-store directory, dropping approvals first observed on a WSL/SSH
+    // engine even though this endpoint is explicitly the cross-workspace list.
+    const filter = workspacePath === undefined
+      ? undefined
+      : this.globalPartyMode() ? this.partyStorageWorkspace(workspacePath) : workspacePath;
+    const pending = approvals.pending(filter);
     const namesByWorkspace = new Map<string, Map<string, string>>();
     const namesFor = async (workspace: string): Promise<Map<string, string>> => {
       const cached = namesByWorkspace.get(workspace);

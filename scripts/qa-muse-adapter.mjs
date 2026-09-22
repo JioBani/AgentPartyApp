@@ -48,6 +48,7 @@ const sessionFactory = (options) => {
     async answerUserInput(request, answers) { calls.push({ method: "answer", request, answers }); },
     async cancelUserInput(request) { calls.push({ method: "cancel", request }); },
     async listSkills() { return { skills: [{ selector: "review", displayName: "Review", description: "Review changes", source: "user" }] }; },
+    async listPending() { return { approvals: [], userInputs: [] }; },
     dispose() { calls.push({ method: "dispose" }); },
   };
 };
@@ -108,6 +109,19 @@ assert(events.some((event) => event.type === "approval_request" && event.request
 assert.equal(adapter.respondApproval("approval-1", "allow"), true);
 await waitFor(() => calls.some((call) => call.method === "approval"));
 assert.equal(calls.find((call) => call.method === "approval").choiceId, "allow-once");
+
+wire.onNotification("approval/requested", {
+  approvalId: "approval-notification", sessionId: "muse-session-qa", itemId: "tool-3", toolName: "mcp__agentparty_app__list",
+  rawArgs: "{}", subject: { kind: "toolAction", toolName: "mcp__agentparty_app__list" }, currentRequirementId: { approvalId: "approval-notification", sourceIndex: 0 },
+  availableChoices: [{ choiceId: "allow-notification", decision: "approved", label: "Allow", scope: "once" }, { choiceId: "abort-notification", decision: "abort", label: "Reject", scope: "once" }],
+});
+assert(events.some((event) => event.type === "approval_request" && event.requestId === "approval-notification"), "durable approval/requested notifications reach the approval UI");
+const approvalEventCount = events.filter((event) => event.type === "approval_request" && event.requestId === "approval-notification").length;
+wire.onNotification("approval/updated", { approvalId: "approval-notification", rawArgs: "{\"scope\":\"updated\"}" });
+assert.equal(events.filter((event) => event.type === "approval_request" && event.requestId === "approval-notification").length, approvalEventCount + 1,
+  "approval updates refresh the visible request instead of being deduplicated");
+assert.equal(adapter.respondApproval("approval-notification", "allow"), true);
+await waitFor(() => calls.some((call) => call.method === "approval" && call.choiceId === "allow-notification"));
 
 adapter.setEffort("xhigh");
 adapter.setPermissionMode("plan");

@@ -141,6 +141,7 @@ export class MuseAdapter extends EventEmitter {
     });
     this.emitSpawn("running", undefined, actualModel);
     await this.refreshSkills();
+    await this.refreshPendingRequests();
   }
 
   sendUserTurn(text: string, attachments?: ImageAttachment[]): void {
@@ -255,39 +256,10 @@ export class MuseAdapter extends EventEmitter {
 
   private onServerRequest(method: string, params: any): void {
     if (method === "approval/request") {
-      const request = params as MuseApprovalRequest;
-      this.pendingApprovals.set(request.approvalId, request);
-      let input: unknown = request.rawArgs;
-      try { input = JSON.parse(request.rawArgs); } catch { input = { rawArgs: request.rawArgs }; }
-      this.emitEvent({
-        type: "approval_request",
-        requestId: request.approvalId,
-        toolName: request.toolName,
-        input: { ...(input && typeof input === "object" ? input as object : { value: input }), subject: request.subject },
-        title: request.toolName,
-        description: approvalDescription(request.subject),
-        suggestions: request.availableChoices,
-        blockedPath: typeof request.subject?.path === "string" ? request.subject.path : undefined,
-        at: now(),
-      });
+      this.rememberApproval(params as MuseApprovalRequest);
     } else if (method === "userInput/request") {
-      const request = params as MuseUserInputRequest;
-      this.pendingUserInputs.set(request.userInputId, request);
-      this.emitEvent({
-        type: "approval_request",
-        requestId: request.userInputId,
-        toolName: "AskUserQuestion",
-        input: { questions: request.questions.map((question) => ({
-          question: question.question,
-          header: question.header,
-          options: question.options,
-          multiSelect: question.selection.mode === "multiple",
-        })) },
-        title: "Question",
-        at: now(),
-      });
+      this.rememberUserInput(params as MuseUserInputRequest);
     }
-    this.patch({ pendingApprovalCount: this.pendingApprovals.size + this.pendingUserInputs.size });
   }
 
   private onNotification(method: string, params: any): void {
@@ -323,10 +295,22 @@ export class MuseAdapter extends EventEmitter {
       case "session/tokenUsage":
         this.turnUsage.set(String(params.turnId || ""), usageBreakdown(params));
         break;
+      case "approval/requested":
+        this.rememberApproval(params as MuseApprovalRequest);
+        break;
+      case "approval/updated": {
+        const previous = this.pendingApprovals.get(String(params.approvalId));
+        if (previous) this.rememberApproval({ ...previous, ...params } as MuseApprovalRequest);
+        else void this.refreshPendingRequests();
+        break;
+      }
       case "approval/resolved":
         this.pendingApprovals.delete(String(params.approvalId));
         this.emitEvent({ type: "approval_resolved", requestId: String(params.approvalId), decision: /denied|abort/i.test(String(params.decision)) ? "deny" : "allow", at: now() });
         this.patch({ pendingApprovalCount: this.pendingApprovals.size + this.pendingUserInputs.size });
+        break;
+      case "userInput/requested":
+        this.rememberUserInput(params as MuseUserInputRequest);
         break;
       case "userInput/settled":
         this.pendingUserInputs.delete(String(params.userInputId));
@@ -439,6 +423,73 @@ export class MuseAdapter extends EventEmitter {
     } catch (error) {
       this.emitEvent({ type: "diagnostic", severity: "warning", category: "muse-skills", title: "Muse Code skills could not be loaded", detail: String(error), at: now() });
     }
+  }
+
+  private async refreshPendingRequests(): Promise<void> {
+    if (!this.session) return;
+    try {
+      const result = await this.session.listPending();
+      for (const request of result.approvals || []) this.rememberApproval(request);
+      for (const request of result.userInputs || []) this.rememberUserInput(request);
+    } catch (error) {
+      this.emitEvent({ type: "diagnostic", severity: "warning", category: "muse-approvals", title: "Muse Code pending approvals could not be loaded", detail: String(error), at: now() });
+    }
+  }
+
+  private rememberApproval(request: MuseApprovalRequest): void {
+    const previous = this.pendingApprovals.get(request.approvalId);
+    this.pendingApprovals.set(request.approvalId, request);
+    const unchanged = previous
+      && JSON.stringify({
+        toolName: previous.toolName,
+        rawArgs: previous.rawArgs,
+        subject: previous.subject,
+        requirement: previous.currentRequirementId,
+        choices: previous.availableChoices,
+      }) === JSON.stringify({
+        toolName: request.toolName,
+        rawArgs: request.rawArgs,
+        subject: request.subject,
+        requirement: request.currentRequirementId,
+        choices: request.availableChoices,
+      });
+    if (unchanged) {
+      this.patch({ pendingApprovalCount: this.pendingApprovals.size + this.pendingUserInputs.size });
+      return;
+    }
+    let input: unknown = request.rawArgs;
+    try { input = JSON.parse(request.rawArgs); } catch { input = { rawArgs: request.rawArgs }; }
+    this.emitEvent({
+      type: "approval_request",
+      requestId: request.approvalId,
+      toolName: request.toolName,
+      input: { ...(input && typeof input === "object" ? input as object : { value: input }), subject: request.subject },
+      title: request.toolName,
+      description: approvalDescription(request.subject),
+      suggestions: request.availableChoices,
+      blockedPath: typeof request.subject?.path === "string" ? request.subject.path : undefined,
+      at: now(),
+    });
+    this.patch({ pendingApprovalCount: this.pendingApprovals.size + this.pendingUserInputs.size });
+  }
+
+  private rememberUserInput(request: MuseUserInputRequest): void {
+    if (this.pendingUserInputs.has(request.userInputId)) return;
+    this.pendingUserInputs.set(request.userInputId, request);
+    this.emitEvent({
+      type: "approval_request",
+      requestId: request.userInputId,
+      toolName: "AskUserQuestion",
+      input: { questions: request.questions.map((question) => ({
+        question: question.question,
+        header: question.header,
+        options: question.options,
+        multiSelect: question.selection.mode === "multiple",
+      })) },
+      title: "Question",
+      at: now(),
+    });
+    this.patch({ pendingApprovalCount: this.pendingApprovals.size + this.pendingUserInputs.size });
   }
 
   private emitEvent(event: ClaudeNormalizedEvent): void {

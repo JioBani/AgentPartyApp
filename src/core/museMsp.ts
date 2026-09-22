@@ -262,6 +262,10 @@ export class MuseMspSession {
 
   listSkills(): Promise<any> { return this.request("skill/list", { sessionId: this.sessionId }); }
 
+  listPending(): Promise<{ approvals?: MuseApprovalRequest[]; userInputs?: MuseUserInputRequest[] }> {
+    return this.request("approval/listPending", { sessionId: this.sessionId });
+  }
+
   dispose(): void {
     this.closed = true;
     this.failAll(new Error("Muse Code MSP session disposed."));
