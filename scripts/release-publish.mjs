@@ -196,12 +196,30 @@ await api("PATCH", `${API}/releases/${draft.id}`, {
   prerelease,
 });
 draft = await verifyDraft(draft, assets);
-const published = await api("PATCH", `${API}/releases/${draft.id}`, {
+let published = await api("PATCH", `${API}/releases/${draft.id}`, {
   name: tag,
   body: notes,
   draft: false,
   prerelease,
 });
+
+// GitHub can occasionally detach a newly published release onto an
+// `untagged-*` fallback even though the requested ref already exists. Repair
+// the association before testing public updater URLs: otherwise every asset
+// is uploaded successfully but users receive 404s at the canonical tag path.
+if (published.tag_name !== tag) {
+  console.warn(`GitHub published ${tag} as ${published.tag_name}; repairing the release tag association.`);
+  published = await api("PATCH", `${API}/releases/${draft.id}`, {
+    tag_name: tag,
+    name: tag,
+    body: notes,
+    draft: false,
+    prerelease,
+  });
+}
+if (published.tag_name !== tag) {
+  throw new Error(`Published release tag is ${published.tag_name}, expected ${tag}`);
+}
 
 const checks = [];
 for (const asset of assets) {
