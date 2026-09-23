@@ -1,6 +1,7 @@
 {
   "_about": "Single source of truth for model routing, leaderboard metrics and reasoning control. Anthropic is native on Claude Code and uses local Claude OAuth on Codex; OpenAI is native on Codex and uses local Codex OAuth on Claude Code; provider=openrouter models use OpenRouter on either harness. The selected harness process never changes. Add a model by adding one entry, then run `npm run catalog:publish` to ship it to all users without an app release (docs/기획 노트 — 원격 모델 카탈로그.md).",
   "schemaVersion": 1,
+  "revision": 2026092301,
   "models": [
     {
       "id": "claude-fable-5-1[1m]",
@@ -347,6 +348,30 @@
         "maxImages": 20,
         "maxBytesPerImage": 5242880
       }
+    },
+    {
+      "id": "GPT-6 Luna",
+      "label": "GPT-6 Luna",
+      "provider": "openai",
+      "codexModel": "gpt-6-luna",
+      "runtimeModel": "claude-gpt-6-luna",
+      "subscription": true,
+      "description": "Fast, cost-efficient GPT-6 coding model. Both harnesses use the signed-in Codex/ChatGPT subscription.",
+      "context": "1.05M",
+      "perf": 3,
+      "costTier": 1,
+      "inPerM": 0.1,
+      "cacheReadPerM": 0.01,
+      "cacheWritePerM": 0.125,
+      "outPerM": 0.5,
+      "serviceTierPricing": {
+        "priority": { "inPerM": 0.2, "cacheReadPerM": 0.02, "cacheWritePerM": 0.25, "outPerM": 1 },
+        "fast": { "inPerM": 0.2, "cacheReadPerM": 0.02, "cacheWritePerM": 0.25, "outPerM": 1 }
+      },
+      "reasoning": {
+        "effort": { "options": ["none", "low", "medium", "high", "xhigh", "max"], "default": "medium" }
+      },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "GPT-5.6 Sol",

@@ -3,7 +3,7 @@ import type { CodexModelDiscoveryState } from "./codexModels";
 import type { MuseModelDiscoveryState } from "./museModels";
 import type { CodexPolicy } from "./codexPolicy";
 import type { CursorPolicy } from "./cursorPolicy";
-import type { AutoCompactSetting } from "./autoCompact";
+import type { AutoCompactSetting, ModelAutoCompactSettings } from "./autoCompact";
 import type { IdleSleepSettings } from "./idleSleep";
 import type { ModelProviderDescriptor } from "./modelProviders";
 import type { GateReviewer, MemberGateOverride, PartyGate } from "./messageGate";
@@ -150,11 +150,13 @@ export interface AppSettings {
    */
   fonts: FontSettings;
   /**
-   * Global auto-compaction default inherited by any member without its own
-   * {@link PartyMember.autoCompact}. Edited in Settings → Runtime. See
+   * Global auto-compaction default inherited by models without their own
+   * setting and members without an override. Edited in Settings. See
    * `shared/autoCompact.ts`.
    */
   compactDefault: AutoCompactSetting;
+  /** Explicit catalog-model thresholds. Missing ids inherit compactDefault. */
+  modelAutoCompact: ModelAutoCompactSettings;
   /**
    * When to release a quiet member's harness process to reclaim its memory. A
    * member with {@link PartyMember.keepAwake} opts out. See `shared/idleSleep.ts`.
@@ -428,8 +430,8 @@ export interface PartyMember {
   /** The model's window size (tokens) captured alongside {@link lastContextTokens}. */
   lastContextWindow?: number;
   /**
-   * Per-member auto-compaction threshold. Undefined = inherit
-   * {@link AppSettings.compactDefault}. When on, the session auto-compacts once
+   * Per-member auto-compaction threshold. Undefined = inherit the model's
+   * setting, then {@link AppSettings.compactDefault}. When on, the session auto-compacts once
    * context crosses `at`% of the window. See `shared/autoCompact.ts`.
    */
   autoCompact?: AutoCompactSetting;

@@ -15,6 +15,7 @@
 import { PROVIDER_LABELS, routeProvider, type ProviderId } from "./modelCatalog";
 import type { RouteEntry } from "./modelMeters";
 import { routeKey } from "./routes";
+import { modelCatalog, resolveCatalogModel } from "../../shared/modelCatalog";
 
 /** Provider order in the list; unlisted providers fall into `custom`. */
 const PROVIDER_ORDER: ProviderId[] = ["anthropic", "openai", "cursor", "openrouter", "deepseek", "xai", "meta", "bai", "custom"];
@@ -90,7 +91,16 @@ export function buildCatalogView({ entries, query, favorites, provOpen, selected
   const searching = needle.length > 0;
 
   // 1. filter
-  const visible = searching ? entries.filter((entry) => matches(entry, needle)) : entries;
+  // Live Codex discovery arrives before bundled routes and has provider-owned
+  // ordering. Display known models in the shared catalog's release order on
+  // every harness; keep undiscovered/custom entries stable after them.
+  const catalogOrder = new Map(modelCatalog().map((model, index) => [model.id, index]));
+  const ordered = [...entries].sort((a, b) => {
+    const aOrder = catalogOrder.get(resolveCatalogModel(a.route.model)?.id || "") ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = catalogOrder.get(resolveCatalogModel(b.route.model)?.id || "") ?? Number.MAX_SAFE_INTEGER;
+    return aOrder - bOrder;
+  });
+  const visible = searching ? ordered.filter((entry) => matches(entry, needle)) : ordered;
 
   // 2. lift favourites to the top — WITHOUT removing them from their provider
   // group. A starred model is shown twice on purpose: the pinned section is a
@@ -148,7 +158,7 @@ export function buildCatalogView({ entries, query, favorites, provOpen, selected
 
   return {
     groups,
-    total: entries.length,
+    total: ordered.length,
     matched: visible.length,
     favoriteCount: favoriteEntries.length,
     searching,

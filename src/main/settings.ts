@@ -4,7 +4,7 @@ import { getUserDataDir } from "./userDataDir";
 import { AppSettings, HarnessDefaults, HarnessId, HARNESS_IDS } from "../shared/types";
 import { DEFAULT_CODEX_POLICY } from "../shared/codexPolicy";
 import { DEFAULT_CURSOR_POLICY, cursorPolicyOf } from "../shared/cursorPolicy";
-import { DEFAULT_AUTO_COMPACT, normalizeAutoCompact } from "../shared/autoCompact";
+import { DEFAULT_AUTO_COMPACT, normalizeAutoCompact, normalizeModelAutoCompact } from "../shared/autoCompact";
 import { DEFAULT_IDLE_SLEEP, sanitizeIdleSleep } from "../shared/idleSleep";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
 import { BAI_API_KEY_ENV } from "../shared/baiDefaults";
@@ -83,6 +83,7 @@ const defaults: AppSettings = {
   sidebarDrawers: { party: { ...DEFAULT_SIDEBAR_DRAWERS.party }, member: { ...DEFAULT_SIDEBAR_DRAWERS.member } },
   fonts: { ...DEFAULT_FONT_SETTINGS },
   compactDefault: { ...DEFAULT_AUTO_COMPACT },
+  modelAutoCompact: {},
   idleSleep: { ...DEFAULT_IDLE_SLEEP },
   gateDefaults: { ...DEFAULT_GATE_REVIEWER },
   composer: { ...DEFAULT_COMPOSER_SETTINGS },
@@ -234,6 +235,7 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
     }
   }
   const compactDefault = normalizeAutoCompact(withRuntimeOverrides.compactDefault) || { ...DEFAULT_AUTO_COMPACT };
+  const modelAutoCompact = normalizeModelAutoCompact(withRuntimeOverrides.modelAutoCompact);
   const gateDefaults = normalizeGateDefaults(withRuntimeOverrides.gateDefaults);
   const discord = normalizeDiscordSettings(withRuntimeOverrides.discord || DEFAULT_DISCORD_SETTINGS);
   const composer = normalizeComposerSettings(withRuntimeOverrides.composer);
@@ -258,7 +260,7 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   // start with a prompt the settings screen would not show.
   const partyPrimer = normalizePartyPrimerSettings(withRuntimeOverrides.partyPrimer);
   const sidebarDrawers = normalizeSidebarDrawers(withRuntimeOverrides.sidebarDrawers);
-  return { ...withRuntimeOverrides, locale: normalizeAppLocale(withRuntimeOverrides.locale), updateChannel, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, favoriteParties, sidebarGroupFolds, discord, theme, fonts, mobile, partyPrimer, sidebarDrawers, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  return { ...withRuntimeOverrides, locale: normalizeAppLocale(withRuntimeOverrides.locale), updateChannel, harnessDefaults, compactDefault, modelAutoCompact, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, favoriteParties, sidebarGroupFolds, discord, theme, fonts, mobile, partyPrimer, sidebarDrawers, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

@@ -5,7 +5,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronRight, Clock, Lightbulb, Search, SlidersHorizontal, Star, X } from "lucide-react";
 import { findRoute, type RouteCapabilities, type RouteLike, routeKey } from "./routes";
 import { AutoCompactEditor } from "./AutoCompactEditor";
-import { DEFAULT_AUTO_COMPACT, type AutoCompactSetting } from "../../shared/autoCompact";
+import { DEFAULT_AUTO_COMPACT, type AutoCompactSetting, type ModelAutoCompactSettings } from "../../shared/autoCompact";
+import { resolveCatalogModel } from "../../shared/modelCatalog";
 import { VisionTag } from "./VisionTag";
 import { PROVIDER_DOTS, PROVIDER_LABELS, modelView, routeProvider } from "./modelCatalog";
 import { CostMeter, PerfMeter, type RouteEntry } from "./modelMeters";
@@ -28,6 +29,8 @@ export interface ModelCatalogConfig {
   debug?: boolean;
   /** Auto-compact editor (Workbench-only). */
   autoCompact?: boolean;
+  /** Settings-only editor for a catalog model's inherited/explicit threshold. */
+  modelAutoCompact?: boolean;
   /** Per-member default for its outbound member messages. */
   outboundInterrupt?: boolean;
 }
@@ -45,6 +48,7 @@ export interface ModelCatalogValue {
   thinkingBudget?: number;
   debug?: boolean;
   autoCompact?: AutoCompactSetting;
+  autoCompactMode?: "inherit" | "custom";
   /** Undefined means inherit the Runtime default. */
   outboundInterrupt?: boolean;
 }
@@ -64,6 +68,8 @@ interface ModelCatalogModalProps {
   currentHarness?: string;
   /** Context window (tokens) for the auto-compact editor's ratio. */
   contextWindow?: number;
+  modelAutoCompactSettings?: ModelAutoCompactSettings;
+  globalCompactDefault?: AutoCompactSetting;
   applyLabel?: string;
   onApply: (next: ModelCatalogValue) => void;
   onClose: () => void;
@@ -128,6 +134,8 @@ export function ModelCatalogModal({
   harnessLocked = false,
   currentHarness = "claude-code",
   contextWindow,
+  modelAutoCompactSettings,
+  globalCompactDefault,
   applyLabel = "Apply",
   onApply,
   onClose,
@@ -260,6 +268,15 @@ export function ModelCatalogModal({
   const [debug, setDebug] = useState(Boolean(value.debug));
   const initialCompact = value.autoCompact ?? DEFAULT_AUTO_COMPACT;
   const [compact, setCompact] = useState<AutoCompactSetting>(initialCompact);
+  const selectedModelId = resolveCatalogModel(selected?.route.model || "")?.id || selected?.route.model || "";
+  const modelCompactInitial = modelAutoCompactSettings?.[selectedModelId];
+  const modelCompactBaseline = modelCompactInitial || globalCompactDefault || DEFAULT_AUTO_COMPACT;
+  const [compactMode, setCompactMode] = useState<"inherit" | "custom">(modelCompactInitial ? "custom" : "inherit");
+  useEffect(() => {
+    if (!config.modelAutoCompact) return;
+    setCompactMode(modelCompactInitial ? "custom" : "inherit");
+    setCompact(modelCompactBaseline);
+  }, [selectedModelId, modelCompactInitial, globalCompactDefault, config.modelAutoCompact]);
   const [outboundInterrupt, setOutboundInterrupt] = useState<boolean | undefined>(value.outboundInterrupt);
 
   // Re-stage reasoning when the selected model (and thus its caps) changes.
@@ -334,6 +351,7 @@ export function ModelCatalogModal({
     (config.thinking && thinkingCap?.supported && (thinkingCap.modes || []).length > 0) ||
     config.debug ||
     config.autoCompact ||
+    config.modelAutoCompact ||
     config.outboundInterrupt,
   );
   const thinkingOn = Boolean(thinkingMode) && thinkingMode !== "disabled";
@@ -347,6 +365,7 @@ export function ModelCatalogModal({
     (config.thinking && thinkingCap?.supported && thinkingMode !== baselineThinking(selectedKey)) ||
     (config.debug && debug !== Boolean(value.debug)) ||
     (config.autoCompact && (compact.on !== initialCompact.on || compact.at !== initialCompact.at)) ||
+    (config.modelAutoCompact && (compactMode !== (modelCompactInitial ? "custom" : "inherit") || (compactMode === "custom" && (compact.on !== modelCompactBaseline.on || compact.at !== modelCompactBaseline.at)))) ||
     (config.outboundInterrupt && outboundInterrupt !== value.outboundInterrupt);
 
   function apply() {
@@ -359,7 +378,8 @@ export function ModelCatalogModal({
       thinkingMode: config.thinking && thinkingCap?.supported ? thinkingMode : undefined,
       thinkingBudget: config.thinking && showBudget ? budget : undefined,
       debug: config.debug ? debug : undefined,
-      autoCompact: config.autoCompact ? compact : undefined,
+      autoCompact: config.modelAutoCompact ? (compactMode === "custom" ? compact : undefined) : config.autoCompact ? compact : undefined,
+      autoCompactMode: config.modelAutoCompact ? compactMode : undefined,
       outboundInterrupt: config.outboundInterrupt ? outboundInterrupt : undefined,
     });
     onClose();
@@ -743,6 +763,18 @@ export function ModelCatalogModal({
                     title={localized("STR-1895")}
                     onChange={setCompact}
                   />
+                )}
+
+                {config.modelAutoCompact && (
+                  <div className="wb-detail-section">
+                    <div className="wb-detail-section-head"><strong>모델별 자동 압축</strong><span>선택한 모델에 적용</span></div>
+                    <select className="set-select" aria-label="모델 자동 압축 설정 방식" value={compactMode} onChange={(event) => setCompactMode(event.target.value as "inherit" | "custom")}>
+                      <option value="inherit">전역 설정 따르기</option>
+                      <option value="custom">개별 설정</option>
+                    </select>
+                    {compactMode === "custom" && <AutoCompactEditor setting={compact} contextWindow={contextWindow} onChange={setCompact} />}
+                    {compactMode === "inherit" && <small>전역 설정: {(globalCompactDefault || DEFAULT_AUTO_COMPACT).on ? `켜짐 · ${(globalCompactDefault || DEFAULT_AUTO_COMPACT).at}%` : "꺼짐"}</small>}
+                  </div>
                 )}
 
                 {config.outboundInterrupt && (

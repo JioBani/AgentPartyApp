@@ -1096,6 +1096,19 @@ and 1.2 standard/contributor routes). A discovery error is surfaced and keeps
 approval mode are mutable during a live session. The native login is owned by
 the Muse CLI; use `muse login` (or `/login` in its TUI).
 
+`compactDefault` is the global auto-compaction setting. `modelAutoCompact` is a
+map of catalog model ids to explicit `{ "on": boolean, "at": number }` settings,
+for example `{ "modelAutoCompact": { "GPT-6 Luna": { "on": true, "at": 75 } } }`.
+Set either field through `POST /api/settings`. Removing a model id from the map
+makes that model follow `compactDefault` again. The effective order is member
+override, model setting, then global default. Existing member overrides and
+global settings retain their behavior after upgrade; no data migration is needed.
+
+The bundled catalog has a monotonically increasing `revision`. An older remote
+catalog or cache is reported in `GET /api/models/catalog` and cannot replace
+newer models bundled with the app. Increment the revision when publishing a new
+catalog snapshot.
+
 `favoriteModels` is the list of catalog model **ids** the user has starred. The
 model catalog pins them above the provider groups, in catalog order. It drives
 the same path as the star button in the catalog UI, e.g.
@@ -3006,7 +3019,8 @@ Sets the member's per-member auto-compaction threshold, persisted to the member
 "at": 65 } }` sets it (`at` = % of the model's context window; 10% and below /
 95% and above can't be set, so it clamps to the 11–94 integer band);
 `{ "autoCompact": null }` clears the override so the member
-inherits the global `compactDefault` (see `POST /api/settings`). When on, the
+inherits its model's `modelAutoCompact` setting, then the global
+`compactDefault` (see `POST /api/settings`). When on, the
 session auto-compacts once occupancy crosses `at`%. Backs the toolbar compact
 pill, the threshold modal, the runtime modal's auto-compact block, and the
 sidebar `⇲ NN%` badge. The global default is set via `POST /api/settings`

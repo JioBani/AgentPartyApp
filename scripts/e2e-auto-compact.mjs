@@ -50,6 +50,8 @@ async function main() {
   try {
     await waitForApi();
     assert((await getJson("/api/health")).ok, "health ok");
+    const modelRoutes = (await getJson("/api/models")).modelRoutes || [];
+    assert(modelRoutes.some((route) => route.model === "gpt-6-luna") && modelRoutes.some((route) => route.model === "claude-opus-5-5[1m]"), "bundled Luna 6 and Opus 5.5 survive the older published catalog");
 
     await post("/api/qa/reset").catch(() => {});
     await post("/api/qa/seed", { party: "auto-compact e2e", members: [{ name: "backend", role: "r" }, { name: "frontend", role: "r" }] });
@@ -80,6 +82,34 @@ async function main() {
     await post("/api/settings", { compactDefault: { on: true, at: 75 } });
     const state = await getJson("/api/state");
     assert(state.settings?.compactDefault?.on === true && state.settings.compactDefault.at === 75, `global compactDefault persists (${JSON.stringify(state.settings?.compactDefault)})`);
+
+    // Model overrides use the same public settings route as the Settings UI.
+    await post("/api/settings", { modelAutoCompact: { "GPT-6 Luna": { on: true, at: 65 } } });
+    const modelSettings = (await getJson("/api/state")).settings?.modelAutoCompact;
+    assert(modelSettings?.["GPT-6 Luna"]?.at === 65, "model threshold persists through the real settings route");
+    await post("/api/navigation", { view: "agent", tab: "general" });
+    const openedModelSettings = await post("/api/capture", { click: '[data-settings-card="auto-compact"] .set-btn-accent' });
+    assert(openedModelSettings.applied?.clicked === true, "Settings opens the model catalog's compact editor");
+    const modeControl = await post("/api/measure", { selector: 'select[aria-label="모델 자동 압축 설정 방식"]' });
+    assert(modeControl.count === 1 && modeControl.texts?.[0]?.includes("전역 설정 따르기") && modeControl.texts?.[0]?.includes("개별 설정"), "catalog offers inherit and explicit model settings");
+    await post("/api/capture", { click: '[data-model="gpt-6-luna"] .wb-model-pick' });
+    const modelEditor = await post("/api/measure", { selector: ".wb-compact-editor" });
+    assert(modelEditor.count === 1, "selecting Luna 6 shows its saved explicit threshold editor");
+    await post("/api/settings", { theme: "agentparty-dark" });
+    await delay(350);
+    const darkEditor = await post("/api/measure", { selector: ".wb-compact-editor" });
+    assert(darkEditor.theme === "agentparty-dark", "model editor renders under the dark theme");
+    await post("/api/qa/window/bounds", { width: 1100, height: 760 });
+    const narrowModal = await post("/api/measure", { selector: ".wb-modal-catalog" });
+    const modalBox = narrowModal.elements?.[0]?.box;
+    assert(modalBox && modalBox.left >= 0 && modalBox.right <= narrowModal.viewport.width && modalBox.bottom <= narrowModal.viewport.height, "model editor stays inside a narrow window");
+    const modelShot = await post("/api/capture", { path: path.join(os.tmpdir(), "auto-compact-model-e2e.png") });
+    assert(modelShot.ok && modelShot.bytes > 0, "captured the model setting in dark theme");
+    await post("/api/capture", { click: ".wb-compact-editor .wb-switch" });
+    await post("/api/capture", { click: ".wb-modal-foot .wb-btn-accent" });
+    await delay(300);
+    const savedModelSetting = (await getJson("/api/state")).settings?.modelAutoCompact?.["GPT-6 Luna"];
+    assert(savedModelSetting?.on === false && savedModelSetting.at === 65, "changing the model setting in the UI saves through the shared settings route");
 
     // 4) Render the workbench with the member open and drive live context
     //    occupancy so the header context DONUT shows a real ring: 130K/200K = 65%,
@@ -114,7 +144,7 @@ async function memberOf(name) {
 
 /** Reads the member's persisted autoCompact straight off the on-disk party.json. */
 function diskAutoCompact(name) {
-  const dir = path.join(ws, ".agent_party_app", "parties");
+  const dir = path.join(userData, "party-store", ".agent_party_app", "parties");
   if (!fs.existsSync(dir)) return undefined;
   for (const id of fs.readdirSync(dir)) {
     const file = path.join(dir, id, "party.json");

@@ -719,6 +719,7 @@ export function App() {
         transcriptReady,
         routes,
         state.settings.compactDefault,
+        state.settings.modelAutoCompact,
         compacting,
       ];
       const cached = cache.get(key);
@@ -736,6 +737,7 @@ export function App() {
         transcriptReady,
         routes,
         compactDefault: state.settings.compactDefault,
+        modelAutoCompact: state.settings.modelAutoCompact,
         compacting,
         failedSends,
       });
@@ -744,7 +746,7 @@ export function App() {
     });
     viewCacheRef.current = nextCache;
     return result;
-  }, [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, revealedMembers, routes, state.settings.compactDefault, compactingByMember, failedSendsByMember]);
+  }, [members, sessions, logsBySession, subagentsBySession, seenLengths, restoredByMember, revealedMembers, routes, state.settings.compactDefault, state.settings.modelAutoCompact, compactingByMember, failedSendsByMember]);
 
   // Auto-compaction trigger: when a member's live occupancy crosses its
   // threshold, fire ONE compaction (hysteresis via autoArmedRef so it never
@@ -1564,6 +1566,14 @@ export function App() {
 
   async function saveCompactDefault(setting: AutoCompactSetting) {
     const settings = await window.agentParty.updateSettings({ compactDefault: setting });
+    setState((current) => ({ ...current, settings }));
+  }
+
+  async function saveModelAutoCompact(modelId: string, setting: AutoCompactSetting | undefined) {
+    const modelAutoCompact = { ...state.settings.modelAutoCompact };
+    if (setting) modelAutoCompact[modelId] = setting;
+    else delete modelAutoCompact[modelId];
+    const settings = await window.agentParty.updateSettings({ modelAutoCompact });
     setState((current) => ({ ...current, settings }));
   }
 
@@ -2426,6 +2436,7 @@ export function App() {
                   onSaveHarnessDefaults={saveHarnessDefaults}
                   onSetDefaultHarness={setDefaultHarness}
                   onSaveCompactDefault={saveCompactDefault}
+                  onSaveModelAutoCompact={saveModelAutoCompact}
                   onSaveIdleSleep={saveIdleSleep}
                   onSaveGateDefault={saveGateDefault}
                   onSavePartyPrimer={savePartyPrimerSection}

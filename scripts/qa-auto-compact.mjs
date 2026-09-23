@@ -27,7 +27,7 @@ async function loadModule(entry, name) {
 const A = await loadModule("src/shared/autoCompact.ts", "auto-compact.mjs");
 const {
   AUTO_COMPACT_MIN, AUTO_COMPACT_MAX, DEFAULT_AUTO_COMPACT,
-  clampAutoCompactAt, normalizeAutoCompact, resolveAutoCompact, thresholdTokens, shouldAutoCompact,
+  clampAutoCompactAt, normalizeAutoCompact, normalizeModelAutoCompact, resolveAutoCompact, thresholdTokens, shouldAutoCompact,
 } = A;
 
 console.log("\nAuto-compact pure logic:");
@@ -57,6 +57,10 @@ assert(normalizeAutoCompact({ at: 90 }).on === false, "missing on → false");
 assert(resolveAutoCompact({ on: true, at: 70 }, { on: false, at: 90 }).at === 70, "member's own setting wins");
 assert(resolveAutoCompact(undefined, { on: true, at: 90 }).at === 90, "no member setting → global default");
 assert(resolveAutoCompact(undefined, undefined).on === false, "no setting + no default → built-in (off)");
+
+assert(resolveAutoCompact(undefined, { on: false, at: 80 }, { on: true, at: 65 }).at === 65, "model setting wins over global default");
+assert(resolveAutoCompact({ on: false, at: 90 }, { on: true, at: 80 }, { on: true, at: 65 }).on === false, "existing member override wins over model setting");
+assert(normalizeModelAutoCompact({ "GPT-6 Luna": { on: true, at: 65 }, broken: null })["GPT-6 Luna"]?.at === 65, "model settings normalize while invalid entries are ignored");
 
 // token estimate
 assert(thresholdTokens(80, 200000) === 160000, "80% of 200K = 160K tokens");

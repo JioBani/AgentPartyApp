@@ -56,6 +56,7 @@ export const EMPTY_GUIDE_SNAPSHOT: GuideSnapshot = {
       theme: DEFAULT_THEME_PREFERENCE,
       fonts: { ...DEFAULT_FONT_SETTINGS },
       compactDefault: { on: false, at: 80 },
+      modelAutoCompact: {},
       idleSleep: { ...DEFAULT_IDLE_SLEEP },
       gateDefaults: { model: "haiku", effort: "low" },
       composer: { ...DEFAULT_COMPOSER_SETTINGS },

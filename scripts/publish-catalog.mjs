@@ -45,6 +45,9 @@ try {
 if (payload.schemaVersion !== SCHEMA_VERSION) {
   fail(`schemaVersion must be ${SCHEMA_VERSION}, got ${JSON.stringify(payload.schemaVersion)}`);
 }
+if (!Number.isSafeInteger(payload.revision) || payload.revision < 1) {
+  fail(`revision must be a positive integer, got ${JSON.stringify(payload.revision)}`);
+}
 if (!Array.isArray(payload.models) || payload.models.length === 0) {
   fail("models must be a non-empty array");
 }
@@ -87,6 +90,8 @@ if (current.ok) {
   const body = await current.json();
   sha = body.sha;
   const remoteContent = Buffer.from(body.content || "", "base64").toString("utf8");
+  const remoteRevision = JSON.parse(remoteContent).revision || 0;
+  if (remoteRevision > payload.revision) fail(`remote revision ${remoteRevision} is newer than source revision ${payload.revision}`);
   if (remoteContent === raw) {
     console.log(`catalog:publish — remote is already up to date (${payload.models.length} models). Nothing to do.`);
     process.exit(0);

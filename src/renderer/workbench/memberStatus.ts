@@ -1,8 +1,8 @@
 import type { PartyMember, SessionView } from "../../shared/types";
 import { deriveMemberStatus } from "../../shared/memberDisplayStatus";
 import { memberColor } from "../theme/memberColors";
-import { parseContextTokens } from "../../shared/modelCatalog";
-import { resolveAutoCompact, type AutoCompactSetting } from "../../shared/autoCompact";
+import { parseContextTokens, resolveCatalogModel } from "../../shared/modelCatalog";
+import { resolveAutoCompact, type AutoCompactSetting, type ModelAutoCompactSettings } from "../../shared/autoCompact";
 import { harnessCapabilities } from "../../shared/harnessCapabilities";
 import type { MemberStatus, MemberView, Subagent, TranscriptBlock } from "./types";
 import { findRoute, type RouteLike, type RouteVision } from "./routes";
@@ -83,6 +83,7 @@ export interface BuildMemberViewInput {
   routes?: RouteLike[];
   /** Global auto-compact default a member without its own setting inherits. */
   compactDefault?: AutoCompactSetting;
+  modelAutoCompact?: ModelAutoCompactSettings;
   /** True while this member is mid-compaction (transient toolbar spinner). */
   compacting?: boolean;
   /** Messages this window could not send (see {@link FailedSend}). */
@@ -177,7 +178,7 @@ export function thresholdWindowFor(view: MemberView): number | undefined {
 }
 
 /** Assembles the per-member view consumed by panels, tabs, and the sidebar. */
-export function buildMemberView({ member, sessions, transcriptBySession, subagentsBySession, seenCount, restored, transcriptReady = true, routes, compactDefault, compacting, failedSends }: BuildMemberViewInput): MemberView {
+export function buildMemberView({ member, sessions, transcriptBySession, subagentsBySession, seenCount, restored, transcriptReady = true, routes, compactDefault, modelAutoCompact, compacting, failedSends }: BuildMemberViewInput): MemberView {
   const session = member.sessionId ? sessions.find((item) => item.id === member.sessionId) : undefined;
   const subagents = session ? (subagentsBySession?.[session.id] || []) : [];
   // A live session's transcript wins (it is seeded from the restored history on
@@ -210,7 +211,7 @@ export function buildMemberView({ member, sessions, transcriptBySession, subagen
     vision: visionFor(model, routes),
     effortOptions: effortOptionsFor(model, routes),
     context: contextFor(session, member, model, String(member.model || ""), routes),
-    autoCompact: resolveAutoCompact(member.autoCompact, compactDefault),
+    autoCompact: resolveAutoCompact(member.autoCompact, compactDefault, modelAutoCompact?.[resolveCatalogModel(model)?.id || model]),
     compacting: Boolean(compacting),
   };
 }

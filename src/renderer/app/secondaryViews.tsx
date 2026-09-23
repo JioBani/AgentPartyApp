@@ -45,6 +45,7 @@ import { FontPicker } from "../workbench/FontPicker";
 import { RouteLike } from "../workbench/routes";
 import type { DiscordBridgeStatus } from "../../shared/discordBridge";
 import { ModelCatalogModal } from "../workbench/ModelCatalogModal";
+import { resolveCatalogModel } from "../../shared/modelCatalog";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /** Maps an auth provider status to a badge (label + tone + whether it's a check). */
@@ -654,7 +655,7 @@ const AGENT_TABS: Array<{ id: AgentTabId; label: MessageKey; icon: ReactNode }> 
   { id: "discord", label: "runtime.tab.discord", icon: <DiscordGlyph size={14} /> },
 ];
 
-export function AgentSettingsView({ routes, settings, codexModels, museModels, discord, onRefreshCodexModels, onRefreshMuseModels, onSaveHarnessDefaults, onSetDefaultHarness, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, tabRequest }: {
+export function AgentSettingsView({ routes, settings, codexModels, museModels, discord, onRefreshCodexModels, onRefreshMuseModels, onSaveHarnessDefaults, onSetDefaultHarness, onSaveCompactDefault, onSaveModelAutoCompact, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, tabRequest }: {
   routes: RouteLike[];
   settings: InitialAppState["settings"];
   codexModels?: CodexModelDiscoveryState;
@@ -665,6 +666,7 @@ export function AgentSettingsView({ routes, settings, codexModels, museModels, d
   onSaveHarnessDefaults: (harnessId: HarnessId, patch: Partial<HarnessDefaults>) => void;
   onSetDefaultHarness: (harnessId: HarnessId) => void;
   onSaveCompactDefault: (setting: AutoCompactSetting) => void;
+  onSaveModelAutoCompact: (modelId: string, setting: AutoCompactSetting | undefined) => void;
   onSaveIdleSleep: (setting: IdleSleepSettings) => void;
   onSaveGateDefault: (reviewer: GateReviewer) => void;
   /** One primer section at a time — text override and/or on-off. */
@@ -679,6 +681,15 @@ export function AgentSettingsView({ routes, settings, codexModels, museModels, d
 }) {
   const { t } = useI18n();
   const [tab, setTab] = useState<AgentTabId>("general");
+  const [modelCompactOpen, setModelCompactOpen] = useState(false);
+  const compactRoutes = useMemo(() => {
+    const byModel = new Map<string, RouteLike>();
+    for (const route of routes) {
+      const id = resolveCatalogModel(route.model)?.id || route.model;
+      if (!byModel.has(id)) byModel.set(id, route);
+    }
+    return [...byModel.values()];
+  }, [routes]);
   // Which harness the 하네스 기본값 tab is showing. Starts on the harness new
   // members are created with, since that is the one whose defaults matter.
   const [harnessTab, setHarnessTab] = useState<HarnessId>(settings.selectedHarnessId);
@@ -760,7 +771,24 @@ export function AgentSettingsView({ routes, settings, codexModels, museModels, d
             <section className="set-card" data-settings-card="auto-compact" data-layout-card="agent-general-auto-compact">
               <div className="set-card-label">Auto-compact</div>
               <SettingsAutoCompact setting={settings.compactDefault} onChange={onSaveCompactDefault} />
+              <button type="button" className="set-btn-accent" onClick={() => setModelCompactOpen(true)}>모델별 자동 압축 설정</button>
             </section>
+            {modelCompactOpen && compactRoutes.length > 0 && (
+              <ModelCatalogModal
+                title="모델별 자동 압축"
+                routes={compactRoutes}
+                value={{ model: compactRoutes[0].model }}
+                config={{ modelAutoCompact: true }}
+                modelAutoCompactSettings={settings.modelAutoCompact}
+                globalCompactDefault={settings.compactDefault}
+                applyLabel="저장"
+                onApply={(next) => {
+                  const id = resolveCatalogModel(next.model)?.id || next.model;
+                  onSaveModelAutoCompact(id, next.autoCompactMode === "custom" ? next.autoCompact : undefined);
+                }}
+                onClose={() => setModelCompactOpen(false)}
+              />
+            )}
 
             {/* idle sleep — release a quiet member's process, keep its conversation */}
             <section className="set-card" data-settings-card="idle-sleep" data-layout-card="agent-general-idle-sleep">

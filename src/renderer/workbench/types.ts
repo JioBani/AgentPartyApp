@@ -108,8 +108,8 @@ export interface MemberView {
    */
   context?: { used: number; total?: number; stale?: boolean };
   /**
-   * Effective auto-compaction setting (the member's own, else the global
-   * default). Drives the toolbar pill, the sidebar badge, and the crossing
+   * Effective auto-compaction setting (member, model, then global default).
+   * Drives the toolbar pill, the sidebar badge, and the crossing
    * trigger. Always resolved — never undefined.
    */
   autoCompact: AutoCompactSetting;

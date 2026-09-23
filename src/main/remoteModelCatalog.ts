@@ -17,7 +17,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { applyModelCatalog, validateModelCatalogPayload } from "../shared/modelCatalog";
+import { applyModelCatalog, validateModelCatalogPayload, modelCatalogRevision, BUNDLED_MODEL_CATALOG_REVISION } from "../shared/modelCatalog";
 import { getUserDataDir } from "./userDataDir";
 import { log } from "./logger";
 
@@ -110,6 +110,7 @@ async function doRefresh(): Promise<RemoteCatalogStatus> {
     }
     const payload: unknown = await response.json();
     const { models, skipped } = validateModelCatalogPayload(payload);
+    requireCurrentRevision(payload);
     const fetchedAt = new Date().toISOString();
     const changed = apply(models, { source: "remote", fetchedAt, skipped });
     saveCache({ fetchedAt, url: REMOTE_CATALOG_URL, payload });
@@ -165,6 +166,7 @@ function loadCacheSync(): void {
     }
     const envelope = JSON.parse(fs.readFileSync(file, "utf8")) as CacheEnvelope;
     const { models, skipped } = validateModelCatalogPayload(envelope.payload);
+    requireCurrentRevision(envelope.payload);
     apply(models, { source: "cache", fetchedAt: envelope.fetchedAt, skipped });
     log("info", "model-catalog", "cached remote catalog applied", { models: models.length, fetchedAt: envelope.fetchedAt });
   } catch (error) {
@@ -178,6 +180,13 @@ function loadCacheSync(): void {
     } catch {
       /* rm failure only means the same warning next launch */
     }
+  }
+}
+
+function requireCurrentRevision(payload: unknown): void {
+  const revision = modelCatalogRevision(payload);
+  if (revision < BUNDLED_MODEL_CATALOG_REVISION) {
+    throw new Error(`catalog revision ${revision} predates bundled revision ${BUNDLED_MODEL_CATALOG_REVISION}`);
   }
 }
 

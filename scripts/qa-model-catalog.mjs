@@ -50,6 +50,9 @@ const liveSol6Route = buildModelRoutes("sonnet", [], [], [{ model: "gpt-6-sol", 
 assert(liveSol6Route?.label === "GPT-6 Sol", "live Sol 6 discovery keeps the shared catalog label");
 assert(liveSol6Route?.capabilities.effort.defaultValue === "medium" && liveSol6Route.capabilities.effort.options.at(-1)?.id === "ultra", "live Sol 6 discovery preserves medium default and Codex-only ultra effort");
 assert(liveSol6Route?.capabilities.serviceTier?.options.some((option) => option.id === "priority"), "live Sol 6 discovery preserves the Fast tier");
+const luna6 = buildModelRoutes("sonnet", [], []).find((route) => route.harnessId === "codex" && route.model === "gpt-6-luna");
+assert(luna6?.label === "GPT-6 Luna" && luna6.meta?.context === "1.05M", "Luna 6 is selectable with official context metadata");
+assert(luna6?.capabilities.effort.options.map((option) => option.id).join() === "none,low,medium,high,xhigh,max", "Luna 6 exposes its documented effort choices");
 assert(PROVIDER_LABELS.anthropic === "Claude" && PROVIDER_LABELS.openai === "Codex" && PROVIDER_LABELS.cursor === "Cursor" && PROVIDER_LABELS.openrouter === "OpenRouter", "model groups use the same provider names as Authentication");
 const baiEffort = routes.find((route) => route.harnessId === "codex" && route.providerId === "bai")?.capabilities.effort;
 assert(matchingCapabilityOption(baiEffort, "MAX") === "max", "effort matching returns the catalog's canonical id");

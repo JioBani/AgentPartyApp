@@ -1,5 +1,5 @@
 /**
- * Per-member auto-compaction: when a member's live context occupancy crosses a
+ * Auto-compaction: when a member's live context occupancy crosses a
  * threshold (expressed as a % of the model's context window), its session is
  * automatically compacted. Manual and automatic compaction coexist — this only
  * governs the *automatic* trigger.
@@ -16,6 +16,19 @@ export interface AutoCompactSetting {
   on: boolean;
   /** Threshold as a percentage of the model's context window (AUTO_COMPACT_MIN..MAX). */
   at: number;
+}
+
+/** Catalog model id -> explicit setting. Missing ids follow the global default. */
+export type ModelAutoCompactSettings = Record<string, AutoCompactSetting>;
+
+export function normalizeModelAutoCompact(value: unknown): ModelAutoCompactSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result: ModelAutoCompactSettings = Object.create(null) as ModelAutoCompactSettings;
+  for (const [id, setting] of Object.entries(value)) {
+    const normalized = normalizeAutoCompact(setting);
+    if (id && normalized && id !== "__proto__" && id !== "constructor" && id !== "prototype") result[id] = normalized;
+  }
+  return result;
 }
 
 // Settable range. The threshold is shown on a full 0–100% gauge, but a value
@@ -69,8 +82,9 @@ export function normalizeAutoCompact(value: unknown): AutoCompactSetting | undef
 export function resolveAutoCompact(
   memberSetting: AutoCompactSetting | undefined,
   globalDefault: AutoCompactSetting | undefined,
+  modelSetting?: AutoCompactSetting,
 ): AutoCompactSetting {
-  return memberSetting || globalDefault || DEFAULT_AUTO_COMPACT;
+  return memberSetting || modelSetting || globalDefault || DEFAULT_AUTO_COMPACT;
 }
 
 /** Estimated token footprint at the threshold, given a known context window. */

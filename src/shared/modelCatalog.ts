@@ -174,6 +174,17 @@ export interface CatalogModel {
  * routing); additive fields within the same version are ignore-safe.
  */
 export const MODEL_CATALOG_SCHEMA_VERSION = 1;
+/** Prevents an older published snapshot from hiding models shipped in this build. */
+export const BUNDLED_MODEL_CATALOG_REVISION = catalog.revision;
+
+export function modelCatalogRevision(payload: unknown): number {
+  const revision = (payload as { revision?: unknown } | null)?.revision;
+  if (revision === undefined) return 0; // Published catalogs predating revisions.
+  if (!Number.isSafeInteger(revision) || (revision as number) < 0) {
+    throw new Error(`invalid catalog revision ${JSON.stringify(revision)}`);
+  }
+  return revision as number;
+}
 
 const CATALOG_PROVIDERS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "cursor", "deepseek", "xai", "meta", "bai"]);
 

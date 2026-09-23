@@ -91,6 +91,17 @@ const groupIds = (v) => v.groups.map((g) => g.id);
 const groupNamed = (v, id) => v.groups.find((g) => g.id === id);
 const modelsIn = (g) => (g ? g.entries.map((e) => e.route.model) : []);
 
+const releaseOrder = [
+  route("gpt-5.6-sol", "GPT-5.6 Sol", "openai", 5),
+  route("gpt-6-sol", "GPT-6 Sol", "openai", 5),
+  route("gpt-6-luna", "GPT-6 Luna", "openai", 3),
+  route("claude-opus-5[1m]", "Opus 5", "anthropic", 5),
+  route("claude-opus-5-5[1m]", "Opus 5.5", "anthropic", 5),
+].map((r) => ({ route: r, meta: meta(r) }));
+const releaseView = buildCatalogView({ entries: releaseOrder, query: "", favorites: [], provOpen: { openai: true, anthropic: true }, selectedKey: "" });
+assert(modelsIn(groupNamed(releaseView, "openai")).join() === "gpt-6-sol,gpt-6-luna,gpt-5.6-sol", "Codex discovery order cannot put Sol 5.6 above Sol 6 or Luna 6");
+assert(modelsIn(groupNamed(releaseView, "anthropic")).join() === "claude-opus-5-5[1m],claude-opus-5[1m]", "Opus 5.5 precedes Opus 5");
+
 // --- 1. assembly order ----------------------------------------------------
 console.log("\nAssembly order (filter → favourites → provider groups):");
 {
