@@ -38,7 +38,10 @@ function requestBody(method) {
 console.log("\nCodex Fast service-tier wiring:");
 assert(/interface CodexAdapterOptions[\s\S]*?serviceTier\?: string;/.test(adapter), "Codex adapter accepts the selected native service tier");
 assert(/SERVICE_TIER_INHERIT = "inherit"/.test(shared) && /normalizeServiceTierSelection/.test(shared), "shared types define the inherit sentinel and its normalizer");
-assert(/model\.serviceTiers\.length > 0[\s\S]*?defaultValue: SERVICE_TIER_INHERIT[\s\S]*?id: SERVICE_TIER_INHERIT, label: "설정 따름"[\s\S]*?id: "standard", label: "Standard"[\s\S]*?\.map\(\(tier\) => \(\{/.test(registry), "Codex routes expose 설정 따름 (default) / Standard / native Fast options");
+assert(/codexServiceTierCapability\(model\.serviceTiers[\s\S]*?\.map\(\(tier\) => \(\{/.test(registry)
+  && /model\.serviceTierPricing\?\.priority[\s\S]*?codexServiceTierCapability\(fastTier\)/.test(registry)
+  && /function codexServiceTierCapability[\s\S]*?defaultValue: SERVICE_TIER_INHERIT[\s\S]*?id: SERVICE_TIER_INHERIT, label: "설정 따름"[\s\S]*?id: "standard", label: "Standard"/.test(registry),
+"discovered and bundled Codex routes expose 설정 따름 / Standard / native Fast options");
 assert(/크레딧 소모 증가/.test(registry), "the Fast option carries the credit-consumption note");
 assert(/new CodexAdapter\(\{[\s\S]*?serviceTier: request\.serviceTier \|\| harnessDefaults\.serviceTier,/.test(sessions), "session creation passes member/default service tier into Codex");
 assert(/serviceTierParam\(\): string \| null \| undefined[\s\S]*?normalizeServiceTierSelection\(this\.options\.serviceTier\)[\s\S]*?tier === "standard" \|\| tier === "default" \? null : tier/.test(adapter), "inherit/absent stays omitted (config wins) while Standard clears Fast via wire null");

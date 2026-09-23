@@ -316,30 +316,9 @@ export function codexRouteFromModel(model: CodexModelInfo): ModelRoute {
           : { supported: false, mutableDuringSession: false, options: [] },
       thinking: { supported: false, mutableDuringSession: false },
       permission: { supported: false, mutableDuringSession: false, options: [] },
-      serviceTier:
-        model.serviceTiers.length > 0
-          ? {
-              supported: true,
-              mutableDuringSession: true,
-              // Three explicit states. `inherit` (the default) sends nothing so
-              // the member follows the user's own Codex config (`config.toml`
-              // `service_tier`); `standard` forces the ordinary tier (null on
-              // the wire); a native id such as `priority` forces Fast.
-              defaultValue: SERVICE_TIER_INHERIT,
-              options: [
-                { id: SERVICE_TIER_INHERIT, label: "설정 따름", description: "Codex 자체 설정(config.toml service_tier)을 그대로 사용" },
-                { id: "standard", label: "Standard", description: "Codex default serving speed" },
-                ...model.serviceTiers
-                  .filter((tier) => tier.id !== "standard" && tier.id !== "default")
-                  .map((tier) => ({
-                    id: tier.id,
-                    label: tier.name,
-                    // Fast trades credits for speed — say so where it is chosen.
-                    description: `${tier.description} · 크레딧 소모 증가 (GPT-5.6/5.5 약 2.5배)`,
-                  })),
-              ],
-            }
-          : { supported: false, mutableDuringSession: false, options: [] },
+      serviceTier: codexServiceTierCapability(model.serviceTiers
+        .filter((tier) => tier.id !== "standard" && tier.id !== "default")
+        .map((tier) => ({ id: tier.id, label: tier.name, description: [tier.description, "크레딧 소모 증가"].filter(Boolean).join(" · ") }))),
       // A live Codex account model (e.g. "gpt-5.4") inherits vision from its
       // catalog twin; unknown when it has no catalog entry (honestly reported).
       vision: catalogTwin ? visionFromCatalog(catalogTwin) : {},
@@ -796,6 +775,12 @@ export function codexClaudeSubscriptionRoute(model: CatalogModel): ModelRoute {
  */
 export function codexRouteFromCatalog(model: CatalogModel): ModelRoute {
   const effort = model.reasoning?.effort;
+  // The bundled route is used before model/list settles and when the installed
+  // Codex does not yet list a newly released model. Pricing metadata records
+  // only models with documented Fast support; never infer it from the name.
+  const fastTier = model.serviceTierPricing?.priority
+    ? [{ id: "priority", label: "Fast", description: "크레딧 소모 증가" }]
+    : [];
   return {
     harnessId: "codex",
     providerId: "openai",
@@ -814,6 +799,7 @@ export function codexRouteFromCatalog(model: CatalogModel): ModelRoute {
           }
         : { supported: false, mutableDuringSession: false, options: [] },
       thinking: { supported: false, mutableDuringSession: false },
+      serviceTier: codexServiceTierCapability(fastTier),
       permission: { supported: false, mutableDuringSession: false, options: [] },
       vision: visionFromCatalog(model),
     },
@@ -826,6 +812,22 @@ export function codexRouteFromCatalog(model: CatalogModel): ModelRoute {
       context: model.context,
     },
     enabled: true,
+  };
+}
+
+function codexServiceTierCapability(fastTiers: ModelOption[]): EffortCapability {
+  if (!fastTiers.length) return { supported: false, mutableDuringSession: false, options: [] };
+  // Inherit sends no override, Standard clears a configured Fast tier, and the
+  // native id (usually priority) requests Fast on thread/start and turn/start.
+  return {
+    supported: true,
+    mutableDuringSession: true,
+    defaultValue: SERVICE_TIER_INHERIT,
+    options: [
+      { id: SERVICE_TIER_INHERIT, label: "설정 따름", description: "Codex 자체 설정(config.toml service_tier)을 그대로 사용" },
+      { id: "standard", label: "Standard", description: "Codex default serving speed" },
+      ...fastTiers,
+    ],
   };
 }
 

@@ -1,7 +1,7 @@
 {
   "_about": "Single source of truth for model routing, leaderboard metrics and reasoning control. Anthropic is native on Claude Code and uses local Claude OAuth on Codex; OpenAI is native on Codex and uses local Codex OAuth on Claude Code; provider=openrouter models use OpenRouter on either harness. The selected harness process never changes. Add a model by adding one entry, then run `npm run catalog:publish` to ship it to all users without an app release (docs/기획 노트 — 원격 모델 카탈로그.md).",
   "schemaVersion": 1,
-  "revision": 2026092301,
+  "revision": 2026092302,
   "models": [
     {
       "id": "claude-fable-5-1[1m]",
@@ -331,6 +331,14 @@
       "context": "272K",
       "perf": 5,
       "costTier": 5,
+      "inPerM": 2,
+      "cacheReadPerM": 0.2,
+      "cacheWritePerM": 2.5,
+      "outPerM": 10,
+      "serviceTierPricing": {
+        "priority": { "inPerM": 4, "cacheReadPerM": 0.4, "cacheWritePerM": 5, "outPerM": 20 },
+        "fast": { "inPerM": 4, "cacheReadPerM": 0.4, "cacheWritePerM": 5, "outPerM": 20 }
+      },
       "reasoning": {
         "effort": {
           "options": [
