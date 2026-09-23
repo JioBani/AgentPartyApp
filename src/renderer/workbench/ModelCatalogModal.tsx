@@ -394,7 +394,7 @@ export function ModelCatalogModal({
 
   return createPortal(
     <div className={"wb-modal-scrim wb-catalog-scrim" + (dim ? " is-dim" : "")}>
-      <div className="wb-modal wb-modal-catalog" role="dialog" aria-modal="true">
+      <div className={"wb-modal wb-modal-catalog" + (config.modelAutoCompact ? " is-model-compact" : "")} role="dialog" aria-modal="true">
         <header className="wb-modal-head">
           <div className="wb-modal-title">
             {icon ?? <SlidersHorizontal size={16} />}
@@ -766,14 +766,14 @@ export function ModelCatalogModal({
                 )}
 
                 {config.modelAutoCompact && (
-                  <div className="wb-detail-section">
+                  <div className="wb-detail-section wb-model-compact-section">
                     <div className="wb-detail-section-head"><strong>모델별 자동 압축</strong><span>선택한 모델에 적용</span></div>
                     <select className="set-select" aria-label="모델 자동 압축 설정 방식" value={compactMode} onChange={(event) => setCompactMode(event.target.value as "inherit" | "custom")}>
                       <option value="inherit">전역 설정 따르기</option>
                       <option value="custom">개별 설정</option>
                     </select>
                     {compactMode === "custom" && <AutoCompactEditor setting={compact} contextWindow={contextWindow} onChange={setCompact} />}
-                    {compactMode === "inherit" && <small>전역 설정: {(globalCompactDefault || DEFAULT_AUTO_COMPACT).on ? `켜짐 · ${(globalCompactDefault || DEFAULT_AUTO_COMPACT).at}%` : "꺼짐"}</small>}
+                    {compactMode === "inherit" && <small className="wb-model-compact-summary">전역 설정: {(globalCompactDefault || DEFAULT_AUTO_COMPACT).on ? `켜짐 · ${(globalCompactDefault || DEFAULT_AUTO_COMPACT).at}%` : "꺼짐"}</small>}
                   </div>
                 )}
 

@@ -770,8 +770,10 @@ export function AgentSettingsView({ routes, settings, codexModels, museModels, d
             {/* global auto-compact default (inherited by members without their own) */}
             <section className="set-card" data-settings-card="auto-compact" data-layout-card="agent-general-auto-compact">
               <div className="set-card-label">Auto-compact</div>
-              <SettingsAutoCompact setting={settings.compactDefault} onChange={onSaveCompactDefault} />
-              <button type="button" className="set-btn-accent" onClick={() => setModelCompactOpen(true)}>모델별 자동 압축 설정</button>
+              <div className="set-card-body set-auto-compact-body">
+                <SettingsAutoCompact setting={settings.compactDefault} onChange={onSaveCompactDefault} />
+                <button type="button" className="set-btn-accent" onClick={() => setModelCompactOpen(true)}>모델별 자동 압축 설정</button>
+              </div>
             </section>
             {modelCompactOpen && compactRoutes.length > 0 && (
               <ModelCatalogModal
