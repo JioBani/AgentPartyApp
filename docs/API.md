@@ -3422,8 +3422,11 @@ returns page text plus visible controls and their viewport coordinates.
 `screenshot` returns PNG base64 under `image`; the MCP relay turns it into an
 image content block and Codex's dynamic tool returns an `inputImage` item,
 instead of embedding the bytes in text. The browser
-profile is isolated per member and is ephemeral in this MVP. The route is local
-to the desktop host and does not change existing member or session data.
+`state` response includes native `bounds` while the tab is visible, so QA can
+compare the Chromium view with the renderer viewport without controlling the
+desktop. The browser profile is isolated per member and is ephemeral in this
+MVP. The route is local to the desktop host and does not change existing member
+or session data.
 
 ### `POST /api/parties/:partyId/members/:name/mcp-tools/:tool`
 

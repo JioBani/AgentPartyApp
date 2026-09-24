@@ -20,6 +20,8 @@ export interface BrowserState {
   title: string;
   loading: boolean;
   visible: boolean;
+  /** Native view bounds in the owning window's content coordinates (for layout QA). */
+  bounds?: { x: number; y: number; width: number; height: number };
   canGoBack: boolean;
   canGoForward: boolean;
 }

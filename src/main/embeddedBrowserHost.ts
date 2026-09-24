@@ -197,6 +197,7 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
       title: contents && !contents.isDestroyed() ? contents.getTitle() : "",
       loading: Boolean(contents && !contents.isDestroyed() && contents.isLoadingMainFrame()),
       visible: Boolean(entry?.owner && !entry.owner.isDestroyed()),
+      ...(entry?.owner && !entry.owner.isDestroyed() ? { bounds: entry.view.getBounds() } : {}),
       canGoBack: Boolean(contents && !contents.isDestroyed() && contents.canGoBack()),
       canGoForward: Boolean(contents && !contents.isDestroyed() && contents.canGoForward()),
     };

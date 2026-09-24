@@ -2,6 +2,26 @@ import { FormEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } 
 import { ArrowLeft, ArrowRight, RotateCw } from "lucide-react";
 import type { BrowserActionInput, BrowserState } from "../../shared/browserControl";
 
+// WebContentsView always paints above the renderer. Detach it whenever an
+// in-app overlay crosses the browser viewport, including drag previews.
+const APP_OVERLAYS = [
+  '.wb-modal-scrim', '[role="dialog"]', '[role="menu"]',
+  '.wb-menu-catcher', '.wb-ctx-menu', '.wb-tab-overflow-menu', '.wb-dd-menu',
+  '.usage-pop', '.wb-cmd-palette', '.wb-tool-modal-backdrop', '.mcp-modal',
+  '.app-toast', '.wb-mention-pop', '.wb-queue-throw',
+  '.wb-drop-overlay', '.wb-drop-side', '.wb-drop-outer', '.wb-drag-ghost',
+].join(', ');
+const activePanes = new Map<string, object>();
+
+function overlayCrosses(viewport: DOMRect): boolean {
+  return Array.from(document.querySelectorAll(APP_OVERLAYS)).some((overlay) => {
+    const box = overlay.getBoundingClientRect();
+    return box.width > 0 && box.height > 0
+      && box.left < viewport.right && box.right > viewport.left
+      && box.top < viewport.bottom && box.bottom > viewport.top;
+  });
+}
+
 /** DOM chrome around the isolated native WebContentsView owned by this member. */
 export function BrowserPane({ partyId, member }: { partyId: string; member: string }) {
   const viewport = useRef<HTMLDivElement>(null);
@@ -32,42 +52,67 @@ export function BrowserPane({ partyId, member }: { partyId: string; member: stri
   useLayoutEffect(() => {
     const element = viewport.current;
     if (!element) return;
+    const paneKey = `${partyId}\0${member}`;
+    const paneLease = {};
+    activePanes.set(paneKey, paneLease);
     let disposed = false;
     let frame = 0;
-    let modalOpen = Boolean(document.querySelector('.wb-modal-scrim, [role="dialog"][aria-modal="true"]'));
-    const show = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        if (disposed || modalOpen) return;
-        const rect = element.getBoundingClientRect();
-        if (rect.width < 1 || rect.height < 1) return;
-        void act({ action: "show", bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
-      });
+    let applied = "";
+    let pending: Promise<void> | null = null;
+    let retryAt = 0;
+    const request = (input: BrowserActionInput, target: string) => {
+      pending = window.agentParty.browserAction(partyId, member, input)
+        .then((result) => {
+          if (!disposed) {
+            applied = target;
+            setState(result.state);
+            setError("");
+          }
+        })
+        .catch((cause) => {
+          if (!disposed) {
+            retryAt = performance.now() + 1000;
+            setError(cause instanceof Error ? cause.message : String(cause));
+          }
+        })
+        .finally(() => { pending = null; });
     };
-    const observer = new ResizeObserver(show);
-    observer.observe(element);
-    // Native WebContentsView paints above renderer DOM. Detach it while a
-    // dialog is open so it cannot cover the dialog or intercept its clicks.
-    const modalObserver = new MutationObserver(() => {
-      const next = Boolean(document.querySelector('.wb-modal-scrim, [role="dialog"][aria-modal="true"]'));
-      if (next === modalOpen) return;
-      modalOpen = next;
-      if (next) void act({ action: "hide" });
-      else show();
-    });
-    modalObserver.observe(document.body, { childList: true, subtree: true });
+    // ResizeObserver misses a panel that MOVES without changing size (for
+    // example, swapping two equal-width grid slots). Measure its position on
+    // paint frames, but send IPC only when the rounded bounds actually change.
+    const sync = () => {
+      if (disposed) return;
+      frame = requestAnimationFrame(sync);
+      if (pending || performance.now() < retryAt) return;
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1 || overlayCrosses(rect)) {
+        if (applied !== "hidden") request({ action: "hide" }, "hidden");
+        return;
+      }
+      const bounds = {
+        x: Math.round(rect.x), y: Math.round(rect.y),
+        width: Math.round(rect.width), height: Math.round(rect.height),
+      };
+      const key = `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`;
+      if (applied !== key) request({ action: "show", bounds }, key);
+    };
     const stopOpenListener = window.agentParty.onBrowserOpenRequested((request) => {
-      if (request.partyId === partyId && request.member === member) show();
+      if (request.partyId === partyId && request.member === member) applied = "";
     });
-    show();
+    sync();
     void act({ action: "state" }).then((result) => { if (result && !disposed) setAddress(result.state.url); });
     return () => {
       disposed = true;
       cancelAnimationFrame(frame);
-      observer.disconnect();
-      modalObserver.disconnect();
       stopOpenListener();
-      void window.agentParty.browserAction(partyId, member, { action: "hide" });
+      if (activePanes.get(paneKey) !== paneLease) return;
+      activePanes.delete(paneKey);
+      // A moved tab mounts a new pane before the old show IPC settles. The old
+      // cleanup must not hide the new pane after its show has completed.
+      void (pending || Promise.resolve()).then(() => {
+        if (!activePanes.has(paneKey)) return window.agentParty.browserAction(partyId, member, { action: "hide" });
+      })
+        .catch((cause) => console.error("Failed to detach browser view", cause));
     };
   }, [act, partyId, member]);
 
