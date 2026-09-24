@@ -2016,6 +2016,7 @@ export class SessionManager extends EventEmitter {
       title: snapshot.model || "Claude Code",
       workspace: session.workspace,
       snapshot,
+      turnActive: session.turnActive,
     };
   }
 }

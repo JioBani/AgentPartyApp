@@ -2975,9 +2975,9 @@ deletion begins.
 ### `POST /api/party/members/:name/status`
 
 Turn state of one member. `name` `*` (or `all`) returns every member of the
-party. `turnActive` mirrors the UI's "working" derivation (snapshot status is
-`requesting`/`responding`/`interrupting`). Agents reach the same data via the
-`member-status` party tool.
+party. `turnActive` uses the app-owned turn lifecycle, as the UI does. It stays
+true if a harness briefly reports `idle` before the turn completes. Agents
+reach the same data via the `member-status` party tool.
 
 ```json
 { "ok": true, "members": [ { "name": "impl", "running": true, "turnActive": true, "status": "responding", "turnCount": 3, "pendingApprovalCount": 0, "model": "Sonnet" } ] }
