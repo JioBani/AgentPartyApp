@@ -660,6 +660,8 @@ export interface SessionView {
   title: string;
   workspace: string;
   snapshot: ClaudeSessionSnapshot;
+  /** App-owned turn lifecycle; snapshot.status may briefly read idle mid-turn. */
+  turnActive?: boolean;
 }
 
 export interface CreateSessionInput {

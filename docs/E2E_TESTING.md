@@ -366,6 +366,13 @@ capturing both representative states.
 `node scripts/e2e-transcript-render.mjs` (or `npm run test:e2e:transcript-render`)
 boots the real app on an isolated userData + temp workspace (offline — a mock
 member, no model) and drives the transcript-rendering surfaces the W2 lane owns.
+
+`npm run test:e2e:codex-directives` boots the real app with a Codex mock
+transcript, then checks file-citation and follow-up controls at 720px and
+1280px in both built-in light and dark themes. It saves screenshots and clicks
+the follow-up in the real renderer, confirming the existing member-send path
+receives the proposed prompt. `qa-markdown` also checks literal Windows paths,
+code fences, escaped directives, and malformed input without a model call.
 It discovers the app through the **per-workspace instance file** (no fixed port)
 and asserts the served workspace is its own. First leg — **links open in the OS
 default browser**: a markdown link is clicked in the REAL renderer and the main

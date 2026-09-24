@@ -91,6 +91,13 @@ async function main() {
     await delay(800);
     cdp = await attachRenderer();
 
+    await idleSnapshotDuringActiveTurn(cdp);
+    if (process.argv.includes("--turn-busy-regression")) {
+      await post("/api/window/close", {}).catch(() => {});
+      await waitForExit(child);
+      console.log(failures.length ? "\nTURN BUSY REGRESSION FAILED" : "\nTURN BUSY REGRESSION PASSED");
+      process.exit(failures.length ? 1 : 0);
+    }
     await queuedInsteadOfConversation();
     await listRendersFaithfully(cdp);
     await mergeRailSpansOnlyTheLeadingRun(cdp);
@@ -117,6 +124,33 @@ async function main() {
 
   console.log(failures.length ? `\nMESSAGE QUEUE E2E FAILED (${failures.length})` : "\nMESSAGE QUEUE E2E PASSED");
   process.exit(failures.length ? 1 : 0);
+}
+
+/** A harness can report idle before its turn_complete event reaches the app. */
+async function idleSnapshotDuringActiveTurn(cdp) {
+  console.log("\nA transient idle snapshot does not finish the turn:");
+  await post("/api/qa/members", { name: "transient", role: "turn state regression", autoReply: false });
+  await post("/api/qa/open", { panels: [["transient"]] });
+  await post("/api/qa/members/transient/emit", { events: [{ type: "status", status: "responding" }] });
+  await post("/api/qa/members/transient/emit", { events: [{ type: "status", status: "idle" }] });
+  await delay(300);
+
+  const member = (await post("/api/party/members/transient/status", {})).members?.[0];
+  assert(member?.status === "idle" && member?.turnActive === true, "status API keeps the active turn despite the idle snapshot");
+  const controls = await cdp.eval(`(() => ({
+    working: Boolean(document.querySelector(".wb-status-pill.is-working")),
+    queueButton: Boolean(document.querySelector(".wb-send.is-queueing, .wb-send-labeled.is-queueing")),
+  }))()`);
+  assert(controls.queueButton, "composer still offers adding to the queue");
+  assert(controls.working, "the active turn remains visibly stoppable");
+
+  const queued = await post("/api/party/members/transient/message", { text: "transient idle regression" });
+  assert(queued.queued === true, "a message during transient idle is queued");
+  await post("/api/qa/members/transient/emit", { events: [{ type: "turn_complete", result: "ok" }] });
+  await delay(600);
+  assert((await get("/api/party/members/transient/queue")).queue.items.length === 0, "the queue drains after turn completion");
+  await post("/api/qa/open", { panels: [["backend"]] });
+  await delay(300);
 }
 
 /** The core claim: a busy member's messages go to the queue, NOT the transcript. */

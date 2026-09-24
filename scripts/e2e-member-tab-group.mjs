@@ -107,6 +107,33 @@ try {
   assert(!invalid.ok && /not open/i.test(await invalid.text()), "an unknown/closed group fails visibly instead of falling back");
   assert(!(await get("/api/party")).members.some((member) => member.name === "lost"), "failed placement does not leave a half-created member");
 
+  const firstWindow = (await get("/api/windows")).windows[0].id;
+  await post(`/api/navigation?window=${firstWindow}`, { view: "workbench" });
+  await post(`/api/qa/open?window=${firstWindow}`, { panels: [["main"], ["grouped"], ["separate"], ["mcp-grouped"]] });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  // Fixture setup through HTTP: old persisted layouts can name a member that
+  // has since been removed. The renderer prunes it before showing the tabs.
+  const stale = (await get(`/api/party/layout?window=${firstWindow}`)).layout;
+  await post(`/api/party/layout?window=${firstWindow}`, {
+    layout: { ...stale, panels: stale.panels.map((panel, index) => index === 0 ? { ...panel, tabs: [...panel.tabs, "removed-member"] } : panel) },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const secondWindow = (await post("/api/windows", { workspacePath: workspace, partyId })).id;
+  assert(Boolean(secondWindow), "second window opened on the same party");
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  for (const name of ["grouped", "separate"]) {
+    await post(`/api/capture?window=${firstWindow}`, { path: path.join(os.tmpdir(), `ap-close-${name}.png`), click: `.wb-tab[data-drop-tab="${name}"] .wb-tab-close` });
+  }
+  layout = (await get(`/api/party/layout?window=${firstWindow}`)).layout;
+  assert(layout.panels.length === 2 && !layout.panels.some((panel) => panel.tabs.some((name) => ["grouped", "separate", "removed-member"].includes(name))), "tab closures persist despite a stale removed-member tab");
+  const createdAfterClose = await post(`/api/parties/${partyId}/members/main/mcp-tools/member-create`, {
+    arguments: { name: "mcp-after-close", role: "closed tab regression", harness: "codex", model: "gpt-5.4-mini", location: { host: "windows", cwd: workspace } },
+  });
+  assert(createdAfterClose.ok === true, "member-scoped MCP creates the next member");
+  layout = (await get(`/api/party/layout?window=${firstWindow}`)).layout;
+  assert(layout.panels.length === 3 && !layout.panels.some((panel) => panel.tabs.some((name) => ["grouped", "separate", "removed-member"].includes(name))), "MCP creation opens only the new tab");
+  await post(`/api/window/close?window=${secondWindow}`, {});
+
   await app.close();
 } catch (error) {
   app.kill();
