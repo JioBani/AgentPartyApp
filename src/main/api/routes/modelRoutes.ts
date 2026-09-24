@@ -19,6 +19,11 @@ export const modelRoutes: MethodRoute[] = [
     handler: (_p, ctx) => ctx.controller.refreshCodexModels(ctx.workspace),
   },
   {
+    name: "models.refreshMuse",
+    http: "POST /api/models/muse/refresh",
+    handler: (_p, ctx) => ctx.controller.refreshMuseModels(ctx.workspace),
+  },
+  {
     // Which model catalog is in effect (remote/cache/bundled) and the last
     // remote fetch outcome — a failed fetch surfaces here, never silently.
     name: "models.catalogStatus",

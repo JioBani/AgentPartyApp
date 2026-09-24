@@ -67,6 +67,7 @@ assert.deepEqual(
     { harness: "codex", channel: "developer", delivered: true },
     { harness: "cursor", channel: "user", delivered: true },
     { harness: "grok", channel: "user", delivered: true },
+    { harness: "muse", channel: "user", delivered: true },
   ],
   "every supported harness declares the canonical primer delivery contract",
 );

@@ -247,6 +247,7 @@ export class RemoteEngineClient implements EngineConnection {
   getPartyLayout(partyId?: string) { return this.call<Result<"getPartyLayout">>("getPartyLayout", partyId); }
   setPartyLayout(layout: unknown, partyId?: string) { return this.call<Result<"setPartyLayout">>("setPartyLayout", layout, partyId); }
   listCodexModels(refresh?: boolean) { return this.call<Result<"listCodexModels">>("listCodexModels", refresh); }
+  listMuseModels(refresh?: boolean) { return this.call<Result<"listMuseModels">>("listMuseModels", refresh); }
   getCursorStatus() { return this.call<Result<"getCursorStatus">>("getCursorStatus"); }
   getClaudeNativeAuth(force?: boolean) { return this.call<Result<"getClaudeNativeAuth">>("getClaudeNativeAuth", force); }
   createSession(input?: CreateSessionInput | string) { return this.call<Result<"createSession">>("createSession", input); }
@@ -266,6 +267,7 @@ export class RemoteEngineClient implements EngineConnection {
   setSessionThinking(sessionId: string, mode: string, budget?: number) { return this.call<void>("setSessionThinking", sessionId, mode, budget); }
   setSessionPermissionMode(sessionId: string, permissionMode: string) { return this.call<void>("setSessionPermissionMode", sessionId, permissionMode); }
   setSessionDebugMode(sessionId: string, enabled: boolean) { return this.call<void>("setSessionDebugMode", sessionId, enabled); }
+  probeSessionUsage(sessionId: string) { return this.call<Result<"probeSessionUsage">>("probeSessionUsage", sessionId); }
   setSessionCodexPolicy(sessionId: string, policy: CodexPolicy) { return this.call<void>("setSessionCodexPolicy", sessionId, policy); }
   setSessionCursorPolicy(sessionId: string, policy: CursorPolicy) { return this.call<void>("setSessionCursorPolicy", sessionId, policy); }
   approveSession(sessionId: string, requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string) { return this.call<ApprovalDelivery>("approveSession", sessionId, requestId, behavior, updatedInput, message); }

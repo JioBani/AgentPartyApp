@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from "react";
-import { FolderOpen } from "lucide-react";
+import { ArrowUpRight, FileText, FolderOpen } from "lucide-react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CopyButton } from "./copy";
@@ -8,6 +8,7 @@ import { ipcErrorMessage } from "../app/ipcError";
 import { isWindowsDrivePath } from "../../shared/windowsDrivePath";
 import { isLocalFileUrl, isPreservedLocalHref } from "../../shared/localFileHref";
 import { localized, useI18n } from "../i18n/I18nProvider";
+import { remarkCodexDirectives } from "./codexDirectives";
 
 type PositionedMarkdownNode = {
   type?: string;
@@ -60,19 +61,19 @@ function remarkPreserveWindowsPathSeparators() {
  * Links open in the OS default browser (never inside an Electron window) and
  * carry a copy control for the target URL; so does every fenced code block.
  */
-export const Markdown = memo(function Markdown({ text, sourceLocation }: { text: string; sourceLocation?: string }) {
+export const Markdown = memo(function Markdown({ text, sourceLocation, codexDirectives = false, onFollowup }: { text: string; sourceLocation?: string; codexDirectives?: boolean; onFollowup?: (prompt: string) => void }) {
   useI18n(); // Keep localized link/code attributes live when the locale changes.
   return (
     <div className="wb-md">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkPreserveWindowsPathSeparators]}
+        remarkPlugins={[remarkGfm, remarkPreserveWindowsPathSeparators, ...(codexDirectives ? [remarkCodexDirectives] : [])]}
         // react-markdown treats `C:` and `file:` as unsafe schemes and erases
         // the href before our link component can classify it. Preserve the
         // narrow local-file grammar; every other URL keeps the library's
         // default sanitisation.
         urlTransform={(url) => isPreservedLocalHref(url) ? url : defaultUrlTransform(url)}
         components={{
-          a: ({ node: _node, href, children, ...props }) => <MarkdownLink href={href} sourceLocation={sourceLocation} {...props}>{children}</MarkdownLink>,
+          a: ({ node: _node, href, children, ...props }) => <MarkdownLink href={href} sourceLocation={sourceLocation} onFollowup={onFollowup} {...props}>{children}</MarkdownLink>,
           pre: ({ node: _node, children, ...props }) => <MarkdownPre {...props}>{children}</MarkdownPre>,
           code({ node: _node, className, children, ...props }) {
             const content = String(children ?? "");
@@ -180,15 +181,28 @@ function externalTarget(href: string | undefined): string {
  * because it is the only place that still knows the href as authored, which is
  * what makes a scheme-less `example.com` recoverable.
  */
-function MarkdownLink({ href, sourceLocation, children, ...props }: { href?: string; sourceLocation?: string; children?: ReactNode } & Record<string, unknown>) {
-  const target = externalTarget(href);
+function MarkdownLink({ href, sourceLocation, onFollowup, children, ...props }: { href?: string; sourceLocation?: string; onFollowup?: (prompt: string) => void; children?: ReactNode } & Record<string, unknown>) {
+  const followupPrompt = typeof props["data-codex-followup-prompt"] === "string" ? props["data-codex-followup-prompt"] : "";
+  if (followupPrompt) {
+    return (
+      <button type="button" className="wb-md-followup" title={followupPrompt} disabled={!onFollowup} onClick={() => onFollowup?.(followupPrompt)}>
+        <span>{children}</span><ArrowUpRight size={13} aria-hidden="true" />
+      </button>
+    );
+  }
+  const citationPath = typeof props["data-codex-file-path"] === "string" ? props["data-codex-file-path"] : "";
+  // A file citation is always a file intent, even if its path superficially
+  // looks like a URL. Never reinterpret model-authored file metadata as web
+  // navigation under a filename-looking control.
+  const target = citationPath ? "" : externalTarget(href);
   // Anything left over that is not an in-page anchor or a foreign scheme is a
   // path — a file the member wrote or read. A bare `C:/...` superficially
   // matches the URI-scheme grammar (`C:`), so recognise drive paths first.
-  const file = !target && href && (isWindowsDrivePath(href) || isLocalFileUrl(href) || (!/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("#"))) ? href : "";
+  const file = citationPath || (!target && href && (isWindowsDrivePath(href) || isLocalFileUrl(href) || (!/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("#"))) ? href : "");
   const copyable = target || file;
   return (
-    <span className="wb-md-link">
+    <span className={citationPath ? "wb-md-link wb-md-citation" : "wb-md-link"} title={citationPath || undefined}>
+      {citationPath && <FileText size={13} aria-hidden="true" />}
       <a
         {...props}
         href={href}

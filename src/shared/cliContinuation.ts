@@ -6,7 +6,7 @@ import type { WorkspaceLocation } from "./workspaceLocation";
 export type CliContinuationAction = "inspect" | "launch";
 
 export interface CliContinuationTarget {
-  harness: "claude-code" | "codex" | "cursor" | "grok";
+  harness: "claude-code" | "codex" | "cursor" | "grok" | "muse";
   sessionId: string;
   model: string;
 }
@@ -46,12 +46,13 @@ const NATIVE_PROVIDER: Record<CliContinuationTarget["harness"], string> = {
   codex: "openai",
   cursor: "cursor",
   grok: "xai",
+  muse: "meta",
 };
 
 /** Normalises the one legacy spelling still present in persisted member data. */
 export function continuationHarness(runtime: MemberRuntime | undefined): CliContinuationTarget["harness"] | undefined {
   if (runtime === "claude" || runtime === "claude-code") return "claude-code";
-  if (runtime === "codex" || runtime === "cursor" || runtime === "grok") return runtime;
+  if (runtime === "codex" || runtime === "cursor" || runtime === "grok" || runtime === "muse") return runtime;
   return undefined;
 }
 
@@ -75,6 +76,9 @@ export function cliContinuationTarget(member: Pick<PartyMember, "runtime" | "mod
     return { supported: false, reason: "아직 CLI에서 이어갈 수 있는 대화가 없습니다. 먼저 한 턴 이상 완료해 주세요." };
   }
   const model = String(member.model || "");
+  if (harness === "muse" && model === "muse-default") {
+    return { supported: true, target: { harness, sessionId: member.harnessSessionId, model } };
+  }
   const catalog = resolveCatalogModel(model);
   if (!catalog) {
     return { supported: false, reason: `모델 '${model || "알 수 없음"}'의 제공자를 확인할 수 없어 안전하게 CLI로 넘길 수 없습니다.` };
@@ -103,6 +107,8 @@ export function cliContinuationArgv(target: CliContinuationTarget, host: Workspa
       return [host.kind === "wsl" ? "agent" : "cursor-agent", "--resume", target.sessionId];
     case "grok":
       return ["grok", "--resume", target.sessionId];
+    case "muse":
+      return ["muse", "resume", target.sessionId];
   }
 }
 
@@ -132,6 +138,7 @@ export function cliCrossCwdContinuationCommand(
   if (target.harness === "codex") argv.push("-C", replacement);
   if (target.harness === "cursor") argv.splice(1, 0, "--workspace", replacement);
   if (target.harness === "grok") argv.splice(1, 0, "--cwd", replacement);
+  if (target.harness === "muse") argv.splice(1, 0, "--workspace", replacement);
   return formatCliContinuationCommand(argv, shell);
 }
 

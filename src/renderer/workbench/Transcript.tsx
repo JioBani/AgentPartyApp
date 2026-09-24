@@ -20,6 +20,8 @@ import { memberColorVars } from "../theme/memberColors";
 import { MessageText } from "./messageTokens";
 import { messageTagMatches } from "../../shared/messageTags";
 import { usePartyMembers } from "../app/partyMemberPrefs";
+import { reportNotice } from "../app/appNotice";
+import { ipcErrorMessage } from "../app/ipcError";
 import { LocalizedText, localized, useI18n } from "../i18n/I18nProvider";
 import { nextTranscriptMountLimit, PROGRESSIVE_TRANSCRIPT_GAP_MS } from "./transcriptScheduling";
 import type { SessionSpawnState } from "../../shared/sessionSpawn";
@@ -496,7 +498,9 @@ const Block = memo(function TranscriptBlock({ block, view, density, actions, det
                 back into an editor or another member, not the rendered HTML. */}
             {block.text && <CopyButton text={block.text} title={localized("STR-2161")} className="wb-assistant-copy" />}
           </div>
-          <div className="wb-assistant-body"><AssistantMarkdown text={block.text} live={live} sourceLocation={view.member.location} /></div>
+          <div className="wb-assistant-body"><AssistantMarkdown text={block.text} live={live} sourceLocation={view.member.location} codexDirectives={view.member.runtime === "codex"} onFollowup={(prompt) => {
+            void actions.sendMessage(view.name, prompt).catch((error: unknown) => reportNotice(ipcErrorMessage(error)));
+          }} /></div>
         </div>
       );
     case "tool":
@@ -599,7 +603,7 @@ const LIVE_MARKDOWN_PLAIN_TEXT_THRESHOLD = 30 * 1024;
  * characters. Keep small live answers responsive at a human-scale cadence and
  * stop parsing large answers altogether until the turn commits.
  */
-function AssistantMarkdown({ text: latestText, live, sourceLocation }: { text: string; live: boolean; sourceLocation?: string }) {
+function AssistantMarkdown({ text: latestText, live, sourceLocation, codexDirectives, onFollowup }: { text: string; live: boolean; sourceLocation?: string; codexDirectives: boolean; onFollowup: (prompt: string) => void }) {
   const [throttledText, setThrottledText] = useState(latestText);
   const latestTextRef = useRef(latestText);
   const liveRef = useRef(live);
@@ -645,11 +649,13 @@ function AssistantMarkdown({ text: latestText, live, sourceLocation }: { text: s
 
   // The committed value bypasses throttled state so live -> false always
   // produces the final complete markdown in that render.
-  if (!live) return <Markdown text={latestText} sourceLocation={sourceLocation} />;
+  if (!live) return <Markdown text={latestText} sourceLocation={sourceLocation} codexDirectives={codexDirectives} onFollowup={onFollowup} />;
   if (latestText.length > LIVE_MARKDOWN_PLAIN_TEXT_THRESHOLD) {
     return <div className="wb-md wb-md-live-plain">{latestText}</div>;
   }
-  return <Markdown text={throttledText} sourceLocation={sourceLocation} />;
+  // A suggestion can appear before the streamed turn closes; it becomes
+  // actionable only after completion so a click never interrupts its own answer.
+  return <Markdown text={throttledText} sourceLocation={sourceLocation} codexDirectives={codexDirectives} />;
 }
 
 const GATE_META = {

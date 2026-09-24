@@ -17,7 +17,7 @@ import type { RouteEntry } from "./modelMeters";
 import { routeKey } from "./routes";
 
 /** Provider order in the list; unlisted providers fall into `custom`. */
-const PROVIDER_ORDER: ProviderId[] = ["anthropic", "openai", "cursor", "openrouter", "deepseek", "xai", "bai", "custom"];
+const PROVIDER_ORDER: ProviderId[] = ["anthropic", "openai", "cursor", "openrouter", "deepseek", "xai", "meta", "bai", "custom"];
 
 export interface CatalogGroup {
   /** Stable key: the provider id, or `favorites` for the pinned section. */

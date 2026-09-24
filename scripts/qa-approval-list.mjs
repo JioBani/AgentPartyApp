@@ -43,6 +43,10 @@ console.log("\nwhat is waiting:");
     "the row says WHAT is being approved — a user cannot consent to an opaque id");
   assert(index.pending(WS_A).map((a) => a.requestId).join(",") === "req-1,req-2", "a workspace filter narrows it");
   assert(index.pending(WS_B).length === 1, "…to that workspace only");
+  if (process.platform === "win32") {
+    assert(index.pending(WS_A.toLowerCase()).map((a) => a.requestId).join(",") === "req-1,req-2",
+      "Windows workspace filtering is case-insensitive, like the filesystem");
+  }
 }
 
 console.log("\nwhat it refuses to offer:");

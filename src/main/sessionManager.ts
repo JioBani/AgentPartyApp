@@ -7,6 +7,7 @@ import { ClaudeAdapter } from "../core/claudeAdapter";
 import { CodexAdapter, resolvePartyMcpServerScript, spawnableNodeCommand } from "../core/codexAdapter";
 import { partyMcpRuntimeEnv } from "../core/partyMcpRuntime";
 import { GrokAdapter } from "../core/grokAdapter";
+import { MuseAdapter } from "../core/museAdapter";
 import { agentPartyCodexSqliteHome } from "../core/codexSqliteHome";
 import { CursorAdapter } from "../core/cursorAdapter";
 import { prepareCursorPartyRuntime } from "../core/cursorPartyPlugin";
@@ -15,15 +16,18 @@ import { buildPartyPrimer } from "../shared/partyPrimer";
 import { ClaudeNormalizedEvent, ClaudeSessionSnapshot } from "../core/events";
 import { ModelRouteConfig, inferModelProvider } from "../core/modelRegistry";
 import { discoverCodexModels } from "../core/codexModelDiscovery";
+import { discoverMuseModels } from "../core/museModelDiscovery";
 import { EmbeddedHarnessRouter } from "../core/routerShim";
 import { CreateSessionInput, ResumableSessionInfo, SessionView, harnessDefaultsOf, type HostedPartySessionBinding } from "../shared/types";
 import type { CodexModelDiscoveryState } from "../shared/codexModels";
 import { CODEX_MODELS_PENDING } from "../shared/codexModels";
+import type { MuseModelDiscoveryState } from "../shared/museModels";
+import { MUSE_MODELS_PENDING } from "../shared/museModels";
 import type { CodexPolicy } from "../shared/codexPolicy";
 import type { CursorPolicy } from "../shared/cursorPolicy";
 import type { ImageAttachment } from "../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../shared/mcp";
-import { mergeProviderUsage, providerOfHarness, reconcileUsageTargets, restoreUsageSnapshot, USAGE_PROVIDER_ORDER, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
+import { mergeProviderUsage, providerOfHarness, reconcileUsageTargets, restoreUsageSnapshot, USAGE_PROVIDER_ORDER, type ProviderUsage, type UsageLimitsSnapshot, type UsageProviderId } from "../shared/usageLimits";
 import { HarnessSession } from "./harness/types";
 import { MockHarnessSession } from "./harness/mockHarness";
 import { UsageLedger } from "./usageLedger";
@@ -52,9 +56,16 @@ interface ManagedSession {
   id: string;
   workspace: string;
   adapter: HarnessSession;
-  /** The account-usage provider this session draws from — lets the background
-   *  usage poller reuse a live session instead of spawning a duplicate. */
+  /** The account-usage provider this session draws from. Together with
+   *  {@link ownsUsageSource}, this lets the background poller reuse a local
+   *  live session without mistaking a cross-host proxy for a reader. */
   provider?: UsageProviderId;
+  /**
+   * Whether this process owns the provider's usage reader for this session.
+   * Cross-host sessions are transport proxies only: the remote engine owns the
+   * real harness and forwards its aggregated usage snapshot separately.
+   */
+  ownsUsageSource: boolean;
   queuedEvents: ClaudeNormalizedEvent[];
   /** Epoch + contiguous batch position for idempotent transcript consumers. */
   eventStreamId: string;
@@ -198,6 +209,8 @@ export class SessionManager extends EventEmitter {
   private automationBaseUrlProvider?: () => string | undefined;
   private codexModels: CodexModelDiscoveryState = CODEX_MODELS_PENDING;
   private codexDiscovery: Promise<CodexModelDiscoveryState> | undefined;
+  private museModels: MuseModelDiscoveryState = MUSE_MODELS_PENDING;
+  private museDiscovery: Promise<MuseModelDiscoveryState> | undefined;
   /**
    * Stall watchdog: a turn that goes silent for this long (no event of any kind
    * from the harness, and not waiting on the user for an approval) is flagged so
@@ -290,8 +303,8 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Registers a local session whose HarnessSession is only a transport proxy.
-   * Party state, queues, transcripts and usage ownership stay in this manager;
-   * only the provider harness process is hosted by `target`.
+   * Party state, queues and transcripts stay in this manager; provider usage is
+   * owned by the remote engine that hosts the real harness process.
    */
   createCrossHostSession(
     target: string,
@@ -317,7 +330,14 @@ export class SessionManager extends EventEmitter {
       binding: { ownerWorkspace: workspace, identity: binding.identity },
     });
     const requestedHarness = request.selectedHarnessId || settings.selectedHarnessId;
-    return this.registerSession(id, workspace, adapter, providerOfHarness(requestedHarness), binding.identity);
+    return this.registerSession(
+      id,
+      workspace,
+      adapter,
+      providerOfHarness(requestedHarness),
+      binding.identity,
+      false,
+    );
   }
 
   /** Builds the function-bearing binding after its serializable descriptor crosses RPC. */
@@ -400,8 +420,72 @@ export class SessionManager extends EventEmitter {
         tasks.push(adapter.refreshUsageLimits());
       }
     }
-    await Promise.allSettled(tasks);
+    // Muse's stable MSP exposes only the host's last-observed usage. A fresh
+    // host therefore has nothing to read until a provider turn occurs. The user
+    // explicitly requested that EVERY manual refresh make that observation, so
+    // run exactly one isolated minimal Muse turn after the free reads. Never do
+    // this from the 60s poller: only this user-invoked method reaches the probe.
+    const museProbe = this.museUsageProbeTarget();
+    if (!museProbe) {
+      throw new Error("Muse usage refresh is unavailable because no Muse harness could be started.");
+    }
+    // Free reads and the explicit Muse probe are independent. Start them
+    // together so a slow Codex/Claude refresh does not add its latency on top
+    // of the provider turn the user is already waiting for.
+    const [, probed] = await Promise.all([
+      Promise.allSettled(tasks),
+      museProbe.adapter.probeUsageLimits!(),
+    ]);
+    if (museProbe.remote && probed) {
+      // The event and RPC result share one transport but are consumed through
+      // separate paths. Merge the returned snapshot too, so the HTTP response
+      // cannot race ahead of the pushed remote event.
+      this.mergeRemoteUsage({ muse: probed });
+    }
     return this.usageLimits;
+  }
+
+  /** Explicit remote-engine entry for a cross-host Muse session facade. */
+  async probeSessionUsage(id: string): Promise<ProviderUsage | undefined> {
+    const session = this.sessions.get(id);
+    if (!session || session.closed) {
+      throw new Error(`Session '${id}' was not found.`);
+    }
+    if (typeof session.adapter.probeUsageLimits !== "function") {
+      throw new Error(`Session '${id}' does not support an explicit usage probe.`);
+    }
+    return session.adapter.probeUsageLimits();
+  }
+
+  /** Selects one Muse host so one click always means one provider call. */
+  private museUsageProbeTarget(): { adapter: HarnessSession; remote: boolean } | undefined {
+    const active = this.activeUsageSource.get("muse");
+    if (active && active !== SessionManager.USAGE_SOURCE_REMOTE("muse") && active !== SessionManager.USAGE_SOURCE_BG("muse")) {
+      const owned = this.sessions.get(active);
+      if (!owned?.closed && typeof owned?.adapter.probeUsageLimits === "function") {
+        return { adapter: owned.adapter, remote: false };
+      }
+    }
+    // If Muse physically runs in WSL/SSH, probe there. The local facade forwards
+    // to the real remote adapter, whose usage event is already merged globally.
+    const remote = Array.from(this.sessions.values()).find((session) =>
+      !session.closed
+      && session.provider === "muse"
+      && !session.ownsUsageSource
+      && typeof session.adapter.probeUsageLimits === "function",
+    );
+    if (remote) return { adapter: remote.adapter, remote: true };
+
+    const local = Array.from(this.sessions.values()).find((session) =>
+      !session.closed
+      && session.provider === "muse"
+      && session.ownsUsageSource
+      && typeof session.adapter.probeUsageLimits === "function",
+    );
+    if (local) return { adapter: local.adapter, remote: false };
+
+    const background = this.usageAdapters.get("muse");
+    return typeof background?.probeUsageLimits === "function" ? { adapter: background, remote: false } : undefined;
   }
 
   /**
@@ -518,7 +602,7 @@ export class SessionManager extends EventEmitter {
   /** True when a non-closed session already reports this provider's usage. */
   private hasLiveSessionForProvider(provider: UsageProviderId): boolean {
     for (const session of this.sessions.values()) {
-      if (!session.closed && session.provider === provider) {
+      if (!session.closed && session.ownsUsageSource && session.provider === provider) {
         return true;
       }
     }
@@ -537,7 +621,7 @@ export class SessionManager extends EventEmitter {
       backoffUntil[provider] = until;
     }
     const liveProviders: UsageProviderId[] = [];
-    for (const p of ["claude", "codex", "cursor", "grok"] as UsageProviderId[]) {
+    for (const p of ["claude", "codex", "cursor", "grok", "muse"] as UsageProviderId[]) {
       if (this.hasLiveSessionForProvider(p)) {
         liveProviders.push(p);
       }
@@ -578,7 +662,8 @@ export class SessionManager extends EventEmitter {
         selectedHarnessId:
           provider === "codex" ? "codex" :
           provider === "cursor" ? "cursor" :
-          provider === "grok" ? "grok" : "claude-code",
+          provider === "grok" ? "grok" :
+          provider === "muse" ? "muse" : "claude-code",
       }, undefined, SessionManager.USAGE_SOURCE_BG(provider));
     } catch (error) {
       this.noteUsageAdapterFailure(provider, error);
@@ -802,6 +887,36 @@ export class SessionManager extends EventEmitter {
     return this.codexModels;
   }
 
+  getMuseModelState(): MuseModelDiscoveryState {
+    if (!this.museDiscovery) this.museDiscovery = this.runMuseDiscovery();
+    return this.museModels;
+  }
+
+  async warmMuseModels(): Promise<MuseModelDiscoveryState> {
+    this.getMuseModelState();
+    return (await this.museDiscovery) || this.museModels;
+  }
+
+  async refreshMuseModels(): Promise<MuseModelDiscoveryState> {
+    this.museDiscovery = this.runMuseDiscovery();
+    return this.museDiscovery;
+  }
+
+  private async runMuseDiscovery(): Promise<MuseModelDiscoveryState> {
+    try {
+      const discovered = await discoverMuseModels({
+        cwd: this.userDataDir,
+        executablePath: getSettings().museExecutablePath,
+      });
+      this.museModels = { status: "ready", ...discovered, at: new Date().toISOString() };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.museModels = { status: "error", models: [], error: message, at: new Date().toISOString() };
+    }
+    this.emit("muse-models", this.museModels);
+    return this.museModels;
+  }
+
   /**
    * Creates a QA mock session backed by {@link MockHarnessSession}. It performs
    * no model calls; events are driven by the QA API. Used only in QA mode.
@@ -871,12 +986,20 @@ export class SessionManager extends EventEmitter {
     return session.adapter;
   }
 
-  private registerSession(id: string, workspace: string, adapter: HarnessSession, provider?: UsageProviderId, identity?: PartyIdentity): SessionView {
+  private registerSession(
+    id: string,
+    workspace: string,
+    adapter: HarnessSession,
+    provider?: UsageProviderId,
+    identity?: PartyIdentity,
+    ownsUsageSource = true,
+  ): SessionView {
     const session: ManagedSession = {
       id,
       workspace,
       adapter,
       provider,
+      ownsUsageSource,
       identity,
       queuedEvents: [],
       eventStreamId: randomUUID(),
@@ -897,12 +1020,12 @@ export class SessionManager extends EventEmitter {
     // so the new session's first readings were dropped ("dropped usage_limit
     // from non-active source") and the titlebar kept the background poller's
     // empty/not-logged-in state.
-    if (provider) {
+    if (provider && ownsUsageSource) {
       this.activeUsageSource.set(provider, id);
     }
     adapter.start();
     this.emit("sessions", this.listSessions());
-    if (provider) {
+    if (provider && ownsUsageSource) {
       this.reconcileUsageAdapters();
     }
     return this.toView(session);
@@ -1320,19 +1443,19 @@ export class SessionManager extends EventEmitter {
     this.emit("sessions", this.listSessions());
     // Release source ownership but preserve the account-global value while
     // another live session or the background poller takes over immediately.
-    if (session.provider && this.activeUsageSource.get(session.provider) === id) {
+    if (session.ownsUsageSource && session.provider && this.activeUsageSource.get(session.provider) === id) {
       this.activeUsageSource.delete(session.provider);
       // If another member for the same account remains open, hand ownership to
       // it now instead of waiting up to 60s for its next polling tick.
       const replacement = Array.from(this.sessions.values()).find(
-        (candidate) => !candidate.closed && candidate.provider === session.provider,
+        (candidate) => !candidate.closed && candidate.ownsUsageSource && candidate.provider === session.provider,
       );
       if (replacement) {
         this.activeUsageSource.set(session.provider, replacement.id);
         void replacement.adapter.refreshUsageLimits?.();
       }
     }
-    if (session.provider) {
+    if (session.provider && session.ownsUsageSource) {
       this.reconcileUsageAdapters();
     }
     return true;
@@ -1585,6 +1708,38 @@ export class SessionManager extends EventEmitter {
         mcpServers: partyServers,
         // ACP has no system/developer prompt slot, so the primer rides in front
         // of the first turn (the Cursor arrangement).
+        partyPrimer,
+        usageSourceId,
+      }) as unknown as HarnessSession;
+    }
+    if (selectedHarness === "muse") {
+      // Muse MSP accepts native per-session MCP configuration. Keep the party
+      // relay scoped to this member; never modify the user's global Muse config.
+      const automationBaseUrl = this.codexAutomationBaseUrl(settings.automationApiPort);
+      const partyServers = binding && automationBaseUrl
+        ? {
+            "agentparty-app": {
+              command: spawnableNodeCommand(),
+              args: [resolvePartyMcpServerScript()],
+              env: {
+                ...partyMcpRuntimeEnv(),
+                AGENTPARTY_AUTOMATION_BASE_URL: automationBaseUrl,
+                AGENTPARTY_MEMBER: binding.identity.member,
+                AGENTPARTY_PARTY: binding.identity.party,
+                ...(process.env.AGENTPARTY_CODEX_MCP_OUT ? { AGENTPARTY_CODEX_MCP_OUT: process.env.AGENTPARTY_CODEX_MCP_OUT } : {}),
+              },
+            },
+          }
+        : undefined;
+      return new MuseAdapter({
+        id,
+        cwd,
+        executablePath: settings.museExecutablePath,
+        resumeSessionId,
+        model: selectedModel,
+        effort: request.effort || harnessDefaults.effort,
+        permissionMode: request.permissionMode || harnessDefaults.permissionMode,
+        mcpServers: partyServers,
         partyPrimer,
         usageSourceId,
       }) as unknown as HarnessSession;

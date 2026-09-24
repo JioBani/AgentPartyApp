@@ -296,7 +296,7 @@ export const PARTY_PRIMER_CHANNEL_LABELS: Record<PartyPrimerChannel, string> = {
 };
 
 export interface PartyPrimerDelivery {
-  harness: "claude-code" | "codex" | "cursor" | "grok";
+  harness: "claude-code" | "codex" | "cursor" | "grok" | "muse";
   label: string;
   /** Where it goes — see {@link PartyPrimerChannel}. */
   channel: PartyPrimerChannel;
@@ -338,6 +338,14 @@ export const PARTY_PRIMER_DELIVERY: readonly PartyPrimerDelivery[] = [
     channel: "user",
     when: "첫 메시지에 1회",
     detail: "ACP 의 session/new 에는 시스템·개발자 프롬프트 자리가 없어(cwd·MCP 서버뿐) Cursor 와 같은 방식으로 첫 프롬프트 앞에 한 번 붙습니다. 스레드를 재개할 때는 이미 기록에 있으므로 다시 보내지 않습니다.",
+    delivered: true,
+  },
+  {
+    harness: "muse",
+    label: "Muse Code",
+    channel: "user",
+    when: "첫 메시지에 1회",
+    detail: "MSP에는 별도 시스템·개발자 프롬프트 슬롯이 없어 첫 요청 앞에 한 번 붙입니다. 재개한 세션에는 기존 기록이 있으므로 다시 보내지 않습니다.",
     delivered: true,
   },
 ];

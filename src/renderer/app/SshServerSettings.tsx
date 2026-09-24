@@ -68,7 +68,7 @@ function authLabel(server: SshServerView) {
 
 function agentName(id: string): string {
   const harness = id.slice("agent:".length);
-  return harness === "claude-code" ? "Claude" : harness === "codex" ? "Codex" : harness === "cursor" ? "Cursor" : harness === "grok" ? "Grok" : harness;
+  return harness === "claude-code" ? "Claude" : harness === "codex" ? "Codex" : harness === "cursor" ? "Cursor" : harness === "grok" ? "Grok" : harness === "muse" ? "Muse" : harness;
 }
 
 function SshServerItem({ server, now, onEdit, onDelete, onTest, onSetupAutoLogin, onReviewFingerprint }: { server: SshServerView } & SshServerSettingsProps) {

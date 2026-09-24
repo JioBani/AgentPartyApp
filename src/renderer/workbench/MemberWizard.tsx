@@ -8,6 +8,7 @@ import type { RouteEntry } from "./modelMeters";
 import type { CreateMemberInput, MemberTabGroupOption } from "./PartySidebar";
 import { ModelCatalogModal, type ModelCatalogValue } from "./ModelCatalogModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { MuseModelDiscoveryState } from "../../shared/museModels";
 import type { DefaultMemberProfile, HarnessDefaults } from "../../shared/types";
 import type { HarnessId, PermissionModeSetting } from "../../shared/types";
 import { SERVICE_TIER_INHERIT, harnessLabel, normalizeServiceTierSelection } from "../../shared/types";
@@ -24,6 +25,7 @@ const PERMISSION_HINTS: Record<HarnessId, string> = {
   codex: "Codex 하니스에서 사용할 Sandbox와 승인 정책, Guardian을 지정합니다. 선택한 모델 공급자와 관계없이 이 권한 정책이 유지됩니다.",
   cursor: "Cursor CLI의 작업 모드와 승인 모드를 그대로 설정합니다.",
   grok: "Grok Build는 도구 실행을 클라이언트에 묻지 않습니다. 플랜 모드만 적용되고, 나머지 권한 설정은 이 하니스에 영향을 주지 않습니다.",
+  muse: "Muse Code의 네이티브 승인 모드를 설정합니다. 기본값은 작업별 승인 요청입니다.",
 };
 import { cursorPolicyOf, type CursorPolicy } from "../../shared/cursorPolicy";
 import { HarnessIcon } from "./HarnessIcon";
@@ -40,6 +42,9 @@ interface MemberWizardProps {
    *  codex list is still loading or failed (fallback-only), never silently. */
   codexModels?: CodexModelDiscoveryState;
   onRefreshCodexModels?: () => void;
+  /** Live Muse MSP catalog state; fallback-only lists must be explicit. */
+  museModels?: MuseModelDiscoveryState;
+  onRefreshMuseModels?: () => void;
   /** Seed values so "next, next, next" creates a member with the saved defaults. */
   defaultProfile: DefaultMemberProfile;
   /** Per-harness defaults — switching harness seeds THAT harness's default. */
@@ -102,7 +107,14 @@ const GROK_HARNESS: HarnessChoice = {
   icon: <HarnessIcon harness="grok" size={16} />,
   hint: "xAI Grok Build CLI · 구독 · 도구를 스스로 승인",
 };
-const ALL_HARNESSES = [...HARNESSES, CURSOR_HARNESS, GROK_HARNESS];
+const MUSE_HARNESS: HarnessChoice = {
+  id: "muse",
+  label: "Muse Code",
+  status: "available",
+  icon: <HarnessIcon harness="muse" size={16} />,
+  hint: "Meta Muse Code CLI · MSP · 구독 로그인",
+};
+const ALL_HARNESSES = [...HARNESSES, CURSOR_HARNESS, GROK_HARNESS, MUSE_HARNESS];
 /**
  * Phase 1 runs only Codex and Claude Code on an SSH server. The others stay in
  * the list, visibly unavailable, because nothing the user does can make them work
@@ -134,7 +146,7 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: "runtime", label: "실행 구성" },
   { id: "permission", label: "권한" },
 ];
-export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, submitting = false, createError, onCancel, onCreate }: MemberWizardProps) {
+export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexModels, museModels, onRefreshCodexModels, onRefreshMuseModels, defaultProfile, harnessDefaults, cwdPrefs, appWorkspaceRoot, initialLocation, now, onBrowseCwd, wsl, startStep = 0, submitting = false, createError, onCancel, onCreate }: MemberWizardProps) {
   const [name, setName] = useState("");
   const [tabGroup, setTabGroup] = useState(() => (
     defaultTabGroupId && tabGroups.some((group) => group.id === defaultTabGroupId)
@@ -221,7 +233,7 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
   const thinkingOn = Boolean(thinkingMode) && thinkingMode !== "disabled";
   const showBudget = Boolean(thinkingCap?.budget) && thinkingOn;
   const selectedHarness = ALL_HARNESSES.find((item) => item.id === harness);
-  const executionHarness = harness === "codex" ? "codex" : harness === "cursor" ? "cursor" : harness === "grok" ? "grok" : "claude-code";
+  const executionHarness = harness === "codex" ? "codex" : harness === "cursor" ? "cursor" : harness === "grok" ? "grok" : harness === "muse" ? "muse" : "claude-code";
 
   useEffect(() => {
     if (executionHarness === "codex") {
@@ -511,6 +523,19 @@ export function MemberWizard({ routes, tabGroups = [], defaultTabGroupId, codexM
                   {onRefreshCodexModels && (
                     <button type="button" className="wb-btn wb-btn-ghost" onClick={onRefreshCodexModels}>
                       <RefreshCw size={13} />  <LocalizedText id="STR-1762" />
+                    </button>
+                  )}
+                </p>
+              )}
+              {harness === "muse" && museModels?.status === "pending" && (
+                <p className="wb-wizard-hint">{localized("STR-1760").replace("Codex", "Muse Code")}</p>
+              )}
+              {harness === "muse" && museModels?.status === "error" && (
+                <p className="wb-wizard-error">
+                  {localized("STR-1761").replace("Codex", "Muse Code")} {museModels.error}
+                  {onRefreshMuseModels && (
+                    <button type="button" className="wb-btn wb-btn-ghost" onClick={onRefreshMuseModels}>
+                      <RefreshCw size={13} /> <LocalizedText id="STR-1762" />
                     </button>
                   )}
                 </p>

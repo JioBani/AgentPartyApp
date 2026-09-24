@@ -45,6 +45,11 @@ const liveAstraRoute = buildModelRoutes("sonnet", [], [], [{ model: "gpt-6-astra
 assert(liveAstraRoute?.label === "GPT-6 Astra", "live Astra discovery keeps the shared catalog label");
 assert(liveAstraRoute?.capabilities.effort.options.at(-1)?.id === "ultra", "live Astra discovery preserves Codex-only ultra effort");
 assert(liveAstraRoute?.capabilities.serviceTier?.options.some((option) => option.id === "priority"), "live Astra discovery preserves the Fast tier");
+const liveSol6Route = buildModelRoutes("sonnet", [], [], [{ model: "gpt-6-sol", displayName: "GPT-6-Sol", isDefault: false, hidden: false, defaultReasoningEffort: "medium", reasoningEfforts: [{ id: "low" }, { id: "medium" }, { id: "high" }, { id: "xhigh" }, { id: "max" }, { id: "ultra" }], serviceTiers: [{ id: "priority", name: "Fast", description: "1.5x speed" }] }])
+  .find((r) => r.harnessId === "codex" && r.model === "gpt-6-sol");
+assert(liveSol6Route?.label === "GPT-6 Sol", "live Sol 6 discovery keeps the shared catalog label");
+assert(liveSol6Route?.capabilities.effort.defaultValue === "medium" && liveSol6Route.capabilities.effort.options.at(-1)?.id === "ultra", "live Sol 6 discovery preserves medium default and Codex-only ultra effort");
+assert(liveSol6Route?.capabilities.serviceTier?.options.some((option) => option.id === "priority"), "live Sol 6 discovery preserves the Fast tier");
 assert(PROVIDER_LABELS.anthropic === "Claude" && PROVIDER_LABELS.openai === "Codex" && PROVIDER_LABELS.cursor === "Cursor" && PROVIDER_LABELS.openrouter === "OpenRouter", "model groups use the same provider names as Authentication");
 const baiEffort = routes.find((route) => route.harnessId === "codex" && route.providerId === "bai")?.capabilities.effort;
 assert(matchingCapabilityOption(baiEffort, "MAX") === "max", "effort matching returns the catalog's canonical id");
@@ -77,6 +82,7 @@ for (const [model, mark] of [
   ["Laguna XS 2.1", "poolside"],
   ["GLM-5.2", "zai"],
   ["MiniMax M3", "minimax"],
+  ["Grok 4.7", "grok"],
   ["Grok 4.5 Cursor", "grok"],
 ]) {
   assert(modelMarkForModel(model) === mark, `${model} resolves to the ${mark} model mark`);
@@ -125,6 +131,12 @@ assert(gemini37?.runtimeModel === "claude-gemini-3-7-flash", "Gemini 3.7 Flash h
 assert(alias["claude-gemini-3-7-flash"] === "google/gemini-3.7-flash", "Gemini 3.7 Flash alias resolves to its exact OpenRouter id");
 assert(gemini37Codex?.modelProvider === "openrouter" && gemini37Codex.enabled, "Gemini 3.7 Flash is selectable on Codex through OpenRouter");
 assert(gemini37?.pricing?.inputUsdPerM === 0.375 && gemini37?.pricing?.outputUsdPerM === 1.875, "Gemini 3.7 Flash exposes current OpenRouter token prices");
+const grok47OpenRouter = routes.find((route) => route.harnessId === "claude-code" && route.model === "Grok 4.7");
+const grok47OpenRouterCodex = routes.find((route) => route.harnessId === "codex" && route.model === "x-ai/grok-4.7");
+assert(grok47OpenRouter?.runtimeModel === "claude-grok-4-7" && grok47OpenRouter.enabled, "Grok 4.7 has an enabled Claude Code route through OpenRouter");
+assert(grok47OpenRouterCodex?.modelProvider === "openrouter" && grok47OpenRouterCodex.enabled, "Grok 4.7 has an enabled Codex route through OpenRouter");
+assert(grok47OpenRouter?.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high,xhigh", "Grok 4.7 OpenRouter route exposes the documented effort levels");
+assert(grok47OpenRouter?.pricing?.inputUsdPerM === 1.6 && grok47OpenRouter?.pricing?.outputUsdPerM === 4.8, "Grok 4.7 OpenRouter route exposes current token prices");
 const gptMiniClaudeRoute = routes.find((route) => route.harnessId === "claude-code" && route.model === "GPT-5.4 mini");
 assert(alias["claude-gpt-5.4-mini"] === undefined, "Claude Code GPT mini is absent from the OpenRouter alias map");
 assert(routerTargetForModel("claude-gpt-5.4-mini")?.kind === "codex-subscription", "Claude Code GPT mini targets the Codex subscription proxy");
@@ -171,6 +183,10 @@ assert(astra?.runtimeModel === "claude-gpt-6-astra", "Astra has the Claude Code 
 assert(astra?.meta?.context === "1.05M" && astra.meta.inPerM === 10 && astra.meta.outPerM === 50, "Astra carries the official context and token prices");
 assert(astra?.capabilities.effort.defaultValue === "medium" && astra.capabilities.effort.options.map((o) => o.id).join() === "low,medium,high,xhigh,max", "Astra static route exposes the cross-harness effort subset with measured medium default");
 assert(astra?.capabilities.vision.image === true, "Astra static route reports image input support");
+const sol6 = routes.find((route) => route.harnessId === "claude-code" && route.providerId === "openai" && route.model === "GPT-6 Sol");
+assert(sol6?.runtimeModel === "claude-gpt-6-sol" && sol6?.meta?.context === "272K", "Sol 6 has the Claude Code subscription-proxy alias and CLI-reported context");
+assert(sol6?.capabilities.effort.defaultValue === "medium" && sol6.capabilities.effort.options.map((o) => o.id).join() === "low,medium,high,xhigh,max", "Sol 6 static route exposes the transportable effort subset with medium default");
+assert(sol6?.capabilities.vision.image === true, "Sol 6 static route reports image input support");
 
 assert(routes.some((route) => route.harnessId === "codex" && route.model === "gpt-5.4" && route.enabled), "Codex default route is exposed");
 
@@ -196,10 +212,11 @@ const expectedRouteCount =
   + deepseekCodexCount             // codex: DeepSeek's own API
   + baiModels().length             // codex: verified B.AI Responses models
   + grokHarnessRoutes().length     // grok: what the Grok Build CLI serves
+  + 1                              // muse: provider-owned default MSP route
   + modelCatalog().filter((m) => m.provider !== "bai").length // cursor: B.AI is Codex-only
   + unavailableCursorProviderCount // cursor-provider models parked on other harnesses
   + 1;                             // cursor: the Auto route
-assert(expectedRouteCount === routes.length, `all catalog combinations plus executable Cursor and Grok routes are produced (expected ${expectedRouteCount}, got ${routes.length})`);
+assert(expectedRouteCount === routes.length, `all catalog combinations plus executable Cursor, Grok, and Muse routes are produced (expected ${expectedRouteCount}, got ${routes.length})`);
 // DeepSeek direct API: claude-code reaches every model through the Anthropic
 // endpoint; codex only reaches the ones DeepSeek serves on the Responses wire.
 console.log("\nDeepSeek direct API routes:");
@@ -236,18 +253,26 @@ assert(cursorRoutes.length === modelCatalog().filter((m) => m.provider !== "bai"
 assert(cursorRoutes.find((route) => route.model === "Auto")?.runtimeModel === "auto", "Cursor Auto route carries the CLI auto slug");
 assert(cursorRoutes.find((route) => route.model === "Grok 4.5")?.runtimeModel === "cursor-grok-4.5-high", "Cursor Grok route carries the verified named-model slug");
 const grokRoutes = grokHarnessRoutes();
-assert(grokRoutes.map((route) => route.model).join(",") === "grok-4.6,grok-4.5", "Grok Build exposes 4.6 first and retains 4.5");
+assert(grokRoutes.map((route) => route.model).join(",") === "grok-4.7,grok-4.7-build-fast,grok-4.6,grok-4.5", "Grok Build exposes both 4.7 routes first and retains 4.6 / 4.5");
 assert(grokRoutes.every((route) => route.pricing.context === "500K"), "Grok Build routes carry the ACP-reported 500K context");
+const grok47 = grokRoutes.find((route) => route.model === "grok-4.7");
+const grok47Fast = grokRoutes.find((route) => route.model === "grok-4.7-build-fast");
 const grok46 = grokRoutes.find((route) => route.model === "grok-4.6");
 const grok45 = grokRoutes.find((route) => route.model === "grok-4.5");
+assert(grok47?.capabilities.effort.defaultValue === "high" && grok47.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high,xhigh", "Grok 4.7 exposes the documented effort menu and high default");
+assert(grok47Fast?.capabilities.effort.defaultValue === "high" && grok47Fast.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high,xhigh", "Grok 4.7 Fast keeps the same effort menu");
 assert(grok46?.capabilities.effort.supported && grok46.capabilities.effort.defaultValue === "high" && grok46.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high,xhigh", "Grok 4.6 exposes its measured effort menu and high default");
 assert(grok45?.capabilities.effort.supported && grok45.capabilities.effort.defaultValue === "high" && grok45.capabilities.effort.options.map((option) => option.id).join() === "low,medium,high", "Grok 4.5 exposes its measured effort menu and high default");
 assert(grokRoutes.every((route) => route.capabilities.effort.mutableDuringSession === false && route.capabilities.thinking.supported === false), "Grok effort is start-time-only and reasoning has no separate toggle");
+const museRoute = routes.find((route) => route.harnessId === "muse" && route.model === "muse-default");
+assert(museRoute?.providerId === "meta", "Muse Code exposes one provider-owned default MSP route");
+assert(museRoute?.capabilities.effort.mutableDuringSession === true, "Muse Code effort is mutable through MSP");
+assert(museRoute?.capabilities.permission.supported === true && museRoute?.capabilities.vision.image === true, "Muse Code bridges approvals and image input");
 assert(cursorRoutes.find((route) => route.model === "Grok 4.5")?.capabilities.serviceTier?.options.map((o) => o.id).join() === "standard,fast", "Cursor Grok exposes independent Standard/Fast service modes");
 const cursorBridgeRoute = routes.find((route) => route.harnessId === "claude-code" && route.providerId === "cursor" && route.model === "Grok 4.5 Cursor");
 assert(cursorBridgeRoute?.enabled === false && cursorBridgeRoute.locked === true, "Claude Code keeps the executable Cursor ACP bridge visible but beta-locked");
 assert(!routes.some((route) => route.harnessId === "claude-code" && route.providerId === "cursor" && route.model === "Grok 4.5" && route.enabled === false), "Claude Code omits the obsolete disabled Cursor Grok duplicate");
-for (const [id, slug, perf, costTier] of [["GPT-6 Astra", "gpt-6-astra", 5, 5], ["GPT-5.6 Sol", "gpt-5.6-sol", 5, 5], ["GPT-5.6 Terra", "gpt-5.6-terra", 4, 4], ["GPT-5.6 Luna", "gpt-5.6-luna", 3, 3]]) {
+for (const [id, slug, perf, costTier] of [["GPT-6 Astra", "gpt-6-astra", 5, 5], ["GPT-6 Sol", "gpt-6-sol", 5, 5], ["GPT-5.6 Sol", "gpt-5.6-sol", 5, 5], ["GPT-5.6 Terra", "gpt-5.6-terra", 4, 4], ["GPT-5.6 Luna", "gpt-5.6-luna", 3, 3]]) {
   const codexRoute = routes.find((route) => route.harnessId === "codex" && route.model === slug);
   assert(Boolean(codexRoute), `'${slug}' is selectable on the codex harness without discovery`);
   assert(codexRoute?.meta?.perf === perf && codexRoute?.meta?.costTier === costTier, `'${slug}' carries leaderboard meta perf ${perf} / cost ${costTier}`);

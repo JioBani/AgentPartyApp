@@ -4,8 +4,9 @@ import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import type { ImageAttachment } from "../../shared/attachments";
 import type { McpAuthResult, McpServerSnapshot } from "../../shared/mcp";
+import type { ProviderUsage } from "../../shared/usageLimits";
 
-export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
+export type HarnessId = "claude-code" | "codex" | "cursor" | "grok" | "muse";
 
 export interface HarnessSession extends EventEmitter {
   start(): void;
@@ -34,6 +35,11 @@ export interface HarnessSession extends EventEmitter {
    */
   /** Refresh provider/account-scoped usage limits now, if the harness exposes them. */
   refreshUsageLimits?(): Promise<void>;
+  /**
+   * Explicit user refresh that may perform a minimal provider call. Kept
+   * separate from passive polling so timers never consume model quota.
+   */
+  probeUsageLimits?(): Promise<ProviderUsage | undefined>;
   /** Codex-only: update the two-axis safety model live. Absent on Claude. */
   setCodexPolicy?(policy: CodexPolicy): void;
   /** Cursor-only: update agent mode and approval mode for the next turn. */
@@ -94,5 +100,11 @@ export const harnesses: HarnessDescriptor[] = [
     label: "Grok Build",
     status: "available",
     description: "xAI's Grok Build CLI over ACP, on your Grok subscription. Approves its own tool calls.",
+  },
+  {
+    id: "muse",
+    label: "Muse Code",
+    status: "available",
+    description: "Meta Muse Code CLI over the durable Muse Session Protocol.",
   },
 ];

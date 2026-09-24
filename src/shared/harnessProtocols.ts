@@ -29,6 +29,11 @@ export const HARNESS_PROTOCOLS = {
     wireApi: "acp",
     endpoint: "stdio",
   },
+  muse: {
+    id: "muse-session-protocol",
+    wireApi: "msp",
+    endpoint: "stdio",
+  },
 } as const satisfies Record<HarnessId, {
   id: string;
   wireApi: string;

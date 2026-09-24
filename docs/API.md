@@ -1036,7 +1036,7 @@ explicit boolean on the individual send takes precedence over both.
 
 Member-creation defaults are **per harness** (`harnessDefaults`), not global: each
 harness owns its own default model/effort/reasoning and its harness-appropriate
-permission config (`permissionMode` for Claude Code, `codexPolicy` for Codex,
+permission config (`permissionMode` for Claude Code and Muse Code, `codexPolicy` for Codex,
 and `cursorPolicy` for Cursor). `selectedHarnessId` is the harness a brand-new member defaults to. A new
 member is created from ITS harness's defaults (a Codex member gets the Codex
 default model + sandbox policy, a Claude member the Claude default + permission
@@ -1060,21 +1060,41 @@ provider that separates "not installed" from "installed but not signed in".
 - **The Grok Build harness** — `selectedHarnessId: "grok"` (member `runtime:
   "grok"`), which runs the official `grok` CLI over ACP. Party tools reach it
   through `session/new`'s `mcpServers`, so nothing is written to disk. As
-  measured from the authenticated CLI on 2026-08-13, it exposes `grok-4.6`
-  (the default) and retains `grok-4.5`; both report a 500K context window.
+  measured from the authenticated Grok Build 1.0.3 CLI on 2026-09-22, it
+  exposes `grok-4.7` (the default), `grok-4.7-build-fast`, `grok-4.6`, and
+  `grok-4.5`; all report a 500K context window.
 
 Grok Build reasoning settings were re-measured against the official CLI on
-2026-08-13. `grok-4.6` accepts `low`, `medium`, `high`, and `xhigh` effort;
-`grok-4.5` accepts `low`, `medium`, and `high`. Both default to `high`. The CLI
-consumes `--reasoning-effort` when the ACP agent starts, so a saved live change
-takes effect after the member is reopened/restarted. Neither model exposes a
-separate reasoning on/off toggle (`none` and `minimal` are rejected). Grok Build
-ACP permission requests are bridged into AgentParty's normal approval flow.
+2026-09-22. Both Grok 4.7 routes and `grok-4.6` accept `low`, `medium`, `high`,
+and `xhigh` effort; `grok-4.5` accepts `low`, `medium`, and `high`. All default
+to `high`. The CLI consumes `--reasoning-effort` when the ACP agent starts, so
+a saved live change takes effect after the member is reopened/restarted. None
+of these models exposes a separate reasoning on/off toggle (`none` and
+`minimal` are rejected). Grok Build ACP permission requests are bridged into
+AgentParty's normal approval flow.
 `GET /api/usage` reports Grok's authenticated subscription-credit period from
 the official CLI's `_x.ai/billing` extension (the same source as `/usage`).
 Per-turn tokens ARE recorded separately — the gateway
 measures them from the upstream response, because Claude Code reports zeros for
 router-backed models.
+
+### Muse Code
+
+`selectedHarnessId: "muse"` (member `runtime: "muse"`) runs the official Muse
+Code CLI over its stable Muse Session Protocol (MSP). AgentParty starts or
+resumes Muse's durable session, streams messages, reasoning and tool activity,
+bridges approvals and user questions, forwards images, context/token usage and
+compaction, and installs the `agentparty-app` MCP server as session-scoped
+configuration. It never edits the user's global Muse configuration.
+
+The catalog is read live from the signed-in Muse Code account through MSP
+`model/list`, so every model the provider exposes is selectable. A host without
+an active Muse profile can return a successful but empty `bundledCatalog`; in
+that case AgentParty exposes its last-known public Muse catalog (the four 1.3
+and 1.2 standard/contributor routes). A discovery error is surfaced and keeps
+`muse-default` as an explicit compatibility fallback. Reasoning effort and
+approval mode are mutable during a live session. The native login is owned by
+the Muse CLI; use `muse login` (or `/login` in its TUI).
 
 `favoriteModels` is the list of catalog model **ids** the user has starred. The
 model catalog pins them above the provider groups, in catalog order. It drives
@@ -1126,7 +1146,8 @@ Example:
   "harnessDefaults": {
     "claude-code": { "model": "MiniMax M3", "effort": "medium", "permissionMode": "plan" },
     "codex": { "model": "gpt-5.5", "effort": "medium", "codexPolicy": { "sandbox": "read-only", "approval": "on-request", "guardian": false } },
-    "cursor": { "model": "Grok 4.5", "effort": "high", "cursorPolicy": { "mode": "agent", "approval": "allowlist" } }
+    "cursor": { "model": "Grok 4.5", "effort": "high", "cursorPolicy": { "mode": "agent", "approval": "allowlist" } },
+    "muse": { "model": "muse-spark-1.3-contributor", "effort": "high", "permissionMode": "default" }
   },
   "debugEnabled": true
 }
@@ -1163,8 +1184,8 @@ native card includes `host`, host-native `workspace`, and a token-free `command`
 One card being connected never changes the other card's status. The native CLI
 surface groups one card per CLI provider, with independent Windows and
 default-WSL rows inside it. The stable row ids are `claude-native` /
-`claude-native-wsl`, `codex` / `codex-wsl`, `cursor` / `cursor-wsl`, and `grok` /
-`grok-wsl`. WSL remains `status: "unknown"` until its own test is requested,
+`claude-native-wsl`, `codex` / `codex-wsl`, `cursor` / `cursor-wsl`, `grok` /
+`grok-wsl`, and `muse` / `muse-wsl`. WSL remains `status: "unknown"` until its own test is requested,
 because an implicit check would boot the distribution.
 
 ### `GET /api/auth/native/claude`
@@ -1191,7 +1212,7 @@ The Authentication screen labels the two cross-harness proxy rows simply
 ### `POST /api/auth/native/:provider/test`
 
 Runs the selected CLI through the same executable and runtime probes used by
-the Environment screen. `:provider` is `claude`, `codex`, `cursor`, or `grok`;
+the Environment screen. `:provider` is `claude`, `codex`, `cursor`, `grok`, or `muse`;
 the JSON body must
 contain `host: "windows" | "wsl"`. An optional `distro` selects a particular WSL
 distribution; otherwise the `*` default reported by `wsl.exe -l -v` is used. If
@@ -1208,7 +1229,9 @@ HTTP success with `ok: false` so clients can render the diagnostic result.
 Claude uses `auth status`, Codex uses `login status` plus app-server
 initialization, Cursor uses `status --format json`, and Grok lets the official
 CLI validate its own rotating credential with the read-only `grok models`
-command. None of these tests sends a model prompt.
+command. Muse has no token-free login-status command, so its explicitly requested
+connection test sends one minimal, read-only `muse exec` prompt; ordinary
+environment checks do not call a model.
 
 The test publishes `auth:native-progress` after every real probe boundary. The
 first event contains the complete ordered plan with every step `pending`; the
@@ -1555,12 +1578,13 @@ Returns `{ ok, removed }`.
 ### `GET /api/models`
 
 Returns the selectable model routes, harness permission contracts/defaults, and
-the Codex catalog discovery state. Every route reports `executionHarness`, which
+the Codex and Muse catalog discovery states. Every route reports `executionHarness`, which
 is the actual selected harness process and therefore matches `harnessId` even
 for cross-routed models.
 
 `modelProviders` is the shared provider contract used by Authentication and the
-Workbench model groups. It contains Claude, Codex, Cursor, and OpenRouter;
+Workbench model groups. It includes Muse (`id: "muse"`, route provider `meta`)
+alongside the other native and API providers;
 `routeProviderId` maps the stable product identity to the internal
 catalog route id used by each `modelRoutes` item.
 
@@ -1573,7 +1597,8 @@ catalog route id used by each `modelRoutes` item.
     { "id": "claude-code", "status": "available", "permission": { "kind": "permissionMode", "options": ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"], "default": "default" } },
     { "id": "cursor", "status": "available", "permission": { "kind": "cursorPolicy", "mode": ["agent", "ask", "plan"], "approval": ["allowlist", "auto-review", "unrestricted"], "default": { "mode": "agent", "approval": "allowlist" } } }
   ],
-  "codexModels": { "status": "ready", "models": [{ "model": "gpt-5.5", "isDefault": true }], "at": "2026-07-03T00:00:00.000Z" }
+  "codexModels": { "status": "ready", "models": [{ "model": "gpt-5.5", "isDefault": true }], "at": "2026-07-03T00:00:00.000Z" },
+  "museModels": { "status": "ready", "models": [{ "model": "muse-spark-1.3-contributor", "displayName": "muse-spark-1.3-contributor", "isDefault": true, "providerId": "meta" }], "providerId": "meta", "source": "providerCatalog", "at": "2026-09-22T00:00:00.000Z" }
 }
 ```
 
@@ -1603,12 +1628,19 @@ Codex routes come from two sources (see `docs/codex-ux-research/07-model-routing
 
 Cross-routing keeps the chosen harness process intact:
 
-- **Grok Build** exposes `grok-4.6` and `grok-4.5` with
-  `"harnessId":"grok"`. New installs default to 4.6; an existing saved 4.5
-  preference remains selectable and is not silently rewritten. The 4.6 route
-  advertises `low/medium/high/xhigh` effort and the 4.5 route advertises
-  `low/medium/high`; effort is applied at ACP process start and is therefore
-  marked `mutableDuringSession:false`.
+- **Grok Build** exposes `grok-4.7`, `grok-4.7-build-fast`, `grok-4.6`, and
+  `grok-4.5` with `"harnessId":"grok"`. New installs default to 4.7; existing
+  saved 4.6/4.5 preferences remain selectable and are not silently rewritten.
+  Both 4.7 routes and 4.6 advertise `low/medium/high/xhigh` effort, while 4.5
+  advertises `low/medium/high`; effort is applied at ACP process start and is
+  therefore marked `mutableDuringSession:false`.
+
+- **Muse Code** discovers every account-visible model through the official
+  CLI's MSP `model/list` method and exposes each with `"harnessId":"muse"`.
+  `muse-default` remains only when discovery is pending or failed, preserving
+  existing saved settings without hiding the failure. Session resume, live
+  effort/model/approval updates, images, tools, skills, and compaction remain on
+  the same durable MSP session.
 
 - **Claude Code + GPT** uses the Claude Code SDK with its `claude-gpt-*` alias;
   the embedded gateway keeps the request as Anthropic Messages and maps only the
@@ -1664,7 +1696,7 @@ response that under-reports it is worse than a large one:
 - The index lists **every** model. A model that cannot run on a harness appears
   under `unavailableOn` rather than being dropped.
 - A filter that matches nothing is an **error naming what does exist**
-  (`No harness "nope". Available harnesses: codex, claude-code, grok, cursor.`),
+  (`No harness "nope". Available harnesses: codex, claude-code, grok, cursor, muse.`),
   never `{ models: [] }`.
 - When every match is unavailable, the rows come back anyway, each with
   `unavailableReason` and a `note` saying so — the model exists, it just cannot
@@ -1718,6 +1750,11 @@ install. It does not return Cursor credentials or make a model call.
 Re-runs Codex model discovery and returns the same shape as `GET /api/models`
 after the fresh discovery settles.
 
+### `POST /api/models/muse/refresh`
+
+Re-runs Muse Code MSP `model/list` discovery and returns the same shape as
+`GET /api/models` after the fresh discovery settles.
+
 ### `GET /api/models/catalog`
 
 Reports which **model catalog** built the current routes. The catalog is
@@ -1769,9 +1806,9 @@ that provider), not per-session or per-workspace, so this endpoint takes no
 parameters. AgentParty first asks a newly-started harness for its current usage
 when the harness exposes a read API (Claude SDK `/usage`, Codex
 `account/rateLimits/read`, Cursor `DashboardService/GetCurrentPeriodUsage` with
-the CLI's own stored credential), then keeps the snapshot fresh from each
+the CLI's own stored credential, Muse MSP `usage/read`), then keeps the snapshot fresh from each
 harness's own event stream (Claude `rate_limit_event`, Codex
-`account/rateLimits/updated`) or a 60s poll (Cursor).
+`account/rateLimits/updated`, Muse `usage/changed`) or a 60s poll (Cursor and Muse).
 Reports are merged per provider; a provider absent from the response simply
 hasn't reported yet (show an unknown/loading state, never a fabricated 0%). A
 read that answers but carries no usable windows is published as an explicit
@@ -1826,17 +1863,20 @@ rate-limit event. Expired reset windows and malformed cache entries are discarde
       "updatedAt": 1751900000000,
       "windows": [ { "kind": "monthly", "utilization": 42, "resetsAt": 1753900000000 } ]
     },
-    "grok": { "provider": "grok", "available": true, "updatedAt": 1786550000000, "windows": [ { "kind": "weekly", "utilization": 14, "resetsAt": 1786896635397 } ] }
+    "grok": { "provider": "grok", "available": true, "updatedAt": 1786550000000, "windows": [ { "kind": "weekly", "utilization": 14, "resetsAt": 1786896635397 } ] },
+    "muse": { "provider": "muse", "available": true, "updatedAt": 1790060000000, "windows": [ { "kind": "five_hour", "utilization": 21, "resetsAt": 1790078000000 }, { "kind": "weekly", "utilization": 37, "resetsAt": 1790664800000 } ] }
   }
 }
 ```
 
-`utilization` is 0–100; `resetsAt` is epoch **ms** (omitted when the provider
+`utilization` is non-negative and may exceed 100 when a provider reports over-quota usage; `resetsAt` is epoch **ms** (omitted when the provider
 didn't report a reset). Claude/Codex report `five_hour` + `weekly` windows;
 Cursor reports one `monthly` window — the signed-in account's billing-cycle plan
 meter (reset at `billingCycleEnd`). Grok Build reports a `weekly` subscription
-credit window and reset from `_x.ai/billing`; its completed-turn tokens/cost
-remain separately available in `/api/token-usage`.
+credit window and reset from `_x.ai/billing`. Muse reports its current
+5-hour-class window and rolling weekly window from the official MSP subscription
+usage surface. Completed-turn tokens/cost remain separately available in
+`/api/token-usage`.
 `available:false` means the provider-reported limit is not applicable or not
 exposed — render "해당 없음", not 0%. Missing provider data is rendered as
 loading/unknown until a read or push update arrives. Windows update live over
@@ -1848,8 +1888,14 @@ running. Users or automation can request an immediate refresh:
 ### `POST /api/usage/refresh`
 
 Asks every live harness that exposes usage reads to refresh now, then returns the
-same shape as `GET /api/usage`. Failures are surfaced as session status events
-instead of silently clearing existing usage.
+same shape as `GET /api/usage`. Muse's official `usage/read` is last-observed and
+cannot populate a fresh host, so every explicit refresh also performs exactly
+one minimal Muse provider turn in an isolated hidden MSP session. This consumes
+a small amount of Muse quota but never changes a member conversation or appears
+in its transcript. Automatic 60s polling remains read-only and never performs a
+model turn. For WSL/SSH members the probe runs in the remote engine that owns the
+real Muse harness. Probe failures reject the refresh request and are surfaced to
+the user instead of silently clearing existing usage.
 
 ### `GET /api/token-usage`
 
@@ -2684,7 +2730,7 @@ workspace, which is where a member would have run before locations existed.
 
 Creation accepts the full runtime profile: `model`, `effort`, `reasoning`,
 `reasoningBudget`, and an explicit initial permission. Use `permissionMode` for
-a Claude Code harness, the complete `codexPolicy` object for Codex, or
+a Claude Code or Muse Code harness, the complete `codexPolicy` object for Codex, or
 `cursorPolicy` for Cursor:
 
 ```json
@@ -2847,8 +2893,8 @@ that need a session restart — e.g. a just-added MCP server — without losing 
 conversation. This is what the tab toolbar's reset button calls. Contrast with a
 hard restart (the member's right-click menu), which begins an EMPTY conversation.
 Optional body fields override the profile for the new session (same shape as
-`start`). Passing `selectedHarnessId` (`"claude-code"`, `"codex"`, or
-`"cursor"`) changes
+`start`). Passing `selectedHarnessId` (`"claude-code"`, `"codex"`, `"cursor"`,
+`"grok"`, or `"muse"`) changes
 and persists the member's harness before recreating the session. A cross-harness
 change intentionally starts a fresh harness thread because Claude conversation
 IDs and Codex thread IDs are not compatible.
@@ -3645,7 +3691,7 @@ strip. An optional `harness` lands on one of them:
 ```
 
 ```text
-claude-code, codex, cursor, grok
+claude-code, codex, cursor, grok, muse
 ```
 
 A `tab` on a screen that has none, an unknown tab id, a `harness` outside the
@@ -4020,7 +4066,7 @@ normalized events as a real one, so the UI renders it identically.
 }
 ```
 
-- `runtime`: `claude-code` | `codex` | `cursor` (default `claude-code`). Send it
+- `runtime`: `claude-code` | `codex` | `cursor` | `grok` | `muse` (default `claude-code`). Send it
   whenever `model` belongs to another harness — the mock member is created with
   this pair, so a mismatch both mislabels the harness badge and is rejected by
   the beta cross-harness lock.
@@ -4173,8 +4219,8 @@ consuming a real quota. Returns the merged snapshot (same shape as
 }
 ```
 
-`provider` must be `"claude"`, `"codex"`, or `"cursor"`; each window needs a `kind`
-(`"five_hour"` | `"weekly"` | `"monthly"`) and numeric `utilization` (0–100). `resetsAt` (epoch
+`provider` must be `"claude"`, `"codex"`, `"cursor"`, `"grok"`, or `"muse"`; each window needs a `kind`
+(`"five_hour"` | `"weekly"` | `"monthly"`) and non-negative numeric `utilization`. `resetsAt` (epoch
 ms) is optional. Windows merge by kind, so repeated calls update one window at a
 time — mirroring how real providers report.
 
@@ -4617,4 +4663,4 @@ write-only. They are OS-encrypted in the desktop store and are absent from every
 API response. The renderer additionally receives `ssh:attempt` progress and
 `ssh:servers` snapshot events. Connection tests report login success plus only
 the installed state of `agent:codex`, `agent:claude-code`, `agent:cursor`, and
-`agent:grok`; AgentParty does not manage remote CLI login state.
+`agent:grok`, and `agent:muse`; AgentParty does not manage remote CLI login state.

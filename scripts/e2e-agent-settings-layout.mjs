@@ -315,7 +315,7 @@ try {
     }
 
     if (!quickMode) {
-      for (const harness of ["claude-code", "codex", "cursor", "grok"]) {
+      for (const harness of ["claude-code", "codex", "cursor", "grok", "muse"]) {
         await auditActiveTab("agent", "defaults", harness, viewport, `harness-${harness}`);
         await capture(`${viewport.label}-agent-defaults-${harness}`, "light", 0);
         await capture(`${viewport.label}-agent-defaults-${harness}`, "light", "bottom");

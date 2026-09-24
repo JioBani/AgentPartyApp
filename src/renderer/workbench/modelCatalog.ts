@@ -8,7 +8,7 @@
 import type { RouteLike } from "./routes";
 import { modelProviderLabel } from "../../shared/modelProviders";
 
-export type ProviderId = "anthropic" | "openai" | "cursor" | "openrouter" | "deepseek" | "xai" | "bai" | "custom";
+export type ProviderId = "anthropic" | "openai" | "cursor" | "openrouter" | "deepseek" | "xai" | "meta" | "bai" | "custom";
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
   // Internal catalog ids name API vendors; the product surface names the
@@ -19,6 +19,7 @@ export const PROVIDER_LABELS: Record<ProviderId, string> = {
   openrouter: modelProviderLabel("openrouter"),
   deepseek: modelProviderLabel("deepseek"),
   xai: modelProviderLabel("xai"),
+  meta: modelProviderLabel("meta"),
   bai: modelProviderLabel("bai"),
   custom: "Custom",
 };
@@ -30,6 +31,7 @@ export const PROVIDER_DOTS: Record<ProviderId, string> = {
   openrouter: "#a07bff",
   deepseek: "#4d6bfe",
   xai: "#c8cdd4",
+  meta: "#1877f2",
   bai: "#e8663d",
   custom: "#79808d",
 };

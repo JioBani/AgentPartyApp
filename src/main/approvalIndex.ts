@@ -1,3 +1,5 @@
+import { workspaceKey } from "../shared/workspaceLocation";
+
 /**
  * Where each approval request came from, so one can be answered by its id alone
  * (`approval.respond`, see `src/shared/approvals.ts` for why that is needed).
@@ -119,10 +121,11 @@ export class ApprovalIndex {
    */
   pending(workspacePath?: string): ApprovalLocation[] {
     const cutoff = Date.now() - MAX_AGE_MS;
+    const workspace = workspacePath === undefined ? undefined : workspaceKey(workspacePath);
     return [...this.byRequestId.values()]
       .filter((entry) => !entry.resolvedAt
         && entry.requestedAt >= cutoff
-        && (!workspacePath || entry.workspacePath === workspacePath))
+        && (workspace === undefined || workspaceKey(entry.workspacePath) === workspace))
       .sort((a, b) => a.requestedAt - b.requestedAt);
   }
 

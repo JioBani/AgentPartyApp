@@ -78,7 +78,7 @@ assert(codexCliAuthenticatedFrom("Logged in using ChatGPT") === true, "ChatGPT C
 
 const nativeCards = getAuthState().filter((item) => item.action?.type === "nativeCliTest");
 assert(
-  nativeCards.map((item) => item.id).join(",") === "claude-native,claude-native-wsl,codex,codex-wsl,cursor,cursor-wsl,grok,grok-wsl",
+  nativeCards.map((item) => item.id).join(",") === "claude-native,claude-native-wsl,codex,codex-wsl,cursor,cursor-wsl,grok,grok-wsl,muse,muse-wsl",
   "Authentication exposes every CLI subscription as an ordered Windows/WSL pair",
 );
 assert(nativeCards.filter((item) => item.action.host === "wsl").every((item) => item.status === "unknown"), "WSL cards stay 확인 필요 until an explicit test boots the distro");

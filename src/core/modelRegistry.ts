@@ -12,13 +12,14 @@ import {
   type ReasoningThinkingSpec,
 } from "../shared/modelCatalog";
 import type { CodexModelInfo } from "../shared/codexModels";
+import type { MuseModelInfo } from "../shared/museModels";
 import { SERVICE_TIER_INHERIT } from "../shared/types";
 import { CODEX_BAI_PROVIDER, CODEX_CLAUDE_SUBSCRIPTION_PROVIDER, CODEX_DEEPSEEK_PROVIDER, CODEX_OPENROUTER_PROVIDER } from "../shared/codexProviders";
 import { crossHarnessLockReason } from "../shared/modelIdentity";
 import { grokReasoningEfforts } from "./grokAgentCli";
 
-export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
-export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "deepseek" | "xai" | "bai" | "custom";
+export type HarnessId = "claude-code" | "codex" | "cursor" | "grok" | "muse";
+export type ModelProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "deepseek" | "xai" | "meta" | "bai" | "custom";
 
 export interface HarnessDescriptor {
   id: HarnessId;
@@ -172,7 +173,7 @@ export const harnesses: HarnessDescriptor[] = [
     id: "cursor",
     label: "Cursor CLI",
     enabled: true,
-    description: "Cursor Agent CLI with Cursor Auto or the Grok 4.5 named model.",
+    description: "Cursor Agent CLI with Cursor Auto or a supported named model.",
   },
   {
     id: "grok",
@@ -180,9 +181,15 @@ export const harnesses: HarnessDescriptor[] = [
     enabled: true,
     description: "xAI's Grok Build CLI over ACP, on your Grok subscription.",
   },
+  {
+    id: "muse",
+    label: "Muse Code",
+    enabled: true,
+    description: "Meta Muse Code CLI over its durable MSP session protocol.",
+  },
 ];
 
-export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] = [], customRoutes: ModelRouteConfig[] = [], codexModels?: CodexModelInfo[]): ModelRoute[] {
+export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] = [], customRoutes: ModelRouteConfig[] = [], codexModels?: CodexModelInfo[], museModels?: MuseModelInfo[]): ModelRoute[] {
   const routes: ModelRoute[] = [];
   const seen = new Set<string>();
 
@@ -223,6 +230,11 @@ export function buildModelRoutes(currentModel: string, _claudeModels: unknown[] 
   }
   for (const route of grokHarnessRoutes()) {
     addRoute(routes, seen, route);
+  }
+  if (museModels?.length) {
+    for (const model of museModels) addRoute(routes, seen, museRouteFromModel(model));
+  } else {
+    addRoute(routes, seen, museHarnessRoute());
   }
   addRoute(routes, seen, cursorAutoRoute());
   for (const model of modelCatalog().filter((entry) => entry.provider !== "bai" && Boolean(entry.cursorModel))) {
@@ -557,17 +569,19 @@ export function cursorRouteFromCatalog(model: CatalogModel): ModelRoute {
 /**
  * What the Grok Build CLI itself serves. It owns its model list — the catalog
  * does not route it — so these entries mirror what `session/new` reports.
- * Measured 2026-08-13: grok-4.6 is the default and both 4.6 / 4.5 expose a
- * 500k context window.
+ * Measured 2026-09-22 against Grok Build 1.0.3: grok-4.7 is the default and
+ * the CLI exposes a separate grok-4.7-build-fast route alongside 4.6 / 4.5.
+ * All expose a 500k context window.
  *
- * Measured against the official CLI: 4.6 accepts low/medium/high/xhigh and 4.5
- * accepts low/medium/high. Effort is immutable within an ACP process because
- * the CLI consumes it as a startup flag. There is no separate reasoning-off
- * toggle. AgentParty bridges ACP permission requests into its approval flow.
+ * Official model docs and the authenticated CLI agree that 4.7 accepts
+ * low/medium/high/xhigh (default high); 4.6 accepts the same set and 4.5 accepts
+ * low/medium/high. Effort is immutable within an ACP process because the CLI
+ * consumes it as a startup flag. There is no separate reasoning-off toggle.
+ * AgentParty bridges ACP permission requests into its approval flow.
  */
 export function grokHarnessRoutes(): ModelRoute[] {
   const route = (
-    model: "grok-4.6" | "grok-4.5",
+    model: "grok-4.7" | "grok-4.7-build-fast" | "grok-4.6" | "grok-4.5",
     label: string,
     description: string,
     meta?: ModelRoute["meta"],
@@ -595,10 +609,21 @@ export function grokHarnessRoutes(): ModelRoute[] {
   });
   return [
     route(
+      "grok-4.7",
+      "Grok 4.7 (Grok Build)",
+      "SpaceXAI's latest frontier model through the Grok Build CLI and your Grok subscription. " +
+        "It is the CLI default and supports 500K context with low through xhigh reasoning effort.",
+    ),
+    route(
+      "grok-4.7-build-fast",
+      "Grok 4.7 Fast (Grok Build)",
+      "The same Grok 4.7 model on Grok Build's faster serving route. It consumes subscription credits at the fast-route rate.",
+    ),
+    route(
       "grok-4.6",
       "Grok 4.6 (Grok Build)",
-      "SpaceXAI's latest frontier model through the Grok Build CLI and your Grok subscription. " +
-        "It approves its own tool calls and loads your ~/.claude hooks and permission rules.",
+      "SpaceXAI's previous Grok Build model on your Grok subscription. It remains selectable for compatibility.",
+      { perf: 4, costTier: 5, inPerM: 0, outPerM: 0, ioPerM: 0, context: "500K" },
     ),
     route(
       "grok-4.5",
@@ -607,6 +632,66 @@ export function grokHarnessRoutes(): ModelRoute[] {
       { perf: 3, costTier: 5, inPerM: 0, outPerM: 0, ioPerM: 0, context: "500K" },
     ),
   ];
+}
+
+/** Compatibility route used only while live MSP model discovery is unavailable. */
+export function museHarnessRoute(): ModelRoute {
+  return {
+    harnessId: "muse",
+    providerId: "meta",
+    model: "muse-default",
+    label: "Muse Spark (Muse Code)",
+    description: "The current Muse Spark model selected by the signed-in Muse Code plan, using Muse's native durable session protocol.",
+    pricing: { billing: "subscription", directPrice: "Muse Code subscription" },
+    capabilities: {
+      effort: {
+        supported: true,
+        mutableDuringSession: true,
+        defaultValue: "high",
+        options: ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"].map((level) => ({ id: level, label: effortLabel(level) })),
+      },
+      thinking: { supported: false, mutableDuringSession: false },
+      permission: standardPermissionCapability(),
+      vision: { image: true },
+    },
+    enabled: true,
+  };
+}
+
+/** One concrete model returned by the signed-in Muse Code provider catalog. */
+export function museRouteFromModel(model: MuseModelInfo): ModelRoute {
+  const context = formatTokenLimit(model.contextLimit);
+  return {
+    harnessId: "muse",
+    // AgentParty's stable catalog provider id for Muse is `meta`; keep the raw
+    // provider id in discovery diagnostics rather than creating unknown UI groups.
+    providerId: "meta",
+    model: model.model,
+    runtimeModel: model.model,
+    label: model.displayName,
+    description: model.description || `Muse Code provider model${model.releaseDate ? ` released ${model.releaseDate}` : ""}.`,
+    pricing: { billing: "subscription", directPrice: "Muse Code subscription", context },
+    capabilities: {
+      effort: {
+        supported: true,
+        mutableDuringSession: true,
+        defaultValue: "high",
+        options: ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"].map((level) => ({ id: level, label: effortLabel(level) })),
+      },
+      thinking: { supported: false, mutableDuringSession: false },
+      permission: standardPermissionCapability(),
+      vision: { image: true },
+    },
+    meta: { context },
+    enabled: true,
+  };
+}
+
+function formatTokenLimit(tokens: number | undefined): string | undefined {
+  if (!tokens) return undefined;
+  if (tokens >= 1_000_000) return `${Math.round(tokens / 10_000) / 100}M`;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
+  return String(tokens);
 }
 
 function unavailableCursorHarnessRoute(model: CatalogModel): ModelRoute {

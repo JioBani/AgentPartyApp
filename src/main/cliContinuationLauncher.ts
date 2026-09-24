@@ -54,6 +54,7 @@ function configuredLocalExecutable(harness: CliContinuationTarget["harness"]): s
     codex: "AGENTPARTY_CODEX_BIN",
     cursor: "AGENTPARTY_CURSOR_BIN",
     grok: "AGENTPARTY_GROK_BIN",
+    muse: "AGENTPARTY_MUSE_BIN",
   }[harness];
   return String(process.env[variable] || "").trim();
 }

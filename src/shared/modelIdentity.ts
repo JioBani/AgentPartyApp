@@ -18,8 +18,8 @@
 import { resolveCatalogModel } from "./modelCatalog";
 import { harnessLabel } from "./types";
 
-export type HarnessId = "claude-code" | "codex" | "cursor" | "grok";
-export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "custom";
+export type HarnessId = "claude-code" | "codex" | "cursor" | "grok" | "muse";
+export type ProviderId = "anthropic" | "openrouter" | "openai" | "cursor" | "meta" | "custom";
 
 /**
  * A model id known to resolve to a catalog entry (or a live-discovered Codex
@@ -97,6 +97,10 @@ export function backendFor(model: string, harnessId: HarnessId): Backend | undef
     // Grok Build owns its own model list; the catalog does not route it.
     return undefined;
   }
+  if (harnessId === "muse") {
+    // Muse Code owns its model catalog and resolves the provider default over MSP.
+    return undefined;
+  }
   // codex harness
   if (entry.codexModel) {
     return { kind: "codex-account", slug: entry.codexModel };
@@ -129,6 +133,7 @@ const HARNESS_NATIVE_PROVIDER: Record<HarnessId, string> = {
   codex: "openai",
   cursor: "cursor",
   grok: "xai",
+  muse: "meta",
 };
 
 /**
@@ -155,6 +160,7 @@ const PROVIDER_LABEL: Record<string, string> = {
   openai: "OpenAI",
   cursor: "Cursor",
   xai: "Grok",
+  meta: "Muse",
 };
 
 /**

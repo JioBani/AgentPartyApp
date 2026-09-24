@@ -1,11 +1,11 @@
 /** Credential/model providers exposed by Authentication and Workbench. */
-export type ModelProviderId = "claude" | "codex" | "cursor" | "openrouter" | "deepseek" | "grok" | "bai";
-export type ModelRouteProviderId = "anthropic" | "openai" | "cursor" | "openrouter" | "deepseek" | "xai" | "bai";
+export type ModelProviderId = "claude" | "codex" | "cursor" | "openrouter" | "deepseek" | "grok" | "muse" | "bai";
+export type ModelRouteProviderId = "anthropic" | "openai" | "cursor" | "openrouter" | "deepseek" | "xai" | "meta" | "bai";
 
 export interface ModelProviderDescriptor {
   /** Stable user-facing provider identity. */
   id: ModelProviderId;
-  label: "Claude" | "Codex" | "Cursor" | "OpenRouter" | "DeepSeek" | "Grok" | "B.AI";
+  label: "Claude" | "Codex" | "Cursor" | "OpenRouter" | "DeepSeek" | "Grok" | "Muse" | "B.AI";
   /** Existing internal route id retained at adapter/catalog boundaries. */
   routeProviderId: ModelRouteProviderId;
   /** Provider id returned by Authentication. */
@@ -23,6 +23,7 @@ export const MODEL_PROVIDERS: readonly ModelProviderDescriptor[] = [
   // Credentials come from the official `grok login` the user already ran, so
   // this is a subscription provider with nothing to paste into Authentication.
   { id: "grok", label: "Grok", routeProviderId: "xai", authProviderId: "grok", authKind: "subscription" },
+  { id: "muse", label: "Muse", routeProviderId: "meta", authProviderId: "muse", authKind: "subscription" },
 ] as const;
 
 export function modelProviderLabel(routeProviderId: string): string {

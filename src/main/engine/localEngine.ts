@@ -225,6 +225,11 @@ export class LocalEngine implements EngineConnection {
     return this.deps.sessionManager.getCodexModelState();
   }
 
+  async listMuseModels(refresh?: boolean) {
+    if (refresh) return this.deps.sessionManager.refreshMuseModels();
+    return this.deps.sessionManager.getMuseModelState();
+  }
+
   // --- Cursor CLI (host-scoped: local host here, the distro in a WSL engine) --
   async getCursorStatus() {
     return inspectCursorAgent(getSettings().cursorExecutablePath);
@@ -322,6 +327,10 @@ export class LocalEngine implements EngineConnection {
 
   async setSessionDebugMode(sessionId: string, enabled: boolean): Promise<void> {
     this.deps.sessionManager.setSessionDebugMode(sessionId, enabled);
+  }
+
+  async probeSessionUsage(sessionId: string) {
+    return this.deps.sessionManager.probeSessionUsage(sessionId);
   }
 
   async setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void> {

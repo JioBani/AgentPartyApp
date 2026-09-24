@@ -43,6 +43,7 @@ import { CompactModal } from "./AutoCompactEditor";
 import { PermissionModal } from "./PermissionModal";
 import { SessionStatusModal } from "./SessionStatusModal";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { MuseModelDiscoveryState } from "../../shared/museModels";
 import type { SidebarGroupFolds } from "../../shared/sidebarGroupFolds";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 
@@ -63,6 +64,9 @@ interface WorkbenchProps {
   /** Live Codex catalog discovery state, surfaced by the member wizard. */
   codexModels?: CodexModelDiscoveryState;
   onRefreshCodexModels?: () => void;
+  /** Live Muse provider-catalog discovery state, surfaced by the member wizard. */
+  museModels?: MuseModelDiscoveryState;
+  onRefreshMuseModels?: () => void;
   defaultProfile: DefaultMemberProfile;
   /** Per-harness creation defaults, so the wizard seeds each harness's default. */
   harnessDefaults: Record<string, HarnessDefaults>;
@@ -264,7 +268,7 @@ function loadSubagentUi(): SubagentUiState {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, onRefreshCodexModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onReorderParties, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, appWorkspaceRoot, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, onOpenUsage } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, museModels, onRefreshCodexModels, onRefreshMuseModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onReorderParties, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, appWorkspaceRoot, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, onOpenUsage } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -896,7 +900,9 @@ export function Workbench(props: WorkbenchProps) {
         onToggleGroupFold={onToggleGroupFold}
         routes={routes}
         codexModels={codexModels}
+        museModels={museModels}
         onRefreshCodexModels={onRefreshCodexModels}
+        onRefreshMuseModels={onRefreshMuseModels}
         defaultProfile={defaultProfile}
         harnessDefaults={harnessDefaults}
         groups={groups}

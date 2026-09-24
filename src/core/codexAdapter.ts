@@ -50,7 +50,13 @@ import { emptyMcpSnapshot } from "../shared/mcp";
 import type { McpAuthResult, McpServerInfo, McpServerSnapshot, McpServerState } from "../shared/mcp";
 import { currentSpawnHost, shortCwd, spawnFailureSummary } from "../shared/sessionSpawn";
 import { normalizeServiceTierSelection } from "../shared/types";
-import { nextAgentPartyCodexSqliteHome, withAgentPartyCodexStartup } from "./codexSqliteHome";
+import {
+  CODEX_SQLITE_STARTUP_RETRY_DELAYS_MS,
+  isSqliteStateRuntimeStartupError,
+  isStalledSqliteBackfillError,
+  nextAgentPartyCodexSqliteHome,
+  withAgentPartyCodexStartup,
+} from "./codexSqliteHome";
 
 export interface CodexAdapterOptions {
   id: string;
@@ -130,8 +136,6 @@ const CODEX_COMMANDS: HarnessCommand[] = [
 ];
 
 export class CodexAdapter extends EventEmitter {
-  /** Brief backoff for a just-stopped app-server releasing its SQLite handles. */
-  private static readonly SQLITE_STARTUP_RETRY_DELAYS_MS = [250, 750, 2_000, 5_000] as const;
   private process: ChildProcessWithoutNullStreams | undefined;
   private lineReader: readline.Interface | undefined;
   private started = false;
@@ -709,7 +713,7 @@ export class CodexAdapter extends EventEmitter {
         await this.ensureThread(generation);
         return;
       } catch (error) {
-        const delayMs = CodexAdapter.SQLITE_STARTUP_RETRY_DELAYS_MS[attempt];
+        const delayMs = CODEX_SQLITE_STARTUP_RETRY_DELAYS_MS[attempt];
         if (delayMs === undefined || this.disposed || generation !== this.startupGeneration || !isSqliteStateRuntimeStartupError(error)) {
           throw error;
         }
@@ -1999,17 +2003,6 @@ export class CodexAdapter extends EventEmitter {
     this.emit("event", event);
     this.emit("snapshot", this.getSnapshot());
   }
-}
-
-function isSqliteStateRuntimeStartupError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /failed to initialize (?:sqlite )?state runtime/iu.test(message)
-    || /failed to initialize state runtime at/iu.test(message);
-}
-
-function isStalledSqliteBackfillError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /timed out waiting for state db backfill/iu.test(message);
 }
 
 /** Maps a sandbox mode to the app-server `sandboxPolicy` object. */

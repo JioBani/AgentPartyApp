@@ -81,6 +81,7 @@ import type { SessionManager, SessionPartyBinding } from "../sessionManager";
 import { invokePartyTool, type PartyBridge, type PartyModelQuery, type PartyToolResult } from "../../core/partyBridge";
 import { IMAGE_MEDIA_TYPES, readImageFile } from "../../core/imageFile";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { MuseModelDiscoveryState } from "../../shared/museModels";
 import { buildModelRoutes, type ModelRoute } from "../../core/modelRegistry";
 import { matchingCapabilityOption, seedCapabilityOption } from "../../shared/modelOptions";
 import { resolveCatalogModel } from "../../shared/modelCatalog";
@@ -3038,6 +3039,7 @@ export class PartyApplicationService {
       [],
       [],
       this.deps.sessionManager.getCodexModelState()?.models,
+      this.deps.sessionManager.getMuseModelState?.()?.models,
     ).filter((route) => route.harnessId === harnessId);
     const route = resolveMemberRuntimeRoute(routes, wantedModel, harnessId);
     const capability = route.capabilities.effort;
@@ -3792,7 +3794,11 @@ export class PartyApplicationService {
           return { ok: false, error: errorMessage(error) };
         }
       },
-      listModels: async (query) => partyModelDiscovery(this.deps.sessionManager.getCodexModelState(), query),
+      listModels: async (query) => partyModelDiscovery(
+        this.deps.sessionManager.getCodexModelState(),
+        this.deps.sessionManager.getMuseModelState?.(),
+        query,
+      ),
       status: async (name) => {
         try {
           return { ok: true, data: { members: this.memberTurnStatus(name, party).members } };
@@ -3994,9 +4000,9 @@ function isFastServiceTierOption(option: { id: string; label: string }): boolean
  * and matches that are all unavailable come back WITH their reasons instead of
  * reading as absence.
  */
-function partyModelDiscovery(codexModels?: CodexModelDiscoveryState, query?: PartyModelQuery): PartyToolResult {
+function partyModelDiscovery(codexModels?: CodexModelDiscoveryState, museModels?: MuseModelDiscoveryState, query?: PartyModelQuery): PartyToolResult {
   const settings = getSettings();
-  const routes = buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels?.models);
+  const routes = buildModelRoutes(harnessDefaultsOf(settings).model, [], [], codexModels?.models, museModels?.models);
   const harnessRows = harnesses.map((harness) => ({
     id: harness.id,
     label: harness.label,
@@ -4004,6 +4010,7 @@ function partyModelDiscovery(codexModels?: CodexModelDiscoveryState, query?: Par
     permission: permissionDiscoveryFor(settings, harness.id),
   }));
   const codexModelsError = codexModels?.status === "error" ? codexModels.error : undefined;
+  const museModelsError = museModels?.status === "error" ? museModels.error : undefined;
 
   const wanted = {
     harness: query?.harness?.trim().toLowerCase() || "",
@@ -4028,7 +4035,7 @@ function partyModelDiscovery(codexModels?: CodexModelDiscoveryState, query?: Par
 
   const narrowed = Boolean(wanted.harness || wanted.provider || wanted.text);
   if (!narrowed) {
-    return { ok: true, data: { harnesses: harnessRows, codexModelsError, ...modelIndex(routes) } };
+    return { ok: true, data: { harnesses: harnessRows, codexModelsError, museModelsError, ...modelIndex(routes) } };
   }
   if (!filtered.length) {
     return { ok: false, error: noMatchReason(routes, wanted) };
@@ -4047,6 +4054,7 @@ function partyModelDiscovery(codexModels?: CodexModelDiscoveryState, query?: Par
     data: {
       harnesses: harnessRows,
       codexModelsError,
+      museModelsError,
       matched: shown.length,
       hiddenUnavailable: hiddenUnavailable || undefined,
       note: forced

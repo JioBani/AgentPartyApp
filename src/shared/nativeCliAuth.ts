@@ -34,6 +34,11 @@ const WINDOWS_PLANS: Record<NativeCliAuthProvider, StepPlan[]> = {
     { id: "credential", label: "자격 증명 파일" },
     { id: "authentication", label: "로그인" },
   ],
+  muse: [
+    { id: "executable", label: "실행 파일" },
+    { id: "version", label: "버전 확인" },
+    { id: "authentication", label: "로그인" },
+  ],
 };
 
 const WSL_PLANS: Record<NativeCliAuthProvider, StepPlan[]> = {
@@ -66,6 +71,13 @@ const WSL_PLANS: Record<NativeCliAuthProvider, StepPlan[]> = {
     { id: "executable", label: "실행 파일" },
     { id: "version", label: "버전 확인" },
     { id: "identity", label: "공식 CLI 확인" },
+    { id: "authentication", label: "로그인" },
+  ],
+  muse: [
+    { id: "distribution", label: "WSL 배포판" },
+    { id: "workspace", label: "작업공간" },
+    { id: "executable", label: "실행 파일" },
+    { id: "version", label: "버전 확인" },
     { id: "authentication", label: "로그인" },
   ],
 };
@@ -114,7 +126,7 @@ export function nativeCliAuthProgressCheck(
   });
   const knownIds = new Set(plan.map((step) => step.id));
   const extras = completed.filter((step) => !knownIds.has(step.id));
-  const label = provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : provider === "cursor" ? "Cursor" : "Grok";
+  const label = provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : provider === "cursor" ? "Cursor" : provider === "grok" ? "Grok" : "Muse";
   const base: EnvironmentCheck = finalCheck || {
     id: `native.${provider}.${host}`,
     group: host === "wsl" ? "wsl" : "harness",

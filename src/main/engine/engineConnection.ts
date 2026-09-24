@@ -11,6 +11,7 @@ import type {
 } from "../../shared/types";
 import type { HarnessCommand } from "../../core/events";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
+import type { MuseModelDiscoveryState } from "../../shared/museModels";
 import type { HarnessId } from "../../shared/types";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
@@ -25,6 +26,7 @@ import type { ClaudeNativeAuthState } from "../../core/claudeNativeAuth";
 import type { TokenUsageAggregate, TokenUsageQuery, TokenUsageTurnsQuery, TurnUsageRecord } from "../../shared/tokenUsage";
 import type { ApprovalDelivery } from "../../shared/approvals";
 import type { PartyMcpToolSpec, PartyToolResult } from "../../core/partyBridge";
+import type { ProviderUsage } from "../../shared/usageLimits";
 
 /**
  * The engine surface — everything addressed by **workspace**. For a local
@@ -212,6 +214,8 @@ export interface EngineConnection {
    * (kicking a background discovery on first call).
    */
   listCodexModels(refresh?: boolean): Promise<CodexModelDiscoveryState>;
+  /** Snapshot of Muse Code's authenticated MSP `model/list` catalog. */
+  listMuseModels(refresh?: boolean): Promise<MuseModelDiscoveryState>;
 
   /**
    * Cursor Agent CLI status ON THIS ENGINE'S HOST — install/version/models plus
@@ -243,6 +247,8 @@ export interface EngineConnection {
   setSessionThinking(sessionId: string, mode: string, budget?: number): Promise<void>;
   setSessionPermissionMode(sessionId: string, permissionMode: string): Promise<void>;
   setSessionDebugMode(sessionId: string, enabled: boolean): Promise<void>;
+  /** Runs a provider-specific explicit usage probe for this session's harness. */
+  probeSessionUsage(sessionId: string): Promise<ProviderUsage | undefined>;
   setSessionCodexPolicy(sessionId: string, policy: CodexPolicy): Promise<void>;
   setSessionCursorPolicy(sessionId: string, policy: CursorPolicy): Promise<void>;
   /** Answers a pending approval and reports whether the harness took it. */

@@ -12,6 +12,8 @@ Windows 배포본을 준비하고 `JioBani/AgentParty-releases`에 공개할 때
 - 릴리스는 먼저 draft로 만들고, 모든 자산을 검증한 뒤 publish한다.
 - 기존 `master` 체크아웃을 직접 수정하지 않는다. 릴리스 전용 worktree와 브랜치를 사용한다.
 - 토큰은 파일, 명령 출력, 릴리스 본문에 남기지 않는다.
+- 매 업데이트마다 기존 사용자의 저장 데이터, 설정, 세션, 연동 호환성을 검토한다.
+- 마이그레이션이 필요하면 범위와 위험을 설명하고 사용자에게 명시적 승인을 받은 뒤 진행한다.
 
 ### 버전 선택
 
@@ -69,33 +71,35 @@ npm version <version> --no-git-tag-version
 npm ci
 ```
 
-`npm version` 실행 후 `package.json`과 루트 `package-lock.json`의 버전이 모두 같은지
-확인한다. 의존성 감사 결과에 새 critical 취약점이 있으면 내용을 확인하고, 위험을
-평가하기 전에는 릴리스를 계속하지 않는다.
+`package.json`과 루트 `package-lock.json`의 버전 일치는 `release:prepare`의 소스
+린트가 검사한다. 두 파일을 직접 열어 재확인하지 않는다. 의존성 감사 결과에 새
+critical 취약점이 있으면 내용과 영향은 별도로 평가하고, 평가 전에는 릴리스를
+계속하지 않는다.
 
-## 3. 테스트와 빌드
+## 3. 변경 QA와 단일 패키징
 
-변경 영역의 집중 테스트를 먼저 실행한 뒤 전체 빌드를 확인한다. 인증 영역을 변경한
+변경 영역의 집중 테스트는 병합 전에 실행한다. 인증 영역을 변경한
 경우의 예시는 다음과 같다.
 
 ```powershell
 npm run test:subscription-auth
 npm run test:subscription-disconnect-ui
 npm run test:subscription-auth-url
-npm run build
 ```
 
-Windows 설치본과 포터블 실행 파일을 만든다.
+릴리스 worktree에서는 준비 파이프라인을 한 번 실행한다.
 
 ```powershell
-npm run package:win
+npm run release:prepare
 ```
 
-`package:win`은 빌드와 `electron-builder --win --x64`를 실행한다. 선언된 의존성
-누락이나 빌드 오류는 실패로 처리한다. Mobile Link는 데스크톱 패키지에서 분리되어
-있으므로 이 과정은 AgentPartyServer checkout이나 프로토콜 정션을 수정하지 않는다.
+이 명령은 소스 린트 → 전체 빌드 1회 → `electron-builder --win --x64` 패키징 1회 →
+실제 패키지 E2E → 산출물 린트를 순서대로 실행한다. 별도 `npm run build`나 두 번째
+`electron-builder`를 실행하지 않는다. 패키징 시 현재 추적 소스 fingerprint와 네
+산출물의 크기·SHA-256을 `release/release-manifest.json`에 기록한다.
 
-`release/`에 다음 파일이 생겼는지 확인한다.
+다음 표는 산출물 계약의 참고 자료다. 네 파일의 존재·이름·크기·해시는 산출물 린트가
+확인하므로 성공 후 `release/`를 다시 나열하거나 파일을 열거나 해시를 재계산하지 않는다.
 
 | 로컬 파일 | 공개 릴리스 자산 이름 | 용도 |
 | --- | --- | --- |
@@ -104,31 +108,23 @@ npm run package:win
 | `AgentParty <version>.exe` | `AgentParty-<version>.exe` | 포터블 실행본, 자동 업데이트 미지원 |
 | `latest.yml` | `latest.yml` | 최신 버전과 설치본 해시 메타데이터 |
 
-포터블 배포본 자체를 실행하는 자동화 QA는 다음 명령으로 실행한다. 실제 패키지의
-버전, 격리된 작업공간, Windows 네이티브 인증 호스트, 환경 진단 host/cwd와 화면
-캡처를 함께 확인한다.
+`release:prepare` 안의 패키지 E2E는 실제 포터블 실행 파일의 버전, 격리된 작업공간,
+Windows 네이티브 인증 호스트, 환경 진단 host/cwd와 화면 캡처를 확인한다. 산출물
+린트는 `latest.yml`의 버전, 설치본 URL, SHA-512와 source fingerprint를 확인한다.
 
-```powershell
-npm run test:e2e:packaged-release
-```
+## 4. 변경 동작 QA
 
-`latest.yml`의 `version`, 설치본 URL, SHA-512 값이 생성된 설치본과 일치해야 한다.
+`release:prepare`의 패키지 E2E가 실행 파일 시작, 버전, 격리된 작업공간, 네이티브 인증
+호스트, 환경 진단과 프로세스 종료를 이미 확인한다. 성공 후 같은 항목을 수동으로 다시
+확인하지 않는다.
 
-## 4. 실제 배포본 QA
+별도로 확인할 것은 이번 변경의 사용자 화면과 핵심 동작 중 기존 자동 QA가 다루지 않은
+판단 기반 항목뿐이다. 개발 서버나 모듈 테스트만으로 그 동작을 완료 처리하지 않고,
+필요하면 실제 패키지 또는 실 앱에서 사용자 흐름을 확인한다.
 
-개발 서버나 모듈 테스트만으로 완료 처리하지 않는다. `release/AgentParty <version>.exe`
-또는 설치된 앱을 실제로 실행하고 사용자 화면을 확인한다.
-
-최소 확인 항목:
-
-- 앱이 오류 없이 시작된다.
-- 이번 변경의 사용자 화면과 핵심 동작이 의도대로 보인다.
-- 로컬 자동화 API의 `/api/state`로 동일한 상태를 확인할 수 있다.
-- 실행 파일의 `FileVersion`과 `ProductVersion`이 `<version>`이다.
-- QA가 끝나면 실행한 앱 프로세스를 정상 종료한다.
-
-자동 업데이트 자체를 검증할 때는 이전 설치 버전에서 새 공개 릴리스를 탐지하고,
-다운로드 후 재시작 설치까지 실제 사용자 흐름으로 확인한다.
+자동 업데이트 코드나 설치 흐름을 변경한 릴리스만 이전 설치 버전에서 새 공개 릴리스
+탐지, 다운로드, 재시작 설치까지 검증한다. 관련 코드를 건드리지 않은 릴리스마다 같은
+업데이트 시나리오를 반복하지 않는다.
 
 ## 5. 소스 병합과 태그
 
@@ -158,19 +154,24 @@ git push origin v<version>
 기존 `master` worktree는 사용자 변경과 충돌하지 않는 것이 확인된 뒤 별도로
 `git merge --ff-only origin/master`로 동기화한다.
 
-## 6. 공개 릴리스 만들기
+## 6. 검증한 산출물 공개하기
 
-`package.json`의 `build.publish` 대상이 `JioBani/AgentParty-releases`인지 확인한다.
-업로드 권한이 있는 토큰은 현재 PowerShell 세션에만 둔다.
+배포 스크립트는 3단계에서 검증한 산출물을 그대로 업로드한다. 업로드 권한 토큰은
+`C:\Project\AgentParty-releases\.env`에서 읽으며 출력하지 않는다.
 
 ```powershell
-$env:GH_TOKEN = "<release-repository-token>"
-npm run release:win
+node scripts/release-publish.mjs --publish-existing --notes "사용자에게 보여줄 변경 사항"
 ```
 
-이 명령은 다시 빌드하고 GitHub에 draft 릴리스를 만든다. 이미 `package:win`으로 검증한
-자산을 수동 업로드하는 경우에는 GitHub Releases 화면에서 `v<version>` draft를 만들고
-위 표의 공개 자산 이름으로 네 파일을 모두 올린다.
+이 명령은 빌드하거나 패키징하지 않는다. 게시 직전에 release manifest, 현재 source
+fingerprint, 태그, `HEAD`, `origin/master`가 모두 일치하는지 확인한다. 이후 draft를
+만들기 전에 공개 저장소의 `v<version>` Git 태그를 현재 기본 브랜치 커밋에 생성하거나
+기존 태그를 확인한다. 그 뒤 네 자산을 업로드하고, 원격 크기와 UTF-8 본문이 일치할
+때만 공개한다. 실제 Git 태그 없이 릴리스를 만들면 GitHub가 이를 `untagged-*`로 바꿔
+자동 업데이트 URL이 404가 될 수 있으므로 태그 생성은 draft보다 반드시 먼저다.
+
+`--skip-build`는 호환성을 위해 남은 레거시 옵션이며 빌드는 생략해도 패키징은 다시
+수행한다. 새 절차에서는 사용하지 않는다.
 
 릴리스 본문은 앱 안에서도 사용자에게 표시되므로 구현 상세보다 사용자 변화를 적는다.
 
@@ -186,81 +187,41 @@ npm run release:win
 - `AgentParty-<version>.exe`는 포터블 버전이며 자동 업데이트를 지원하지 않습니다.
 ```
 
-### PowerShell에서 한글 릴리스 본문 올리기
+### 수동 API 복구 시 한글 릴리스 본문
 
-Windows PowerShell 5.1의 `Invoke-RestMethod`에 JSON **문자열**을 `-Body`로 바로
-넘기면, 요청 본문이 UTF-8이 아닌 인코딩으로 전송되어 한글이 GitHub에 도착하기 전에
-`?`로 치환될 수 있다. `-ContentType application/json`만 지정하는 것으로는 충분하지
-않다. JSON을 명시적으로 UTF-8 바이트로 바꾸고 charset도 함께 선언한다.
+정상 경로는 Node 게시 스크립트가 UTF-8 전송과 저장 본문 비교를 모두 수행한다. 성공
+후 PowerShell로 같은 본문을 다시 조회하지 않는다. 게시 스크립트 자체를 사용할 수
+없는 장애를 복구할 때만 UTF-8 바이트와 `application/json; charset=utf-8`을 명시한
+수동 API 호출을 사용하고, 그 복구 절차 안에서 저장 본문을 한 번 검증한다.
 
-```powershell
-$payload = @{
-  name = "AgentParty v<version>"
-  body = $releaseNotes
-  draft = $true
-  prerelease = $false
-} | ConvertTo-Json
-
-$utf8Body = [Text.Encoding]::UTF8.GetBytes($payload)
-Invoke-RestMethod `
-  -Uri "https://api.github.com/repos/JioBani/AgentParty-releases/releases/<release-id>" `
-  -Headers $headers `
-  -Method Patch `
-  -ContentType "application/json; charset=utf-8" `
-  -Body $utf8Body
-```
-
-본문을 올린 직후 GitHub API에서 다시 읽어 업로드 전 원문과 일치하는지 확인한다.
-줄바꿈 형식만 정규화하고 본문 문자는 그대로 비교한다. 이 검증이 실패하면
-publish하지 않는다.
-
-```powershell
-$saved = Invoke-RestMethod `
-  -Uri "https://api.github.com/repos/JioBani/AgentParty-releases/releases/tags/v<version>" `
-  -Headers @{ "User-Agent" = "AgentParty-Release-Verify" }
-
-$expectedBody = ($releaseNotes -replace "`r`n", "`n").TrimEnd()
-$actualBody = ([string]$saved.body -replace "`r`n", "`n").TrimEnd()
-if ($actualBody -cne $expectedBody) {
-  throw "GitHub release body differs from the UTF-8 source"
-}
-```
-
-draft 상태에서 다음을 검증한다.
+다음 draft 검증은 `release-publish.mjs`가 결정론적으로 수행한다.
 
 - 태그와 릴리스 제목이 정확하다.
 - 네 자산이 모두 `uploaded` 상태다.
 - 원격 자산 크기가 로컬 파일 크기와 같다.
 - 다운로드한 `latest.yml`이 `<version>`과
   `AgentParty-Setup-<version>.exe`를 가리킨다.
-- 릴리스 본문에 내부 경로, 토큰, 개발자 전용 정보가 없다.
 - GitHub API에서 다시 읽은 본문이 업로드 전 UTF-8 원문과 일치한다.
 
-검증을 모두 통과한 경우에만 publish한다.
+검증을 모두 통과한 경우에만 스크립트가 publish한다. 에이전트가 동일 항목을 별도
+명령으로 재확인하지 않는다. 릴리스 문구가 사용자에게 적절하고 내부 정보가 없는지는
+결정론적 파일 검사가 아니라 작성 단계의 판단 항목으로 한 번만 검토한다.
 
 ## 7. 공개 후 확인
 
-로그아웃 상태 또는 인증 없는 요청으로 최신 공개 릴리스를 확인한다.
-
-```powershell
-$latest = Invoke-RestMethod `
-  -Uri "https://api.github.com/repos/JioBani/AgentParty-releases/releases/latest" `
-  -Headers @{ "User-Agent" = "AgentParty-Release-Verify" }
-
-$latest.tag_name
-$latest.html_url
-$latest.assets | Select-Object name, size, state
-```
+게시 스크립트가 인증 헤더 없이 네 공개 자산에 HEAD 요청을 보내 HTTP 응답을 확인한다.
 
 완료 조건:
 
 - 최신 공개 릴리스가 `v<version>`이다.
 - draft와 prerelease가 모두 `false`다.
 - 설치본, 포터블, blockmap, `latest.yml` 네 자산이 공개 다운로드된다.
-- 공개 `latest.yml`의 버전과 설치본 URL이 정확하다.
+- 공개 `latest.yml`의 버전과 설치본 URL이 정확하다. 이 내용은 업로드 전 린트한 동일
+  파일이며 source fingerprint로 패키징 이후 변경되지 않았음을 보장한다.
 - 릴리스 저장소에서 `git fetch --tags` 후 `v<version>` 태그가 보인다.
 
 릴리스 URL과 검증 결과를 작업 보고에 남긴다. 그 뒤에만 릴리스 worktree를 정리한다.
+완료 조건은 게시 스크립트가 이미 판정했으므로 같은 API·URL·feed를 다시 조회하지 않는다.
 
 ## 실패 시 중단 기준
 

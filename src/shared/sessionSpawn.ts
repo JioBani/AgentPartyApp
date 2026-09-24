@@ -32,7 +32,7 @@ export type SessionSpawnState = "starting" | "running" | "failed";
 /** The complete set of facts a session-spawn card may carry. */
 export interface SessionSpawnFacts {
   state: SessionSpawnState;
-  /** Harness id (`claude-code` | `codex` | `cursor` | `grok`), for the label. */
+  /** Harness id (`claude-code` | `codex` | `cursor` | `grok` | `muse`), for the label. */
   harness?: string;
   /** Effective model name. Already user-facing everywhere else in the UI. */
   model?: string;

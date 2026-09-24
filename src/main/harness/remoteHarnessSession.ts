@@ -148,6 +148,10 @@ export class RemoteHarnessSession extends EventEmitter implements HarnessSession
     return this.requireReady().then((id) => this.options.engine.authenticateSessionMcpServer(id, name));
   }
 
+  probeUsageLimits() {
+    return this.requireReady().then((id) => this.options.engine.probeSessionUsage(id));
+  }
+
   respondApproval(requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): boolean {
     if (!this.pendingApprovals.delete(requestId)) {
       return false;

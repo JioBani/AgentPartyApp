@@ -30,7 +30,7 @@ export interface HarnessCapabilities {
   contextWindow: boolean;
 }
 
-const CAPABILITIES: Record<"claude-code" | "codex" | "cursor" | "grok", HarnessCapabilities> = {
+const CAPABILITIES: Record<"claude-code" | "codex" | "cursor" | "grok" | "muse", HarnessCapabilities> = {
   "claude-code": { twoAxisPermission: false, guardian: false, cloud: false, subagents: true, steer: false, contextWindow: true },
   codex: { twoAxisPermission: true, guardian: true, cloud: true, subagents: true, steer: true, contextWindow: true },
   cursor: { twoAxisPermission: false, guardian: false, cloud: false, subagents: true, steer: false, contextWindow: false },
@@ -38,8 +38,12 @@ const CAPABILITIES: Record<"claude-code" | "codex" | "cursor" | "grok", HarnessC
   // axis to offer at all; the context window IS trustworthy (ACP reports the
   // model's real 500k and a running occupancy on every update).
   grok: { twoAxisPermission: false, guardian: false, cloud: false, subagents: false, steer: false, contextWindow: true },
+  // Muse MSP reports context pressure numerically. Although the protocol has
+  // subagent and steering primitives, the AgentParty adapter does not normalize
+  // those flows yet, so do not expose controls that cannot be honored end to end.
+  muse: { twoAxisPermission: false, guardian: false, cloud: false, subagents: false, steer: false, contextWindow: true },
 };
 
 export function harnessCapabilities(harness: string | undefined): HarnessCapabilities {
-  return CAPABILITIES[harness === "codex" ? "codex" : harness === "cursor" ? "cursor" : harness === "grok" ? "grok" : "claude-code"];
+  return CAPABILITIES[harness === "codex" ? "codex" : harness === "cursor" ? "cursor" : harness === "grok" ? "grok" : harness === "muse" ? "muse" : "claude-code"];
 }

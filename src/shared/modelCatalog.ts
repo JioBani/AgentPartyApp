@@ -14,7 +14,7 @@
  */
 import catalog from "./modelCatalog.json";
 
-export type CatalogProvider = "anthropic" | "openai" | "openrouter" | "cursor" | "deepseek" | "xai" | "bai";
+export type CatalogProvider = "anthropic" | "openai" | "openrouter" | "cursor" | "deepseek" | "xai" | "meta" | "bai";
 
 /** Effort levels transportable to a harness; each model advertises its subset. */
 export type EffortLevel = "none" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -175,7 +175,7 @@ export interface CatalogModel {
  */
 export const MODEL_CATALOG_SCHEMA_VERSION = 1;
 
-const CATALOG_PROVIDERS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "cursor", "deepseek", "xai", "bai"]);
+const CATALOG_PROVIDERS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "cursor", "deepseek", "xai", "meta", "bai"]);
 
 let MODELS: CatalogModel[] = bundledCatalogModels();
 

@@ -58,7 +58,7 @@ export function buildPartyMember(input: CreateMemberInput, settings: AppSettings
     serviceTier: input.serviceTier === undefined
       ? normalizeServiceTierSelection(profile.serviceTier)
       : normalizeServiceTierSelection(input.serviceTier),
-    permissionMode: harnessId === "claude-code" ? input.permissionMode || profile.permissionMode || "default" : undefined,
+    permissionMode: harnessId === "claude-code" || harnessId === "muse" ? input.permissionMode || profile.permissionMode || "default" : undefined,
     // Permission semantics belong to the selected harness. Cross-routed models
     // do not replace the Claude Code SDK or Codex app-server process.
     codexPolicy: harnessId === "codex"
@@ -99,11 +99,11 @@ export function buildChannelPayload(message: PartyMessage, target: PartyMember):
 }
 
 export function normalizeRuntime(value: unknown): PartyMember["runtime"] {
-  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : value === "grok" ? "grok" : value === "claude" ? "claude" : "claude-code";
+  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : value === "grok" ? "grok" : value === "muse" ? "muse" : value === "claude" ? "claude" : "claude-code";
 }
 
 export function normalizeHarnessId(value: unknown): HarnessId {
-  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : value === "grok" ? "grok" : "claude-code";
+  return value === "codex" ? "codex" : value === "cursor" ? "cursor" : value === "grok" ? "grok" : value === "muse" ? "muse" : "claude-code";
 }
 
 export function normalizeMemberName(value: unknown): string {

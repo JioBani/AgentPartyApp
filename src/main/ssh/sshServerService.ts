@@ -650,7 +650,7 @@ export class SshServerService extends EventEmitter {
 
 async function runChecks(connection: Awaited<ReturnType<SshTransport["connect"]>>): Promise<SshTestResult> {
   const items: SshTestResult["items"] = [{ id: "connect", status: "ok" }, { id: "login", status: "ok" }];
-  for (const [id, command] of [["codex", "command -v codex"], ["claude-code", "command -v claude"], ["cursor", "command -v cursor-agent"], ["grok", "command -v grok"]] as const) {
+  for (const [id, command] of [["codex", "command -v codex"], ["claude-code", "command -v claude"], ["cursor", "command -v cursor-agent"], ["grok", "command -v grok"], ["muse", "command -v muse"]] as const) {
     const installed = await connection.exec(command);
     items.push({ id: `agent:${id}`, status: installed.code === 0 ? "ok" : "fail", installed: installed.code === 0 });
   }
