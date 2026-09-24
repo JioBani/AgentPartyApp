@@ -42,6 +42,7 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
   private snapshot: ClaudeSessionSnapshot;
   private disposed = false;
   private timers = new Set<NodeJS.Timeout>();
+  private interruptGeneration = 0;
   private autoReply: boolean;
   private readonly harness: HarnessId;
   /** Deterministic MCP server set for QA — covers each state + capability mix. */
@@ -173,10 +174,12 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
     // Real adapters spend a beat in "interrupting" before idle. That window is
     // when the app queue still owns interrupt-parked messages (#23). Going idle
     // in the same tick made the idle drain steal them before a cancel could run.
+    const generation = ++this.interruptGeneration;
     this.setStatus("interrupting");
     this.inject({ type: "status", status: "interrupted", at: now() });
     this.schedule(() => {
-      if (this.disposed) {
+      // An older interrupt must not turn a newly re-armed QA turn idle.
+      if (this.disposed || generation !== this.interruptGeneration || this.snapshot.status !== "interrupted") {
         return;
       }
       this.setStatus("idle");

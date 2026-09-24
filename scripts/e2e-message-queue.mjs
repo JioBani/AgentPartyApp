@@ -498,6 +498,10 @@ async function interruptParksAtFrontAndStaysCancellable(cdp) {
     text: "두 번째 긴급",
     interrupt: true,
   });
+  // Hold the mock in a fresh active turn while checking the visible queue and
+  // cancelling a cut-in row. Its normal interrupt→idle timer would otherwise
+  // deliver the row before these independent renderer/API assertions finish.
+  await post("/api/qa/members/backend/emit", { status: "working" });
   assert(first.queued === true && second.queued === true, "interrupt sends report queued (not silently handed to the harness)");
   const order = (second.queue?.items || []).map((item) => item.text);
   assert(
@@ -841,7 +845,7 @@ async function queueSurvivesRestart() {
 }
 
 function partyFile() {
-  const dir = path.join(ws, ".agent_party_app", "parties");
+  const dir = path.join(userData, "party-store", ".agent_party_app", "parties");
   const partyId = fs.readdirSync(dir)[0];
   return path.join(dir, partyId, "party.json");
 }
