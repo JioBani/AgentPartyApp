@@ -417,9 +417,14 @@ export function Workbench(props: WorkbenchProps) {
       return;
     }
     seededPartyRef.current = partyKey;
-    adoptingLayoutRef.current = serialized;
+    const seeded = seedLayout(partyLayout.layout, views);
+    // The stored layout may still name a removed member. `seedLayout` prunes
+    // that tab, so the committed local layout can differ from the incoming
+    // fingerprint. Track what React will actually commit; otherwise the
+    // adoption guard never clears and every later tab close skips persistence.
+    adoptingLayoutRef.current = layoutFingerprint(seeded);
     syncedLayoutRef.current = serialized;
-    setLayout(seedLayout(partyLayout.layout, views));
+    setLayout(seeded);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partyKey, membersLoaded, partyLayout]);
 
