@@ -13,6 +13,7 @@ import type { GuideHostApi } from "../shared/guideHost";
 import type { TranscriptBlock } from "../shared/transcript";
 import type { TranscriptSnapshot } from "../shared/sessionEventStream";
 import type { SshConnectAttempt, SshDeleteResult, SshFieldError, SshKeyInspection, SshRemoteDirectoryResult, SshRemotePathCheck, SshRemotePathSuggestions, SshServerDraft, SshServerView } from "../shared/sshServers";
+import type { BrowserActionInput, BrowserActionResult, BrowserState } from "../shared/browserControl";
 
 const appearanceBoot = parseAppearanceBootArgs(process.argv)
   || ipcRenderer.sendSync("appearance:boot");
@@ -153,6 +154,18 @@ const api = {
   respondToApproval: (requestId: string, behavior: "allow" | "deny", updatedInput?: unknown, message?: string): Promise<ApprovalResponseResult> =>
     ipcRenderer.invoke("approval:respond", requestId, behavior, updatedInput, message),
   listMcpServers: (sessionId: string) => ipcRenderer.invoke("session:mcpList", sessionId),
+  browserAction: (partyId: string, member: string, input: BrowserActionInput): Promise<BrowserActionResult> =>
+    ipcRenderer.invoke("browser:action", partyId, member, input),
+  onBrowserState: (callback: (state: BrowserState) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: BrowserState) => callback(state);
+    ipcRenderer.on("browser:state", listener);
+    return () => { ipcRenderer.off("browser:state", listener); };
+  },
+  onBrowserOpenRequested: (callback: (target: { partyId: string; member: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, target: { partyId: string; member: string }) => callback(target);
+    ipcRenderer.on("browser:openRequested", listener);
+    return () => { ipcRenderer.off("browser:openRequested", listener); };
+  },
   reconnectMcpServer: (sessionId: string, server: string) => ipcRenderer.invoke("session:mcpReconnect", sessionId, server),
   setMcpServerEnabled: (sessionId: string, server: string, enabled: boolean) => ipcRenderer.invoke("session:mcpToggle", sessionId, server, enabled),
   authenticateMcpServer: (sessionId: string, server: string) => ipcRenderer.invoke("session:mcpAuthenticate", sessionId, server),

@@ -39,6 +39,7 @@ import type { CodexFileEdit } from "../shared/codexItems";
 import {
   CODEX_IN_APP_BROWSER_PLUGIN,
   CODEX_IN_APP_BROWSER_SKILL,
+  CODEX_PARTY_UNSUPPORTED_SKILLS,
   pluginCommands,
   skillCommands,
   unsupportedHostSkillOverrides,
@@ -949,7 +950,12 @@ export class CodexAdapter extends EventEmitter {
   private async resolveUnsupportedHostSkills(): Promise<void> {
     const skills = await this.request("skills/list", { cwds: [this.options.cwd] })
       .catch((error) => this.noteDiscoveryError("skills", error));
-    this.unsupportedHostSkills = unsupportedHostSkillOverrides(skills);
+    this.unsupportedHostSkills = unsupportedHostSkillOverrides(
+      skills,
+      this.options.partyBridge && this.options.partyIdentity
+        ? CODEX_PARTY_UNSUPPORTED_SKILLS
+        : new Set([CODEX_IN_APP_BROWSER_SKILL]),
+    );
   }
 
   /**
@@ -1085,7 +1091,9 @@ export class CodexAdapter extends EventEmitter {
     ]);
     const merged = [
       ...CODEX_COMMANDS,
-      ...skillCommands(skills, new Set([CODEX_IN_APP_BROWSER_SKILL])),
+      ...skillCommands(skills, this.options.partyBridge && this.options.partyIdentity
+        ? CODEX_PARTY_UNSUPPORTED_SKILLS
+        : new Set([CODEX_IN_APP_BROWSER_SKILL])),
       ...pluginCommands(plugins, new Set([CODEX_IN_APP_BROWSER_PLUGIN])),
     ];
     // Dedupe by name, keeping the first (built-ins win over same-named skills).
@@ -1312,14 +1320,14 @@ export class CodexAdapter extends EventEmitter {
     });
     try {
       const result = await invokePartyTool(bridge, identity, String(normalized), params?.arguments);
-      this.respondDynamicTool(requestId, result.ok, result.data ?? { ok: result.ok, error: result.error });
+      const reported = this.respondDynamicTool(requestId, result.ok, result.data ?? { ok: result.ok, error: result.error });
       this.emitEvent({
         type: "tool_call",
         id: String(params?.callId || requestId),
         name: `${PARTY_TOOL_PREFIX}${normalized}`,
         input: params?.arguments,
         status: result.ok ? "completed" : "failed",
-        result: result.data ?? result.error,
+        result: reported,
         source: "mcp",
         at: now(),
       });
@@ -1340,11 +1348,20 @@ export class CodexAdapter extends EventEmitter {
     }
   }
 
-  private respondDynamicTool(requestId: string, success: boolean, payload: unknown): void {
+  private respondDynamicTool(requestId: string, success: boolean, payload: unknown): unknown {
+    const image = payload && typeof payload === "object"
+      ? (payload as { image?: { mimeType?: string; dataBase64?: string } }).image : undefined;
+    const hasImage = typeof image?.mimeType === "string" && typeof image?.dataBase64 === "string";
+    const textPayload = hasImage && payload && typeof payload === "object"
+      ? { ...payload, image: { mimeType: image.mimeType, includedInToolResult: true } } : payload;
     this.respond(requestId, {
       success,
-      contentItems: [{ type: "inputText", text: JSON.stringify(payload) }],
+      contentItems: [
+        { type: "inputText", text: JSON.stringify(textPayload) },
+        ...(hasImage ? [{ type: "inputImage", imageUrl: `data:${image.mimeType};base64,${image.dataBase64}` }] : []),
+      ],
     });
+    return textPayload;
   }
 
   private normalizeNotification(message: any): void {

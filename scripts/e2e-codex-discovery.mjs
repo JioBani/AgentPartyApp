@@ -88,6 +88,7 @@ async function main() {
     assert(byName.formatter?.source === "plugin", "installed plugin merged with source=plugin");
     assert(byName["blocked-plugin"]?.disabledReason, "admin-disabled plugin carries a disabled reason");
     assert(!byName["browser:control-in-app-browser"], "unsupported in-app-browser skill is not advertised");
+    assert(!byName["computer-use:computer-use"], "desktop mouse control is not advertised to party members");
     assert(!byName.browser, "in-app-browser plugin is not advertised");
 
     // Drive the user-visible workflow through the same local automation API a

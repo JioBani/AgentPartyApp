@@ -18,6 +18,8 @@ export interface CodexDiscoveredCommand {
 
 export const CODEX_IN_APP_BROWSER_SKILL = "browser:control-in-app-browser";
 export const CODEX_IN_APP_BROWSER_PLUGIN = "browser@openai-bundled";
+export const CODEX_DESKTOP_COMPUTER_USE_SKILL = "computer-use:computer-use";
+export const CODEX_PARTY_UNSUPPORTED_SKILLS = new Set([CODEX_IN_APP_BROWSER_SKILL, CODEX_DESKTOP_COMPUTER_USE_SKILL]);
 
 export interface CodexSkillConfigOverride {
   path: string;
@@ -25,15 +27,19 @@ export interface CodexSkillConfigOverride {
 }
 
 /**
- * AgentParty does not host Codex's in-app browser. Disable only that skill for
- * this thread, leaving the user's global config and every other plugin intact.
+ * Party browser control is member-scoped. Codex's separate in-app browser
+ * plugin is not connected to it, while desktop Computer Use moves the real OS
+ * pointer. Disable those skills for this thread, not in the user's global config.
  */
-export function unsupportedHostSkillOverrides(response: any): CodexSkillConfigOverride[] {
+export function unsupportedHostSkillOverrides(
+  response: any,
+  disabledNames: ReadonlySet<string> = new Set([CODEX_IN_APP_BROWSER_SKILL]),
+): CodexSkillConfigOverride[] {
   const entries: any[] = Array.isArray(response?.data) ? response.data : [];
   const paths = new Set<string>();
   for (const entry of entries) {
     for (const skill of Array.isArray(entry?.skills) ? entry.skills : []) {
-      if (String(skill?.name ?? "") !== CODEX_IN_APP_BROWSER_SKILL) {
+      if (!disabledNames.has(String(skill?.name ?? ""))) {
         continue;
       }
       const skillPath = String(skill?.path ?? "").trim();

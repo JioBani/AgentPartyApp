@@ -4,6 +4,7 @@ import { MethodRouteTable, type MethodRoute } from "./methodRegistry";
 import { appRoutes } from "./routes/appRoutes";
 import { approvalRoutes } from "./routes/approvalRoutes";
 import { authRoutes } from "./routes/authRoutes";
+import { browserRoutes } from "./routes/browserRoutes";
 import { discordRoutes } from "./routes/discordRoutes";
 import { guideRoutes } from "./routes/guideRoutes";
 import { modelRoutes } from "./routes/modelRoutes";
@@ -32,6 +33,7 @@ const routes: MethodRoute[] = [
   ...appRoutes,
   ...approvalRoutes,
   ...authRoutes,
+  ...browserRoutes,
   ...discordRoutes,
   ...guideRoutes,
   ...modelRoutes,

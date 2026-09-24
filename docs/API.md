@@ -3399,6 +3399,29 @@ outermost row, a split left with one child collapses into it, and weights are
 renormalized. So posting only `panels` (no `grid`) is a valid way to say "one
 row", and posting a grid is how an agent arranges a real 2×2 without dragging.
 
+### `POST /api/browser/action`
+
+Controls the isolated in-app browser owned by one party member. Body fields:
+`partyId`, `member`, `action`, and action-specific arguments. The app UI and
+this route call the same `AppController.browserAction` method. A member should
+normally use its own `browser` MCP tool through the member-scoped transport
+below, which binds identity rather than accepting a member name in the body.
+
+`action` can be `state`, `show`, `hide`, `open`, `back`, `forward`, `reload`,
+`snapshot`, `screenshot`, `click`, `type`, `scroll`, or `close`. `open` accepts an
+HTTP(S) `url`; `show` accepts viewport `bounds` in window CSS pixels; `click`
+accepts viewport-relative `x` and `y`; `type` inserts `text` into the focused
+field; `scroll` accepts `deltaY` and optional `x`/`y`, and returns requested
+and actually applied vertical distances. These actions target the member's
+Chromium view and do not move the desktop pointer. A visible Browser pane
+is required for pointer, typing, scrolling, and screenshot actions. `snapshot`
+returns page text plus visible controls and their viewport coordinates.
+`screenshot` returns PNG base64 under `image`; the MCP relay turns it into an
+image content block and Codex's dynamic tool returns an `inputImage` item,
+instead of embedding the bytes in text. The browser
+profile is isolated per member and is ephemeral in this MVP. The route is local
+to the desktop host and does not change existing member or session data.
+
 ### `POST /api/parties/:partyId/members/:name/mcp-tools/:tool`
 
 Invokes one party tool through the **real stdio MCP transport** on the named

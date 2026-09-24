@@ -8,6 +8,7 @@ import type { EngineRegistryDeps } from "./engineRegistry";
 import type { DiscordBridgePort, PartyExecutionLocationPort } from "../application/partyApplicationService";
 import type { PartyBridge } from "../../core/partyBridge";
 import type { HostedPartySessionBinding } from "../../shared/types";
+import type { BrowserActionInput, BrowserActionResult } from "../../shared/browserControl";
 import { RemoteHarnessSession, type RemoteHarnessSessionOptions } from "../harness/remoteHarnessSession";
 
 export interface EngineHostConfig {
@@ -43,6 +44,7 @@ export interface EngineHostConfig {
   discord?: DiscordBridgePort;
   /** Desktop-global validator and suggestion catalog for member execution cwd. */
   executionLocations?: PartyExecutionLocationPort;
+  browser?: { action: (partyId: string, member: string, input: BrowserActionInput) => Promise<BrowserActionResult> };
 }
 
 /**
@@ -92,7 +94,7 @@ export function createEngineHost(config: EngineHostConfig): EngineHost {
       : undefined,
     createHostedPartyBridge: config.createHostedPartyBridge,
   });
-  const workspaceManager = new WorkspaceManager(sessionManager, config.reviewGate, config.discord, config.executionLocations);
+  const workspaceManager = new WorkspaceManager(sessionManager, config.reviewGate, config.discord, config.executionLocations, config.browser);
   engineRegistry = new EngineRegistry({ workspaceManager, sessionManager, createRemoteEngine: config.createRemoteEngine });
 
   return {

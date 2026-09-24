@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { BrowserActionInput, BrowserActionResult } from "../../shared/browserControl";
 import { randomUUID } from "node:crypto";
 import type {
   CreateMemberInput,
@@ -139,6 +140,7 @@ export interface PartyApplicationDeps {
    * tool calls are forwarded to the desktop's global party authority.
    */
   executionLocations?: PartyExecutionLocationPort;
+  browser?: { action: (partyId: string, member: string, input: BrowserActionInput) => Promise<BrowserActionResult> };
 }
 
 export interface PartyExecutionLocationPort {
@@ -2457,6 +2459,9 @@ export class PartyApplicationService {
       this.deps.sessionManager.closeSession(member.sessionId);
     }
     const removedPartyId = this.partyIdOf(member);
+    void this.deps.browser?.action(removedPartyId, member.name, { action: "close" }).catch((error) => {
+      log("error", "party", "member browser cleanup failed", { partyId: removedPartyId, member: member.name, error: String(error) });
+    });
     state.members = state.members.filter((item) => !(item.partyId === removedPartyId && item.name === member.name));
     state.messages = state.messages.filter((message) => message.partyId !== removedPartyId || (message.from !== member.name && message.to !== member.name));
     fs.rmSync(this.repository.memberDir(workspace, removedPartyId, member.name), { recursive: true, force: true });
@@ -2485,6 +2490,11 @@ export class PartyApplicationService {
         this.stopRecording(member.sessionId);
 
         this.deps.sessionManager.closeSession(member.sessionId);
+      }
+      if (member.partyId === party.id) {
+        void this.deps.browser?.action(party.id, member.name, { action: "close" }).catch((error) => {
+          log("error", "party", "member browser cleanup failed", { partyId: party.id, member: member.name, error: String(error) });
+        });
       }
     }
     state.parties = state.parties.filter((item) => item.id !== party.id);
@@ -3940,6 +3950,11 @@ export class PartyApplicationService {
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
         }
+      },
+      browser: async (input) => {
+        if (!this.deps.browser) return { ok: false, error: "The in-app browser is unavailable on this host." };
+        try { return { ok: true, data: await this.deps.browser.action(party, selfMember, input) }; }
+        catch (error) { return { ok: false, error: errorMessage(error) }; }
       },
     };
   }

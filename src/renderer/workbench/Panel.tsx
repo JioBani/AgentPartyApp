@@ -1,5 +1,5 @@
 import { PointerEvent, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, MoreHorizontal, Plug, RefreshCw, SplitSquareHorizontal, SplitSquareVertical, SquareTerminal } from "lucide-react";
+import { ChevronDown, ChevronUp, Globe2, MessageSquare, MoreHorizontal, Plug, RefreshCw, SplitSquareHorizontal, SplitSquareVertical, SquareTerminal } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
@@ -7,6 +7,7 @@ import { latestDiagnostic, statusLabel } from "./memberStatus";
 import { useDensity } from "./useDensity";
 import { TabStrip } from "./TabStrip";
 import { Transcript } from "./Transcript";
+import { BrowserPane } from "./BrowserPane";
 import { Composer } from "./Composer";
 import { SubagentDock } from "./SubagentDock";
 import { MessageGateIcon } from "./MessageGateIcon";
@@ -82,6 +83,11 @@ export function Panel(props: PanelProps) {
   // below stands down. Something has to take the key, or Escape does nothing at all.
   useModalEscape(() => setMenuOpen(false), menuOpen);
   const [cliContinuationOpen, setCliContinuationOpen] = useState(false);
+  const [browserFor, setBrowserFor] = useState<string | null>(null);
+  const browserVisible = Boolean(view && browserFor === `${view.member.partyId}:${view.name}`);
+  useEffect(() => window.agentParty.onBrowserOpenRequested(({ partyId, member }) => {
+    if (view && partyId === view.member.partyId && member === view.name) setBrowserFor(`${partyId}:${member}`);
+  }), [view?.member.partyId, view?.name]);
 
   // Subagent dock + drill-in detail, derived from the active member's subagents.
   const subagents = view?.subagents || [];
@@ -220,6 +226,17 @@ export function Panel(props: PanelProps) {
             })()}
           </div>
           <div className="wb-toolbar-controls">
+            <button
+              type="button"
+              className={"wb-browser-toggle" + (browserVisible ? " is-active" : "")}
+              title={browserVisible ? "채팅 보기" : "브라우저 보기"}
+              aria-label={browserVisible ? "채팅 보기" : "브라우저 보기"}
+              aria-pressed={browserVisible}
+              onClick={() => setBrowserFor(browserVisible ? null : `${view.member.partyId}:${view.name}`)}
+            >
+              {browserVisible ? <MessageSquare size={14} /> : <Globe2 size={14} />}
+              {wide && <span>{browserVisible ? "채팅" : "브라우저"}</span>}
+            </button>
             {/* Stop moved to the composer, BESIDE the send control — where the
                 hand already is while typing. It is a separate button there, not
                 the send slot itself: that slot is how you add to the queue while
@@ -340,12 +357,14 @@ export function Panel(props: PanelProps) {
       ) : view ? (
         <>
           <SshPanelBanner view={view} actions={actions} />
-          <Transcript
-            key={`${view.member.partyId || "default"}:${view.name}:${view.member.createdAt || ""}`}
-            view={view}
-            density={density}
-            actions={actions}
-          />
+          {browserVisible
+            ? <BrowserPane key={`${view.member.partyId}:${view.name}`} partyId={view.member.partyId || ""} member={view.name} onClose={() => setBrowserFor(null)} />
+            : <Transcript
+                key={`${view.member.partyId || "default"}:${view.name}:${view.member.createdAt || ""}`}
+                view={view}
+                density={density}
+                actions={actions}
+              />}
           {/* The composer folds from its OWN top-right corner, and unfolds from
               the stub that takes its place — the control stays with the thing it
               hides instead of being parked in the tab strip.
