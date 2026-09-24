@@ -11,7 +11,7 @@ import { providerForModel } from "./modelProvider";
 const BUSY_STATUSES = new Set(["requesting", "responding", "interrupting"]);
 
 export function isSessionBusy(session?: SessionView): boolean {
-  return session ? BUSY_STATUSES.has(String(session.snapshot.status)) : false;
+  return session?.turnActive ?? (session ? BUSY_STATUSES.has(String(session.snapshot.status)) : false);
 }
 
 /**

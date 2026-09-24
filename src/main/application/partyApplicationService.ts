@@ -281,7 +281,7 @@ export class PartyApplicationService {
       this.persistHarnessThread(payload.sessionId);
     });
     // The queue's delivery trigger: a session leaving a busy status. Driven off
-    // the SNAPSHOT rather than `turn_complete` because a turn that is
+    // the session lifecycle on each snapshot rather than `turn_complete` because a turn that is
     // interrupted, errors out, or is force-stopped never completes — and a queue
     // that only drains on clean completion would strand every message behind
     // one stuck turn, which is precisely the state it exists to make visible.
@@ -289,7 +289,8 @@ export class PartyApplicationService {
       if (!payload?.sessionId || !this.ownsSessionEvent(payload.workspace)) {
         return;
       }
-      const busy = BUSY_SESSION_STATUSES.has(String(payload.snapshot?.status));
+      const busy = this.deps.sessionManager.isTurnActive?.(payload.sessionId)
+        ?? BUSY_SESSION_STATUSES.has(String(payload.snapshot?.status));
       const wasBusy = this.busySessions.has(payload.sessionId);
       if (busy) {
         this.busySessions.add(payload.sessionId);
@@ -2829,8 +2830,8 @@ export class PartyApplicationService {
 
   /**
    * Turn state of one member (or, with no name, every member of the party).
-   * `turnActive` mirrors the UI's "working" derivation: the session snapshot
-   * status is one of the busy states. Backs the `member-status` party tool and
+   * `turnActive` uses the app-owned lifecycle, as the UI does. A harness may
+   * briefly report idle before the turn completes. Backs the `member-status` party tool and
    * the `/api/party/members/{name}/status` endpoint.
    */
   memberTurnStatus(name?: string, partyId?: string): { ok: true; members: Array<Record<string, unknown>> } {
@@ -2982,7 +2983,7 @@ export class PartyApplicationService {
       // adapter's own liveness rather than a status string, which only ever
       // described Claude (#21).
       running: Boolean(view) && view?.snapshot.harnessAlive !== false,
-      turnActive: Boolean(view && BUSY_SESSION_STATUSES.has(status)),
+      turnActive: view?.turnActive ?? Boolean(view && BUSY_SESSION_STATUSES.has(status)),
       status,
       turnCount: view?.snapshot.turnCount,
       pendingApprovalCount: view?.snapshot.pendingApprovalCount,
