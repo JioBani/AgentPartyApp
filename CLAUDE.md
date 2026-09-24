@@ -8,6 +8,8 @@ other tools stay in sync.
 
 The real-rendering and layout-verification requirements for UI changes are inherited from `AGENTS.md` and are mandatory.
 
+For UI features, also apply the `AGENTS.md` accessibility regression gate to existing workflows: verify in the real app that overlays, native browser views, and inputs do not cover or intercept permission/Message Gate controls or other existing actions, and confirm those controls remain clickable and keyboard-reachable.
+
 After feature development, prioritize manual end-to-end testing against the real running AgentParty application through its local automation API instead of writing a new test script. Create a dedicated test script only for a sufficiently complex or difficult case where scripting is materially faster than manual API-driven verification.
 
 When automation or QA acts as a party member and the capability exists as an AgentParty MCP tool, use the member-scoped real MCP transport endpoint (`/api/parties/:partyId/members/:name/mcp-tools/:tool`) by default. Do not replace it with a lower-level HTTP action route or a direct controller call, because that bypasses MCP schema, identity, framing, and host routing. Use direct HTTP only to test the HTTP contract itself, prepare or inspect fixtures and state, drive a human-only action, or cover a capability with no MCP tool, and record that reason in the test or validation notes.
