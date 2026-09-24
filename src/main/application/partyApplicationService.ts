@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { BrowserActionInput, BrowserActionResult } from "../../shared/browserControl";
+import { browserTabMember } from "../../shared/browserTab";
 import { randomUUID } from "node:crypto";
 import type {
   CreateMemberInput,
@@ -3781,12 +3782,12 @@ export class PartyApplicationService {
             ?? (allMembers[0] ? openMemberTab(EMPTY_LAYOUT, allMembers[0].name) : EMPTY_LAYOUT);
           const tabGroups = visibleLayout.panels
             .filter((panel) => !wanted || panel.tabs.includes(selected[0].name))
-            .map((panel) => ({
-              id: panel.id,
-              anchor: panel.active,
-              members: [...panel.tabs],
-              active: panel.active,
-            }));
+            .flatMap((panel) => {
+              const members = panel.tabs.filter((tab) => !browserTabMember(tab));
+              if (!members.length) return [];
+              const active = members.includes(panel.active) ? panel.active : members[0];
+              return [{ id: panel.id, anchor: active, members, active }];
+            });
           return {
             ok: true,
             data: { detail: wanted ? "member" : "summary", totalMembers: allMembers.length, members, tabGroups },

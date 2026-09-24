@@ -34,6 +34,9 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
     const entry = this.ensure(partyId, member);
     const contents = entry.view.webContents;
     switch (input.action) {
+      case "tab":
+        this.options.onOpenRequested(partyId, member);
+        break;
       case "show": {
         const window = this.options.resolveWindow(windowId);
         if (!window || window.isDestroyed()) throw new Error("The browser tab needs an open AgentParty window.");

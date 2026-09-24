@@ -1,9 +1,9 @@
 import { FormEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, RotateCw, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, RotateCw } from "lucide-react";
 import type { BrowserActionInput, BrowserState } from "../../shared/browserControl";
 
 /** DOM chrome around the isolated native WebContentsView owned by this member. */
-export function BrowserPane({ partyId, member, onClose }: { partyId: string; member: string; onClose: () => void }) {
+export function BrowserPane({ partyId, member }: { partyId: string; member: string }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<BrowserState | null>(null);
   const [address, setAddress] = useState("");
@@ -87,7 +87,6 @@ export function BrowserPane({ partyId, member, onClose }: { partyId: string; mem
         <form onSubmit={navigate}>
           <input data-browser-address="true" aria-label="브라우저 주소" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="https://example.com" spellCheck={false} />
         </form>
-        <button type="button" title="브라우저 닫기" onClick={() => { void act({ action: "close" }).then((result) => { if (result) onClose(); }); }}><X size={14} /></button>
       </div>
       {error && <div className="wb-browser-error" role="alert">{error}</div>}
       <div className="wb-browser-viewport" ref={viewport} aria-label={`${member} 브라우저 화면`} />

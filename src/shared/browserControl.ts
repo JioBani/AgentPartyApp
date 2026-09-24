@@ -1,6 +1,6 @@
 /** One browser belongs to one party member. The browser profile is ephemeral in the MVP. */
 export type BrowserActionName =
-  | "state" | "show" | "hide" | "open" | "back" | "forward" | "reload"
+  | "state" | "tab" | "show" | "hide" | "open" | "back" | "forward" | "reload"
   | "snapshot" | "screenshot" | "click" | "type" | "scroll" | "close";
 
 export interface BrowserActionInput {

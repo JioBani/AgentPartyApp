@@ -84,7 +84,7 @@ const TOOLS_BODY = [
   `- \`${tool("list-locations")}\` — list supported execution hosts and recent/default cwd suggestions for \`${tool("member-create")}\`.`,
   `- \`${tool("list-models")}\` — discover available harnesses, models, and reasoning options.`,
   `- \`${tool("attach-image")}\` — show the user a local or web image in your conversation without putting its bytes in model context.`,
-  `- \`${tool("browser")}\` — control YOUR member's in-app Browser tab, not the desktop mouse. Open an HTTP(S) page, inspect a snapshot or screenshot, click, type, scroll, navigate history, reload, or close. The tab must be visible for clicks, typing, scrolling, and screenshots. Do not substitute desktop Computer Use or another browser backend. If login or CAPTCHA blocks the page, ask the user to complete it in the visible tab.`,
+  `- \`${tool("browser")}\` — control YOUR member's separate in-app Browser tab, not the desktop mouse. Use tab to reveal it without navigating, or open an HTTP(S) page; inspect a snapshot or screenshot, click, type, scroll, navigate history, reload, or close. The tab must be visible for clicks, typing, scrolling, and screenshots. Do not substitute desktop Computer Use or another browser backend. If login or CAPTCHA blocks the page, ask the user to complete it in the visible tab.`,
   `- \`${tool("discord-connect")}\` / \`${tool("discord-send")}\` / \`${tool("discord-send-image")}\` / \`${tool("discord-disconnect")}\` — bridge YOURSELF to Discord so the user can follow you from a phone or another PC. See the section below.`,
   "",
   "⚠️ Other similarly-named tools — e.g. `mcp__agentparty__*` or `mcp__plugin_*_agentparty__*` — are LEGACY and must not be used. Drive every party action through the `agentparty-app__*` tools above.",

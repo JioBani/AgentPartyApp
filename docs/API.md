@@ -3407,9 +3407,12 @@ this route call the same `AppController.browserAction` method. A member should
 normally use its own `browser` MCP tool through the member-scoped transport
 below, which binds identity rather than accepting a member name in the body.
 
-`action` can be `state`, `show`, `hide`, `open`, `back`, `forward`, `reload`,
+`action` can be `state`, `tab`, `show`, `hide`, `open`, `back`, `forward`, `reload`,
 `snapshot`, `screenshot`, `click`, `type`, `scroll`, or `close`. `open` accepts an
-HTTP(S) `url`; `show` accepts viewport `bounds` in window CSS pixels; `click`
+HTTP(S) `url` and opens the member's separate browser tab. `tab` opens/focuses
+that tab without navigating, matching the member header's detail menu action;
+the tab can be dragged to another panel to view chat and browser side by side.
+`show` accepts viewport `bounds` in window CSS pixels; `click`
 accepts viewport-relative `x` and `y`; `type` inserts `text` into the focused
 field; `scroll` accepts `deltaY` and optional `x`/`y`, and returns requested
 and actually applied vertical distances. These actions target the member's

@@ -17,6 +17,7 @@ import {
   layoutFromPanels,
   moveTab,
   moveTabToNewPanel,
+  openBrowserTab,
   openMember,
   promoteTab,
   pruneLayout,
@@ -26,6 +27,7 @@ import {
   splitPanel,
 } from "./layout";
 import { sanitizeLayout, type WorkbenchLayout } from "../../shared/workbenchLayout";
+import { browserTabId, browserTabMember } from "../../shared/browserTab";
 import { rowGrid, type GridNode, type GridSide } from "../../shared/workbenchGrid";
 import { Panel } from "./Panel";
 import { CreateMemberInput, CreatePartyInput, PartySidebar } from "./PartySidebar";
@@ -272,6 +274,7 @@ export function Workbench(props: WorkbenchProps) {
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
+  const validTabs = useMemo(() => new Set(views.flatMap((view) => [view.name, browserTabId(view.name)])), [views]);
   const partyKey = activePartyId || "default";
 
   // Member completion offers these and only these. Published from the same `views`
@@ -431,10 +434,17 @@ export function Workbench(props: WorkbenchProps) {
       return;
     }
     setLayout((current) => {
-      const pruned = pruneLayout(current, validMembers);
+      const pruned = pruneLayout(current, validTabs);
       return sameLayout(pruned, current) ? current : pruned;
     });
-  }, [validMembers]);
+  }, [validTabs]);
+
+  // UI menu and member MCP both announce browser tabs through the same action.
+  useEffect(() => window.agentParty.onBrowserOpenRequested(({ partyId, member }) => {
+    if (partyId === partyKey && validMembers.has(member)) {
+      setLayout((current) => openBrowserTab(current, member));
+    }
+  }), [partyKey, validMembers]);
 
   useEffect(() => {
     // Persist only a layout seeded from a LOADED party; a provisional
@@ -457,7 +467,8 @@ export function Workbench(props: WorkbenchProps) {
     const visibleInRestoreOrder = [
       ...(focused ? [focused] : []),
       ...layout.panels.filter((panel) => panel !== focused),
-    ].map((panel) => panel.active).filter(Boolean);
+    ].map((panel) => browserTabMember(panel.active) || panel.active)
+      .filter((name, index, names) => Boolean(name) && names.indexOf(name) === index);
     onVisibleMembersChange(partyKey, visibleInRestoreOrder);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, partyKey]);
@@ -483,7 +494,8 @@ export function Workbench(props: WorkbenchProps) {
   //    — which is what makes an ordinary relaunch still revive its tabs.
   const sessionlessOpenTabs = useMemo(
     () => layout.panels
-      .flatMap((panel) => panel.tabs)
+      .flatMap((panel) => panel.tabs.map((tab) => browserTabMember(tab) || tab))
+      .filter((name, index, names) => names.indexOf(name) === index)
       .filter((name) => {
         const view = viewMap.get(name);
         if (!view || view.session || view.status === "sleeping" || view.status === "external-cli") {
@@ -712,7 +724,7 @@ export function Workbench(props: WorkbenchProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const openMembers = useMemo(() => new Set(layout.panels.flatMap((panel) => panel.tabs)), [layout]);
+  const openMembers = useMemo(() => new Set(layout.panels.flatMap((panel) => panel.tabs.map((tab) => browserTabMember(tab) || tab))), [layout]);
 
   /**
    * The geometry to draw. A layout that carries no grid is one written before
@@ -787,7 +799,11 @@ export function Workbench(props: WorkbenchProps) {
           // Computed from the rendered layout rather than inside a state
           // updater: an updater must stay pure, and closing a session is not.
           const next = closeTab(layout, panel.id, member);
-          if (!next.panels.some((item) => item.tabs.includes(member))) {
+          const browserOwner = browserTabMember(member);
+          if (browserOwner && !next.panels.some((item) => item.tabs.includes(member))) {
+            void window.agentParty.browserAction(partyKey, browserOwner, { action: "close" })
+              .catch((error) => console.error("Failed to close browser tab", error));
+          } else if (!browserOwner && !next.panels.some((item) => item.tabs.includes(member) || item.tabs.includes(browserTabId(member)))) {
             actions.closeSession(member);
           }
           setLayout(next);
@@ -887,9 +903,12 @@ export function Workbench(props: WorkbenchProps) {
         activePartyId={activePartyId}
         views={views}
         openMembers={openMembers}
-        tabGroups={layout.panels.map((panel) => ({
+        tabGroups={layout.panels.filter((panel) => panel.tabs.some((tab) => !browserTabMember(tab))).map((panel) => ({
           id: panel.id,
-          label: panel.tabs.join(" · "),
+          label: panel.tabs.map((tab) => {
+            const browserOwner = browserTabMember(tab);
+            return browserOwner ? `${browserOwner} 브라우저` : tab;
+          }).join(" · "),
         }))}
         defaultTabGroupId={layout.focusedPanelId || undefined}
         drawers={drawers}
@@ -1044,7 +1063,7 @@ function layoutFingerprint(layout: WorkbenchLayout | undefined): string {
  */
 function seedLayout(stored: WorkbenchLayout | undefined, views: MemberView[]): LayoutState {
   if (stored) {
-    return pruneLayout(stored, new Set(views.map((view) => view.name)));
+    return pruneLayout(stored, new Set(views.flatMap((view) => [view.name, browserTabId(view.name)])));
   }
   const first = views[0];
   if (!first) {
