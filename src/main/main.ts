@@ -41,6 +41,8 @@ import { BAI_API_KEY_ENV } from "../shared/baiDefaults";
 import { ApprovalIndex } from "./approvalIndex";
 import { GuideScreenHost } from "./guideScreen";
 import { GuideChatHost, requireChatKind } from "./guideChat";
+import { EmbeddedBrowserHost } from "./embeddedBrowserHost";
+import type { BrowserActionInput } from "../shared/browserControl";
 import { SshServerStore } from "./ssh/sshServerStore";
 import { SshServerService } from "./ssh/sshServerService";
 import { Ssh2Transport } from "./ssh/ssh2Transport";
@@ -124,6 +126,7 @@ const remoteSessionsByWorkspace = new Map<string, SessionView[]>();
 const approvals = new ApprovalIndex();
 let guideScreen: GuideScreenHost | undefined;
 let guideChat: GuideChatHost | undefined;
+let embeddedBrowser: EmbeddedBrowserHost | undefined;
 
 /**
  * Workspace from `--workspace <uri>` in a process argv. Used both by the initial
@@ -486,6 +489,13 @@ ${body}
       },
     },
   }));
+  embeddedBrowser = new EmbeddedBrowserHost({
+    resolveWindow: (windowId) => registry().resolve(windowId)?.window,
+    onState: (state) => { for (const entry of registry().all()) entry.window.webContents.send("browser:state", state); },
+    onOpenRequested: (partyId, member) => {
+      for (const entry of registry().all()) entry.window.webContents.send("browser:openRequested", { partyId, member });
+    },
+  });
   const host = createEngineHost({
     storageDir: app.getPath("userData"),
     runtimeScope: "desktop",
@@ -500,6 +510,7 @@ ${body}
     // Members reach Discord through their party tools; the bridge itself is
     // desktop-owned (it holds the token and the gateway socket).
     discord: discordBridge,
+    browser: { action: (partyId, member, input) => controller().browserAction(partyStorageWorkspace || "", partyId, member, input) },
     executionLocations: {
       list: async () => memberExecutionLocationCatalog(await getCheckedCwdPreferences()),
       check: async (location) => {
@@ -779,6 +790,7 @@ ${body}
     updater: updateService,
     approvals,
     sshServers: sshServerService,
+    browser: embeddedBrowser,
     pickSshKeyFile: async (windowId) => {
       const target = registry().resolve(windowId)?.window;
       const result = await dialog.showOpenDialog(target!, {
@@ -1211,6 +1223,8 @@ function registerIpc(): void {
     await controller().approveSession(senderWorkspace(event), sessionId, requestId, behavior, updatedInput, message);
   });
   handle("session:mcpList", async (event, sessionId: string) => controller().listSessionMcpServers(senderWorkspace(event), sessionId));
+  handle("browser:action", async (event, partyId: string, member: string, input: BrowserActionInput) =>
+    controller().browserAction(senderWorkspace(event), partyId, member, input, registry().byWebContents(event.sender)?.id));
   handle("session:mcpReconnect", async (event, sessionId: string, server: string) => controller().sessionMcpAction(senderWorkspace(event), sessionId, "reconnect", { server }));
   handle("session:mcpToggle", async (event, sessionId: string, server: string, enabled: boolean) => controller().sessionMcpAction(senderWorkspace(event), sessionId, "toggle", { server, enabled }));
   handle("session:mcpAuthenticate", async (event, sessionId: string, server: string) => controller().sessionMcpAction(senderWorkspace(event), sessionId, "authenticate", { server }));
@@ -1487,6 +1501,7 @@ app.on("activate", () => {
 app.on("before-quit", () => {
   log("info", "app", "before quit");
   appController?.dispose();
+  embeddedBrowser?.dispose();
   removeAllDiscovery();
   engineRegistry?.disposeAll();
   sshServerService?.dispose();

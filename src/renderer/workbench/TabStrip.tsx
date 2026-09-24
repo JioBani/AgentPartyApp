@@ -1,5 +1,6 @@
 import { PointerEvent, useEffect, useMemo, useState } from "react";
-import { AlignLeft, ChevronDown, PanelTopClose, PanelTopOpen, X } from "lucide-react";
+import { AlignLeft, ChevronDown, Globe2, PanelTopClose, PanelTopOpen, X } from "lucide-react";
+import { browserTabMember } from "../../shared/browserTab";
 import type { MemberView, PanelDensity, PanelState } from "./types";
 import { memberColorVars } from "../theme/memberColors";
 import { harnessLabel } from "./harnessLabel";
@@ -78,6 +79,28 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
     <div className={"wb-tabstrip" + (hidden.length > 0 ? " has-overflow" : "")} data-drop-tabstrip={panel.id}>
       <div className="wb-tabs">
         {visible.map((member) => {
+          const browserOwner = browserTabMember(member);
+          if (browserOwner) {
+            const marker = dropAt?.tab === member && draggingMember !== member
+              ? (dropAt.after ? " is-drop-after" : " is-drop-before") : "";
+            return (
+              <div
+                key={member}
+                data-drop-tab={member}
+                data-browser-tab={browserOwner}
+                className={"wb-tab is-browser-tab" + (member === panel.active ? " is-active" : "") + (draggingMember === member ? " is-dragging" : "") + marker}
+                style={memberColorVars(browserOwner)}
+                onPointerDown={(event) => onTabPointerDown(member, event)}
+                onClick={() => onSelect(member)}
+                title={`${browserOwner} 브라우저`}
+              >
+                <span className="wb-tab-accent" />
+                <span className="wb-member-mark"><Globe2 size={15} /></span>
+                <span className="wb-tab-name">{browserOwner} · 브라우저</span>
+                <button type="button" className="wb-tab-close" title="브라우저 탭 닫기" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose(member); }}><X size={12} /></button>
+              </div>
+            );
+          }
           const view = views.get(member);
           if (!view) {
             return null;
@@ -138,7 +161,7 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
       {/* Only the TOOLBAR folds from here. The toolbar is the bar this button
           hides, so its control has to live outside it — while the composer
           carries its own toggle, in the corner of the thing being folded. */}
-      <div className="wb-tabstrip-chrome">
+      {!browserTabMember(panel.active) && <div className="wb-tabstrip-chrome">
         <button
           type="button"
           className={"wb-chrome-toggle" + (chrome.toolbar ? " is-folded" : "")}
@@ -148,7 +171,7 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
         >
           {chrome.toolbar ? <PanelTopOpen size={15} /> : <PanelTopClose size={15} />}
         </button>
-      </div>
+      </div>}
 
       {hidden.length > 0 && (
         <div className="wb-tab-overflow-wrap">
@@ -174,6 +197,16 @@ export function TabStrip({ panel, views, density, width, draggingMember, dropAt,
                   <AlignLeft size={11} />  <LocalizedText id="STR-2148" /> {hidden.length}
                 </div>
                 {hidden.map((member) => {
+                  const browserOwner = browserTabMember(member);
+                  if (browserOwner) {
+                    return (
+                      <div key={member} className="wb-tab-overflow-item is-browser-tab" role="menuitem" style={memberColorVars(browserOwner)} onClick={() => { setOverflowOpen(false); onPromote(member); }}>
+                        <Globe2 size={14} />
+                        <span className="wb-tab-overflow-name">{browserOwner} · 브라우저</span>
+                        <button type="button" className="wb-tab-close" title="브라우저 탭 닫기" onClick={(event) => { event.stopPropagation(); onClose(member); }}><X size={12} /></button>
+                      </div>
+                    );
+                  }
                   const view = views.get(member);
                   if (!view) {
                     return null;

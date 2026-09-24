@@ -1,5 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { BrowserActionInput, BrowserActionResult } from "../../shared/browserControl";
+import { browserTabMember } from "../../shared/browserTab";
 import { randomUUID } from "node:crypto";
 import type {
   CreateMemberInput,
@@ -139,6 +141,7 @@ export interface PartyApplicationDeps {
    * tool calls are forwarded to the desktop's global party authority.
    */
   executionLocations?: PartyExecutionLocationPort;
+  browser?: { action: (partyId: string, member: string, input: BrowserActionInput) => Promise<BrowserActionResult> };
 }
 
 export interface PartyExecutionLocationPort {
@@ -2458,6 +2461,9 @@ export class PartyApplicationService {
       this.deps.sessionManager.closeSession(member.sessionId);
     }
     const removedPartyId = this.partyIdOf(member);
+    void this.deps.browser?.action(removedPartyId, member.name, { action: "close" }).catch((error) => {
+      log("error", "party", "member browser cleanup failed", { partyId: removedPartyId, member: member.name, error: String(error) });
+    });
     state.members = state.members.filter((item) => !(item.partyId === removedPartyId && item.name === member.name));
     state.messages = state.messages.filter((message) => message.partyId !== removedPartyId || (message.from !== member.name && message.to !== member.name));
     fs.rmSync(this.repository.memberDir(workspace, removedPartyId, member.name), { recursive: true, force: true });
@@ -2486,6 +2492,11 @@ export class PartyApplicationService {
         this.stopRecording(member.sessionId);
 
         this.deps.sessionManager.closeSession(member.sessionId);
+      }
+      if (member.partyId === party.id) {
+        void this.deps.browser?.action(party.id, member.name, { action: "close" }).catch((error) => {
+          log("error", "party", "member browser cleanup failed", { partyId: party.id, member: member.name, error: String(error) });
+        });
       }
     }
     state.parties = state.parties.filter((item) => item.id !== party.id);
@@ -3771,12 +3782,12 @@ export class PartyApplicationService {
             ?? (allMembers[0] ? openMemberTab(EMPTY_LAYOUT, allMembers[0].name) : EMPTY_LAYOUT);
           const tabGroups = visibleLayout.panels
             .filter((panel) => !wanted || panel.tabs.includes(selected[0].name))
-            .map((panel) => ({
-              id: panel.id,
-              anchor: panel.active,
-              members: [...panel.tabs],
-              active: panel.active,
-            }));
+            .flatMap((panel) => {
+              const members = panel.tabs.filter((tab) => !browserTabMember(tab));
+              if (!members.length) return [];
+              const active = members.includes(panel.active) ? panel.active : members[0];
+              return [{ id: panel.id, anchor: active, members, active }];
+            });
           return {
             ok: true,
             data: { detail: wanted ? "member" : "summary", totalMembers: allMembers.length, members, tabGroups },
@@ -3941,6 +3952,11 @@ export class PartyApplicationService {
         } catch (error) {
           return { ok: false, error: errorMessage(error) };
         }
+      },
+      browser: async (input) => {
+        if (!this.deps.browser) return { ok: false, error: "The in-app browser is unavailable on this host." };
+        try { return { ok: true, data: await this.deps.browser.action(party, selfMember, input) }; }
+        catch (error) { return { ok: false, error: errorMessage(error) }; }
       },
     };
   }

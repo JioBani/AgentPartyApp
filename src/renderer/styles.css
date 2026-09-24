@@ -1932,6 +1932,18 @@ body.wb-resizing-y {
   overflow-y: auto;
 }
 
+/* The website is a separate native WebContentsView occupying only the viewport. */
+.wb-browser { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; background: var(--bg-1); }
+.wb-browser-controls { display: flex; align-items: center; gap: 4px; padding: 5px 8px; border-bottom: 1px solid var(--border-subtle); min-width: 0; }
+.wb-browser-controls button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--bg-1); color: var(--text-1); min-height: 26px; padding: 0 7px; cursor: pointer; }
+.wb-browser-controls button:hover:not(:disabled) { color: var(--text-0); background: var(--bg-2); }
+.wb-browser-controls button:disabled { opacity: .4; cursor: default; }
+.wb-browser-controls form { flex: 1; min-width: 0; }
+.wb-browser-controls input { width: 100%; min-width: 0; height: 27px; padding: 0 8px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--bg-0); color: var(--text-0); font: inherit; font-size: 12px; }
+.wb-browser-controls input:focus { outline: 1px solid var(--accent); }
+.wb-browser-error { color: var(--danger, #c53030); padding: 5px 9px; font-size: 11px; }
+.wb-browser-viewport { flex: 1; min-height: 0; min-width: 0; }
+
 /* Ctrl+wheel text zoom: use layout zoom on the inner wrapper so Chromium
    rasterizes glyphs at their final size. A fractional transform scales an
    already-rasterized texture and is visibly blurry, even after remounting. */

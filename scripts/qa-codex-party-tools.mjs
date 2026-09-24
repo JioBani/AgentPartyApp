@@ -40,6 +40,7 @@ const { CodexAdapter } = await load("src/core/codexAdapter.ts", "codex-party-too
 
 let listCalls = 0;
 const bridge = {
+  async browser() { return { ok: true, data: { ok: true, image: { mimeType: "image/png", dataBase64: "cG5n" } } }; },
   async send() { return { ok: true }; },
   async createMember() { return { ok: true }; },
   async removeMember() { return { ok: true }; },
@@ -77,7 +78,8 @@ try {
   const mcp = await adapter.listMcpServers();
   const partyServer = mcp.servers.find((server) => server.name === "agentparty-app");
   assert(Boolean(partyServer), "Codex MCP snapshot includes the app-hosted agentparty-app surface");
-  assert(partyServer?.tools?.length === 18, "agentparty-app exposes all eighteen party tools (coordination, runtime, gates, permissions, Discord, and attachments)");
+  assert(partyServer?.tools?.length === 19, "agentparty-app exposes all nineteen party tools, including the member browser");
+  assert(partyServer?.tools?.some((tool) => tool.name === "mcp__agentparty-app__browser"), "the member browser is available through the canonical MCP tool");
   assert(
     partyServer?.tools?.some((tool) => tool.name === "mcp__agentparty-app__party-gate-set"),
     "the PARTY-WIDE gate is drivable by an agent, not just the per-member override",
@@ -93,6 +95,13 @@ try {
   const response = JSON.parse(readFileSync(toolOut, "utf8"));
   assert(response.success === true, "dynamic tool response marks success=true");
   assert(/main/.test(response.contentItems?.[0]?.text || ""), "dynamic tool response carries bridge data");
+
+  adapter.sendUserTurn("KIND=browserScreenshot");
+  await waitFor(() => events.filter((event) => event.type === "turn_complete").length >= 2, "browser screenshot tool turn complete");
+  const screenshotResponse = JSON.parse(readFileSync(toolOut, "utf8"));
+  assert(screenshotResponse.contentItems?.[0]?.text.includes("includedInToolResult") && !screenshotResponse.contentItems[0].text.includes("cG5n"), "Codex screenshot metadata excludes base64 from text");
+  assert(screenshotResponse.contentItems?.[1]?.type === "inputImage" && screenshotResponse.contentItems[1].imageUrl === "data:image/png;base64,cG5n", "Codex receives the browser screenshot as an image content item");
+  assert(!events.some((event) => event.type === "tool_call" && JSON.stringify(event.result ?? "").includes("cG5n")), "browser image bytes are omitted from transcript tool events");
 
   const logPath = adapter.getSnapshot().logPath;
   const frames = readFileSync(logPath, "utf8").trim().split(/\r?\n/).map((line) => JSON.parse(line));
@@ -110,18 +119,21 @@ try {
       && eagerTools.every((tool) => tool.deferLoading === false),
     "Codex Party Core controls are first-class and always loaded",
   );
-  assert(compatibilityNamespace?.tools?.length === 18 && compatibilityNamespace.tools.every((tool) => tool.deferLoading === true), "the complete AgentParty catalog remains available on demand without filling every turn");
+  assert(compatibilityNamespace?.tools?.length === 19 && compatibilityNamespace.tools.every((tool) => tool.deferLoading === true), "the complete AgentParty catalog remains available on demand without filling every turn");
   assert(
-    disabledSkills.length === 1
-      && disabledSkills[0].enabled === false
-      && /control-in-app-browser[\\/]SKILL\.md$/i.test(disabledSkills[0].path),
-    "thread config disables only the unsupported in-app-browser skill by SKILL.md path",
+    disabledSkills.length === 2
+      && disabledSkills.every((skill) => skill.enabled === false)
+      && disabledSkills.some((skill) => /control-in-app-browser[\\/]SKILL\.md$/i.test(skill.path))
+      && disabledSkills.some((skill) => /computer-use[\\/]SKILL\.md$/i.test(skill.path)),
+    "thread config disables host-only browser and desktop mouse skills by SKILL.md path",
   );
   assert(
     threadStart?.params?.developerInstructions?.includes("# AgentParty — party member session")
       && threadStart.params.developerInstructions.includes("team-qa")
       && threadStart.params.developerInstructions.includes("main")
       && threadStart.params.developerInstructions.includes("tools.party_send")
+      && threadStart.params.developerInstructions.includes("tools.mcp__agentparty_app__browser")
+      && threadStart.params.developerInstructions.includes("Do not use desktop Computer Use")
       && threadStart.params.developerInstructions.includes("`collaboration.*` tools control separate Codex sub-agents")
       && threadStart.params.developerInstructions.includes("never scan `ALL_TOOLS`"),
     "Codex installs the eager Party Core calling convention and distinguishes it from collaboration sub-agents",

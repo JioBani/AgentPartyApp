@@ -62,11 +62,18 @@ async function handleLine(line) {
       const name = String(msg.params?.name || "");
       const args = msg.params?.arguments && typeof msg.params.arguments === "object" ? msg.params.arguments : {};
       const result = await callTool(name, args);
+      const image = result?.ok && result?.data?.image;
+      const textResult = image
+        ? { ...result, data: { ...result.data, image: { mimeType: image.mimeType, includedInToolResult: true } } }
+        : result;
       send({
         jsonrpc: "2.0",
         id: msg.id,
         result: {
-          content: [{ type: "text", text: JSON.stringify(result) }],
+          content: [
+            { type: "text", text: JSON.stringify(textResult) },
+            ...(image ? [{ type: "image", data: image.dataBase64, mimeType: image.mimeType }] : []),
+          ],
           isError: result?.ok === false,
         },
       });

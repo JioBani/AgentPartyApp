@@ -105,6 +105,15 @@ function exchangePartyMcp(input: PartyMcpExchange): Promise<PartyToolResult | Pa
           if (!result || typeof result.ok !== "boolean") {
             throw new Error("result has no boolean ok field");
           }
+          // The relay sends screenshots as MCP image content, not as base64 in
+          // its text result. Preserve that content for the product-E2E route.
+          const image = message.result?.content?.find((entry: any) => entry?.type === "image");
+          if (image) {
+            if (typeof image.data !== "string" || typeof image.mimeType !== "string") {
+              throw new Error("image content is missing data or mimeType");
+            }
+            result.data = { ...result.data, image: { mimeType: image.mimeType, dataBase64: image.data } };
+          }
           finish(undefined, result as PartyToolResult);
         } catch (error) {
           finish(new Error(`Party MCP returned invalid tool JSON: ${error instanceof Error ? error.message : String(error)}`));

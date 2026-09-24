@@ -1,5 +1,5 @@
 import { PointerEvent, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, MoreHorizontal, Plug, RefreshCw, SplitSquareHorizontal, SplitSquareVertical, SquareTerminal } from "lucide-react";
+import { ChevronDown, ChevronUp, Globe2, MoreHorizontal, Plug, RefreshCw, SplitSquareHorizontal, SplitSquareVertical, SquareTerminal } from "lucide-react";
 import type { MemberView, PanelState } from "./types";
 import type { WorkbenchActions } from "./actions";
 import { memberColorVars } from "../theme/memberColors";
@@ -7,6 +7,7 @@ import { latestDiagnostic, statusLabel } from "./memberStatus";
 import { useDensity } from "./useDensity";
 import { TabStrip } from "./TabStrip";
 import { Transcript } from "./Transcript";
+import { BrowserPane } from "./BrowserPane";
 import { Composer } from "./Composer";
 import { SubagentDock } from "./SubagentDock";
 import { MessageGateIcon } from "./MessageGateIcon";
@@ -22,6 +23,7 @@ import { useModalEscape } from "./useModalEscape";
 import { CliContinuationModal } from "./CliContinuationModal";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 import type { GridSide } from "../../shared/workbenchGrid";
+import { browserTabMember } from "../../shared/browserTab";
 
 interface PanelProps {
   panel: PanelState;
@@ -74,7 +76,9 @@ interface PanelProps {
 export function Panel(props: PanelProps) {
   const { panel, views, focused, draggingMember, dropTarget, dropSide, dropAt, actions, onFocus, onSelectTab, onCloseTab, onSplit, chrome, onToggleChrome, onPromoteTab, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenCompact, onOpenUsage, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density, width } = useDensity<HTMLDivElement>();
-  const view = views.get(panel.active);
+  const browserMember = browserTabMember(panel.active);
+  const browserOwner = browserMember ? views.get(browserMember) : undefined;
+  const view = browserMember ? undefined : views.get(panel.active);
   const cliOwned = view?.status === "external-cli";
   // The header's ⋯ overflow menu (session restart / MCP). Local to this panel.
   const [menuOpen, setMenuOpen] = useState(false);
@@ -82,6 +86,7 @@ export function Panel(props: PanelProps) {
   // below stands down. Something has to take the key, or Escape does nothing at all.
   useModalEscape(() => setMenuOpen(false), menuOpen);
   const [cliContinuationOpen, setCliContinuationOpen] = useState(false);
+  const [browserOpenError, setBrowserOpenError] = useState("");
 
   // Subagent dock + drill-in detail, derived from the active member's subagents.
   const subagents = view?.subagents || [];
@@ -274,6 +279,18 @@ export function Panel(props: PanelProps) {
                     <button
                       type="button"
                       className="wb-menu-item"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setBrowserOpenError("");
+                        void window.agentParty.browserAction(view.member.partyId || "", view.name, { action: "tab" })
+                          .catch((error) => setBrowserOpenError(error instanceof Error ? error.message : String(error)));
+                      }}
+                    >
+                      <Globe2 size={14} /> 브라우저 탭 열기
+                    </button>
+                    <button
+                      type="button"
+                      className="wb-menu-item"
                       title={localized("STR-1967")}
                       onClick={() => { setMenuOpen(false); actions.respawn(view.name); }}
                     >
@@ -328,9 +345,13 @@ export function Panel(props: PanelProps) {
         </div>
       )}
 
+      {browserOpenError && view && <div className="wb-browser-error" role="alert">{browserOpenError}</div>}
+
       {dock && <SubagentDock view={dock} onToggle={onToggleSubDock} onOpen={onOpenSub} />}
 
-      {view && cliOwned ? (
+      {browserOwner && browserMember ? (
+        <BrowserPane key={`${browserOwner.member.partyId}:${browserMember}`} partyId={browserOwner.member.partyId || ""} member={browserMember} />
+      ) : view && cliOwned ? (
         <div className="wb-external-cli-state" role="status">
           <SquareTerminal size={28} />
           <strong><LocalizedText id="STR-1973" /></strong>

@@ -3,6 +3,7 @@ import type { CodexPolicy } from "../shared/codexPolicy";
 import type { CursorPolicy } from "../shared/cursorPolicy";
 import { MEMBER_EXECUTION_HOSTS, type MemberExecutionLocationRequest } from "../shared/memberLocation";
 import { readImageFile } from "./imageFile";
+import type { BrowserActionInput } from "../shared/browserControl";
 
 // Boundary 2 of the party-communication design (the party-communication design):
 // the seam through which an app-hosted member session reaches the app's party
@@ -193,6 +194,8 @@ export interface PartyBridge {
    * the tool result carries only a reference.
    */
   attachImage(input: { path?: string; url?: string; caption?: string; hostImage?: PartyHostImage }): Promise<PartyToolResult>;
+  /** Control this member's in-app browser tab; never another member's. */
+  browser(input: BrowserActionInput): Promise<PartyToolResult>;
 }
 
 /**
@@ -250,6 +253,7 @@ export function partyBridgeFromInvoker(
     discordSendImage: (path, caption) => hostInvoke("discord-send-image", { path, caption }),
     discordDisconnect: () => hostInvoke("discord-disconnect", {}),
     attachImage: (input) => hostInvoke("attach-image", input),
+    browser: (input) => hostInvoke("browser", input),
   };
 }
 
@@ -277,7 +281,7 @@ export async function invokePartyToolFromExecutionHost(
   return invoke(name, input);
 }
 
-export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "member-runtime", "gate-set", "party-gate-set", "list", "list-locations", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image"] as const;
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "member-runtime", "gate-set", "party-gate-set", "list", "list-locations", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image", "browser"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
 
 /**
@@ -314,6 +318,7 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "discord-send": "Post one message from you into YOUR Discord channel. Plain text only — Discord's limit is 2000 characters and longer content is REJECTED, not truncated, so split long reports into several sends. If Discord rate limits you the tool returns an error containing retry_after_ms: wait that long, then send again yourself (nothing is queued or retried for you). Write for a person reading on a phone: summarize, do not paste raw logs or diffs.",
   "discord-send-image": "Upload an image FILE from this machine into your Discord thread, so the user can see a screenshot, chart or diagram instead of reading a description of it. `path` is a path on the machine you are running on. Optional `caption` is posted with it (same 2000-character rule). Over-size images are REJECTED with the limit stated, not silently dropped. Images only — this is not a general file transfer.",
   "attach-image": "Show the user an image in THIS conversation — a screenshot you took, a chart you produced, or a picture on the web. Give `path` (a file on the machine you are running on) or `url` (http/https), not both. The picture is displayed to the USER ONLY: it is not added to your context and you will not see it, so describe in your reply whatever you need the conversation to remember about it. Prefer this over pasting a file path into your text when the point is for a human to LOOK at something.",
+  browser: "Control YOUR separate in-app browser tab only; this tool does not move the OS pointer. Use tab to open/focus it without navigating, or open with an HTTP(S) URL. Inspect a text/controls snapshot or screenshot, click viewport coordinates, type into the focused field, scroll, navigate history, reload, or close. The Browser tab must be visible for clicks, typing, scrolling, and screenshots. Coordinates are relative to its viewport. Login and CAPTCHA are for the user to complete; never claim a blocked page succeeded.",
   "discord-disconnect": "Stop bridging yourself to Discord. The channel and its history stay in Discord; you simply stop sending and receiving there.",
   broadcast: "Send a message to every other member of your party at once. Pass `exclude` with member names that must not receive it. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in or queue=true to explicitly wait behind busy recipients.",
 };
@@ -570,6 +575,18 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
     },
     additionalProperties: false,
   },
+  browser: {
+    type: "object",
+    properties: {
+      action: { type: "string", enum: ["state", "tab", "open", "back", "forward", "reload", "snapshot", "screenshot", "click", "type", "scroll", "close"] },
+      url: { type: "string", description: "HTTP(S) URL for open." },
+      x: { type: "number", description: "Viewport-relative x for click or scroll." },
+      y: { type: "number", description: "Viewport-relative y for click or scroll." },
+      text: { type: "string", description: "Text to insert into the focused field." },
+      deltaY: { type: "number", description: "Vertical scroll amount." },
+    },
+    required: ["action"], additionalProperties: false,
+  },
   broadcast: {
     type: "object",
     properties: {
@@ -655,7 +672,7 @@ export function buildPartyDynamicToolSpec(): PartyDynamicToolSpec {
       inputSchema,
       // The five ordinary coordination controls are exposed separately below.
       // Keeping this complete compatibility namespace deferred prevents its
-      // full 18-tool schema from occupying every Codex turn.
+      // full 19-tool schema from occupying every Codex turn.
       deferLoading: true,
     })),
   };
@@ -701,6 +718,7 @@ export function buildCodexPartyCoreInstructions(options: { legacyResumeFallback?
       ? "The host's `collaboration.*` tools control separate Codex sub-agents and are never a substitute for AgentParty. Prefer `party_send` when present; the exact AgentParty compatibility tools below cover legacy resumed threads."
       : "The host's `collaboration.*` tools control separate Codex sub-agents and are never a substitute for AgentParty. Do not infer that party messaging is unavailable because the duplicate `mcp__agentparty-app__send` name is absent; use `party_send`.",
     "For a less-common canonical tool named below, its code-mode property is `tools.mcp__agentparty_app__<tool_name_with_hyphens_changed_to_underscores>`; inspect only that exact tool if its schema is needed.",
+    "For web browsing, use `tools.mcp__agentparty_app__browser` to control your own visible AgentParty Browser tab. Do not use desktop Computer Use, OS mouse/keyboard automation, or an unrelated browser backend for this task; those can affect the user's whole desktop.",
   ];
   if (options.legacyResumeFallback) {
     lines.push(
@@ -1017,6 +1035,20 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         hostImage: partyHostImageOf(input[PARTY_HOST_IMAGE_FIELD]),
       });
     }
+    case "browser": {
+      const action = input.action;
+      if (typeof action !== "string" || !["state", "tab", "open", "back", "forward", "reload", "snapshot", "screenshot", "click", "type", "scroll", "close"].includes(action)) {
+        return { ok: false, error: "browser requires a supported action." };
+      }
+      return bridge.browser({
+        action: action as BrowserActionInput["action"],
+        url: typeof input.url === "string" ? input.url : undefined,
+        x: typeof input.x === "number" ? input.x : undefined,
+        y: typeof input.y === "number" ? input.y : undefined,
+        text: typeof input.text === "string" ? input.text : undefined,
+        deltaY: typeof input.deltaY === "number" ? input.deltaY : undefined,
+      });
+    }
   }
 }
 
@@ -1031,7 +1063,7 @@ function partyHostImageOf(value: unknown): PartyHostImage | undefined {
 }
 
 interface McpToolResult {
-  content: Array<{ type: "text"; text: string }>;
+  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
   isError?: boolean;
 }
 /** Minimal structural type of the SDK's `tool(...)` factory (avoids importing the SDK here). */
@@ -1055,8 +1087,16 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       : result.ok
         ? result.data
         : { ok: false, error: result.error, data: result.data };
+    const image = result.ok && result.data && typeof result.data === "object"
+      ? (result.data as { image?: { dataBase64: string; mimeType: string } }).image : undefined;
+    const textPayload = image && payload && typeof payload === "object"
+      ? { ...payload, image: { mimeType: image.mimeType, includedInToolResult: true } }
+      : payload;
     return {
-      content: [{ type: "text", text: JSON.stringify(payload) }],
+      content: [
+        { type: "text", text: JSON.stringify(textPayload) },
+        ...(image ? [{ type: "image" as const, data: image.dataBase64, mimeType: image.mimeType }] : []),
+      ],
       isError: !result.ok,
     };
   };
@@ -1269,6 +1309,17 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         }
         return envelope(await bridge.attachImage(args));
       },
+    ),
+    tool(
+      "browser",
+      partyDynamicToolDescriptions.browser,
+      {
+        action: z.enum(["state", "tab", "open", "back", "forward", "reload", "snapshot", "screenshot", "click", "type", "scroll", "close"]),
+        url: z.string().optional(),
+        x: z.number().optional(), y: z.number().optional(),
+        text: z.string().optional(), deltaY: z.number().optional(),
+      },
+      async (args: BrowserActionInput) => envelope(await invokePartyTool(bridge, identity, "browser", args)),
     ),
   ];
 }

@@ -146,6 +146,7 @@ rl.on("line", (line) => {
         { name: "deep-dive", shortDescription: "심층 분석 스킬", enabled: true },
         { name: "legacy-skill", description: "구버전", enabled: false },
         { name: "browser:control-in-app-browser", path: "C:\\fake\\browser\\skills\\control-in-app-browser\\SKILL.md", shortDescription: "In-app browser", enabled: true },
+        { name: "computer-use:computer-use", path: "C:\\fake\\computer-use\\skills\\computer-use\\SKILL.md", shortDescription: "Windows desktop control", enabled: true },
       ], errors: [] }] } });
       return;
     }
@@ -184,6 +185,17 @@ rl.on("line", (line) => {
         // adapter must not turn an unchanged limit into another chat card.
         send({ method: "account/rateLimits/updated", params: { rateLimits: { limitName: "weekly", primary: { usedPercent: 97 } } } });
         send({ method: "turn/completed", params: { turn: { id: "turn-1", status: "completed" } } });
+        return;
+      }
+      if (inputText.includes("KIND=browserScreenshot")) {
+        send({
+          id: TOOL_ID,
+          method: "item/tool/call",
+          params: {
+            threadId: "thr-fake", turnId: "turn-1", callId: "tool-call-browser",
+            namespace: "agentparty-app", tool: "browser", arguments: { action: "screenshot" },
+          },
+        });
         return;
       }
       if (inputText.includes("KIND=partyTool")) {

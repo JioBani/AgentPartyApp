@@ -5,6 +5,9 @@ import { getSettings } from "./settings";
 import { subscriptionProxyConfig } from "../core/subscriptionProxy";
 import { reviewGateMessage, type GateReviewMessage } from "../core/messageGateReviewer";
 import type { GateReviewer, GateReviewResult } from "../shared/messageGate";
+import type { BrowserActionInput, BrowserActionResult } from "../shared/browserControl";
+
+type BrowserMemberPort = { action: (partyId: string, member: string, input: BrowserActionInput) => Promise<BrowserActionResult> };
 
 /**
  * The single in-memory source of truth for one workspace. All windows viewing
@@ -20,12 +23,14 @@ export class WorkspaceContext {
     reviewGate?: ReviewGate,
     discord?: DiscordBridgePort,
     executionLocations?: PartyExecutionLocationPort,
+    browser?: BrowserMemberPort,
   ) {
     this.party = new PartyApplicationService({
       sessionManager,
       getWorkspacePath: () => this.workspacePath,
       discord,
       executionLocations,
+      browser,
       // Headless Message Gate reviewer, bound to the LIVE router + current
       // settings + subscription proxy — the same transports real sessions use.
       reviewGate: reviewGate || ((message: GateReviewMessage, reviewer: GateReviewer) => {
@@ -59,13 +64,14 @@ export class WorkspaceManager {
     private readonly reviewGate?: ReviewGate,
     private readonly discord?: DiscordBridgePort,
     private readonly executionLocations?: PartyExecutionLocationPort,
+    private readonly browser?: BrowserMemberPort,
   ) {}
 
   context(workspacePath: string): WorkspaceContext {
     const key = workspaceKey(workspacePath || process.cwd());
     let context = this.contexts.get(key);
     if (!context) {
-      context = new WorkspaceContext(key, this.sessionManager, this.reviewGate, this.discord, this.executionLocations);
+      context = new WorkspaceContext(key, this.sessionManager, this.reviewGate, this.discord, this.executionLocations, this.browser);
       this.contexts.set(key, context);
     }
     return context;

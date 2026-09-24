@@ -43,25 +43,28 @@ const skills = D.skillCommands({ data: [{ cwd: "/w", skills: [
   { name: "deep-dive", shortDescription: "심층 분석", enabled: true },
   { name: "legacy", description: "old skill", enabled: false },
   { name: D.CODEX_IN_APP_BROWSER_SKILL, path: "C:\\fake\\browser\\control-in-app-browser\\SKILL.md", enabled: true },
-], errors: [] }] }, new Set([D.CODEX_IN_APP_BROWSER_SKILL]));
+  { name: D.CODEX_DESKTOP_COMPUTER_USE_SKILL, path: "C:\\fake\\computer-use\\SKILL.md", enabled: true },
+], errors: [] }] }, D.CODEX_PARTY_UNSUPPORTED_SKILLS);
 assert(skills.length === 2 && skills[0].source === "skill", "skills/list → skill commands");
 assert(skills[0].name === "deep-dive" && !skills[0].disabledReason, "enabled skill has no disabled reason");
 assert(skills[1].name === "legacy" && skills[1].disabledReason === "비활성화된 skill", "disabled skill carries a reason");
 const hostOverrides = D.unsupportedHostSkillOverrides({ data: [{ skills: [
   { name: D.CODEX_IN_APP_BROWSER_SKILL, path: "C:\\fake\\browser\\control-in-app-browser\\SKILL.md" },
-] }] });
+  { name: D.CODEX_DESKTOP_COMPUTER_USE_SKILL, path: "C:\\fake\\computer-use\\SKILL.md" },
+] }] }, D.CODEX_PARTY_UNSUPPORTED_SKILLS);
 assert(
-  hostOverrides.length === 1
-    && hostOverrides[0].enabled === false
-    && hostOverrides[0].path === "C:\\fake\\browser\\control-in-app-browser\\SKILL.md",
-  "unsupported host skill becomes a thread-local SKILL.md override",
+  hostOverrides.length === 2
+    && hostOverrides.every((override) => override.enabled === false)
+    && hostOverrides.some((override) => override.path === "C:\\fake\\browser\\control-in-app-browser\\SKILL.md")
+    && hostOverrides.some((override) => override.path === "C:\\fake\\computer-use\\SKILL.md"),
+  "host browser and desktop control skills become thread-local SKILL.md overrides",
 );
 assert(
   D.skillCommands(
-    { data: [{ skills: [{ name: D.CODEX_IN_APP_BROWSER_SKILL, enabled: true }] }] },
-    new Set([D.CODEX_IN_APP_BROWSER_SKILL]),
+    { data: [{ skills: [{ name: D.CODEX_IN_APP_BROWSER_SKILL, enabled: true }, { name: D.CODEX_DESKTOP_COMPUTER_USE_SKILL, enabled: true }] }] },
+    D.CODEX_PARTY_UNSUPPORTED_SKILLS,
   ).length === 0,
-  "unsupported host skill can be excluded from discovery",
+  "unsupported host skills can be excluded from discovery",
 );
 
 const plugins = D.pluginCommands({ marketplaces: [{ plugins: [

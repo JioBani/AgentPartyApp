@@ -9,6 +9,7 @@ import {
   withoutLocalFileSourceLocation,
 } from "../../shared/localFiles";
 import type { BrowserWindow, NativeImage } from "electron";
+import type { BrowserActionInput, BrowserControlPort } from "../../shared/browserControl";
 import { buildModelRoutes } from "../../core/modelRegistry";
 import { invokePartyToolFromExecutionHost, partyToolNameOf, type PartyToolResult } from "../../core/partyBridge";
 import type { AppSettings, AuthProviderState, CreateMemberInput, CreatePartyInput, CreateSessionInput, InitialAppState, MemberPermissionInput, MemberRuntimeInput, NativeCliAuthHost, NativeCliAuthProgress, NativeCliAuthProvider, NativeCliAuthTestResult, StartPartyMemberInput, TranscriptSave, TranscriptSaveResult, WorkspaceDisplay } from "../../shared/types";
@@ -174,6 +175,8 @@ export interface AppControllerDeps {
   approvals?: ApprovalIndex;
   /** Desktop-owned SSH credentials and connections; absent in headless workers. */
   sshServers?: SshServerService;
+  /** Desktop-owned, isolated web contents. Absent in a headless engine. */
+  browser?: BrowserControlPort;
   /** Native key picker and clipboard stay injected so AppController remains Electron-free. */
   pickSshKeyFile?: (windowId?: string) => Promise<string | undefined>;
   writeClipboardText?: (text: string) => void;
@@ -261,6 +264,17 @@ export class AppController {
   constructor(private readonly deps: AppControllerDeps) {}
 
   dispose(): void {}
+
+  /** Shared UI, HTTP, and member-MCP browser capability. */
+  async browserAction(workspacePath: string, partyId: string, member: string, input: BrowserActionInput, windowId?: string) {
+    if (!this.deps.browser) throw new Error("The in-app browser is available only in the desktop app.");
+    if (!partyId || !member || !input || typeof input.action !== "string") throw new Error("partyId, member, and action are required.");
+    const listing = await this.partyEngine(workspacePath).listParty(partyId);
+    if (!listing.members.some((entry) => entry.partyId === partyId && entry.name === member)) {
+      throw new Error(`Member '${member}' does not exist in party '${partyId}'.`);
+    }
+    return this.deps.browser.action(partyId, member, input, windowId);
+  }
 
   /** App-global party groups + the party summaries filed under them. */
   private readonly partyGroups = new PartyGroupStore();
