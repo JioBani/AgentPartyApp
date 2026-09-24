@@ -279,5 +279,52 @@ console.log("\nCSS: long-link wrapper is not nowrap:");
 const css = readFileSync(path.join(projectRoot, "src/renderer/styles.css"), "utf8");
 assert(!/\.wb-md-link\s*\{[^}]*white-space\s*:\s*nowrap/.test(css), ".wb-md-link does not set white-space:nowrap");
 
+console.log("\nCodex assistant directives:");
+const citationPath = String.raw`C:\Project\이력서\제출본\01_임강현_이력서_포트폴리오.pdf`;
+const bracketPath = String.raw`C:\Project\novel\[4060182] title\file.pdf`;
+const followupPrompt = "새 문서를 공고와 대조해서 제출 직전 오류를 점검해줘.";
+const directiveMd = [
+  `이력서: :codex-file-citation{path="${citationPath}" purpose="output"}`,
+  `추가 파일: :codex-file-citation{path="${bracketPath}" purpose="output"}`,
+  `- :codex-followup[최종 제출 점검]{prompt="${followupPrompt}"}`,
+  "",
+  '`:codex-file-citation{path="C:\\literal.pdf"}`',
+  "",
+  '```text\n:codex-followup[코드]{prompt="전송 안 함"}\n```',
+  "",
+  String.raw`\:codex-file-citation{path="C:\escaped.pdf"}`,
+  "",
+  ':codex-file-citation{purpose="output"}',
+].join("\n");
+const directiveHost = document.createElement("div");
+document.body.appendChild(directiveHost);
+const followupSends = [];
+reactDom.createRoot(directiveHost).render(React.createElement(Transcript, {
+  view: { ...view, member: { ...view.member, runtime: "codex", location: "windows:C:/Project" }, transcript: [{ id: "a-codex", kind: "assistant", text: directiveMd, at: "10:04" }] },
+  density: "wide",
+  actions: { sendMessage: (name, prompt) => { followupSends.push({ name, prompt }); return Promise.resolve({}); } },
+}));
+await new Promise((res) => setTimeout(res, 80));
+const directiveBody = directiveHost.querySelector(".wb-assistant-body");
+const citations = [...(directiveBody?.querySelectorAll(".wb-md-citation") || [])];
+assert(citations.length === 2, "valid file citations become two compact controls");
+assert(citations[0]?.querySelector("a")?.textContent === "01_임강현_이력서_포트폴리오.pdf", "file citation shows the filename, not markup");
+assert(citations[1]?.querySelector("a")?.textContent === "file.pdf", "bracketed Windows path keeps a readable filename");
+assert(!(directiveBody?.textContent || "").includes(`:codex-file-citation{path="${citationPath}"`), "rendered reply hides valid directive syntax");
+openedPaths.length = 0;
+citations[0]?.querySelector("a")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+citations[1]?.querySelector("a")?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(openedPaths[0] === citationPath && openedPaths[1] === bracketPath, "citation clicks open the exact literal Windows paths");
+const followup = directiveBody?.querySelector(".wb-md-followup");
+assert(followup?.textContent?.includes("최종 제출 점검"), "follow-up directive becomes a labelled action");
+followup?.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+await new Promise((res) => setTimeout(res, 20));
+assert(followupSends.length === 1 && followupSends[0].name === "reviewer" && followupSends[0].prompt === followupPrompt, "follow-up action uses the member's existing send path");
+assert((directiveBody?.textContent || "").includes(':codex-file-citation{path="C:\\literal.pdf"}'), "inline code keeps directive text literal");
+assert((directiveBody?.textContent || "").includes(':codex-followup[코드]{prompt="전송 안 함"}'), "fenced code keeps directive text literal");
+assert((directiveBody?.textContent || "").includes(':codex-file-citation{path="C:\\escaped.pdf"}'), "escaped directive stays literal");
+assert((directiveBody?.textContent || "").includes(':codex-file-citation{purpose="output"}'), "malformed directive stays visible");
+
 console.log(failures.length ? `\nMARKDOWN RENDER FAILED (${failures.length})` : "\nMARKDOWN RENDER PASSED");
 process.exit(failures.length ? 1 : 0);
