@@ -25,6 +25,7 @@ export function sameSessionForRenderer(previous: SessionView, next: SessionView)
   return previous.id === next.id
     && previous.title === next.title
     && previous.workspace === next.workspace
+    && previous.turnActive === next.turnActive
     && sessionSnapshotRenderFingerprint(previous.snapshot) === sessionSnapshotRenderFingerprint(next.snapshot);
 }
 

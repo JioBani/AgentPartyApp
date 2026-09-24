@@ -98,6 +98,9 @@ export class MockHarnessSession extends EventEmitter implements HarnessSession {
       this.snapshot.contextWindow = withCtx.contextWindow;
     }
     switch (event.type) {
+      case "status":
+        if (typeof event.status === "string") this.snapshot.status = event.status;
+        break;
       case "session":
         if (event.slashCommands) {
           this.snapshot.slashCommands = event.slashCommands;
