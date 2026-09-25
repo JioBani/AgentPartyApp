@@ -19,8 +19,18 @@ import { LocalizedText, localized } from "../i18n/I18nProvider";
  */
 export function headlessReviewerRoutes(routes: RouteLike[]): RouteLike[] {
   const byModel = new Map<string, RouteLike>();
+  // Gate-only Decisions route. It is deliberately absent from member model routes.
+  byModel.set("jev", {
+    model: "jev",
+    label: "Jev",
+    providerId: "openrouter",
+    description: "Jev Decisions reviewer. Returns compliance probabilities; no reasoning effort.",
+    enabled: true,
+    capabilities: { effort: { supported: false, options: [] }, serviceTier: { supported: false, options: [] }, vision: { image: false } },
+  });
   for (const route of routes) {
     const key = route.model.trim().toLowerCase().replace(/[\s_-]+/g, "-");
+    if (key === "jev") continue; // Decisions transport, never a chat route.
     const existing = byModel.get(key);
     const routeAvailable = route.enabled !== false;
     const existingAvailable = existing?.enabled !== false;
@@ -110,8 +120,8 @@ export function GateReviewerControl({
           applyLabel="선택"
           onApply={(next) => onChange({
             model: next.model,
-            effort: next.effort || reviewer.effort,
-            ...(next.serviceTier ? { serviceTier: next.serviceTier } : {}),
+            effort: next.model === "jev" ? "none" : next.effort || reviewer.effort,
+            ...(next.model !== "jev" && next.serviceTier ? { serviceTier: next.serviceTier } : {}),
           })}
           onClose={() => setCatalogOpen(false)}
         />
@@ -167,7 +177,7 @@ export function GateReviewerInlineControl({
           <span className="wb-dd-label">{selected?.label || effective.model}</span>
           <ChevronDown size={11} className="wb-pill-caret" />
         </button>
-        <Dropdown
+        {selected?.model !== "jev" && <Dropdown
           value={effective.effort}
           options={displayedEfforts}
           title={localized("STR-1670")}
@@ -176,7 +186,7 @@ export function GateReviewerInlineControl({
             effort,
             ...(concreteTier ? { serviceTier: concreteTier } : {}),
           })}
-        />
+        />}
         {displayedTiers.length > 0 && concreteTier && (
           <Dropdown
             value={concreteTier}
@@ -206,8 +216,8 @@ export function GateReviewerInlineControl({
           onApply={(next) => {
             onChange({
               model: next.model,
-              effort: next.effort || effective.effort,
-              ...(next.serviceTier ? { serviceTier: next.serviceTier } : {}),
+              effort: next.model === "jev" ? "none" : next.effort || effective.effort,
+              ...(next.model !== "jev" && next.serviceTier ? { serviceTier: next.serviceTier } : {}),
             });
           }}
           onClose={() => setCatalogOpen(false)}

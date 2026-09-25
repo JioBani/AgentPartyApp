@@ -3,6 +3,9 @@ import type { CodexPolicy } from "../shared/codexPolicy";
 import type { CursorPolicy } from "../shared/cursorPolicy";
 import { MEMBER_EXECUTION_HOSTS, type MemberExecutionLocationRequest } from "../shared/memberLocation";
 import { readImageFile } from "./imageFile";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import type { JevDecisionRequest, JevDecisionResult } from "../shared/jev";
 
 // Boundary 2 of the party-communication design (the party-communication design):
 // the seam through which an app-hosted member session reaches the app's party
@@ -148,6 +151,11 @@ export interface PartyGateGlobalPatch {
 // the same `AppController`/`PartyApplicationService` path the UI and HTTP use,
 // and resolves to a plain result (never throws) so tool handlers stay trivial.
 export interface PartyBridge {
+  /** Jev provider discovery and app-wide default. */
+  jevProviders(): Promise<PartyToolResult>;
+  jevSetDefault(provider: string): Promise<PartyToolResult>;
+  /** Single paid decision call; no source-format adapter or hidden batching. */
+  jevDecide(request: JevDecisionRequest): Promise<PartyToolResult>;
   /** Fire-and-forget send to another member; errors if target is off/missing.
    *  `interrupt: true` stops the recipient's in-flight turn first so the message
    *  is handled immediately instead of queueing behind it. `force: true` bypasses
@@ -226,6 +234,9 @@ export function partyBridgeFromInvoker(
 ): PartyBridge {
   const hostInvoke = (tool: PartyToolName, args: unknown) => invokePartyToolFromExecutionHost(invoke, tool, args);
   return {
+    jevProviders: () => hostInvoke("jev-providers", {}),
+    jevSetDefault: (provider) => hostInvoke("jev-default-provider", { provider }),
+    jevDecide: (request) => hostInvoke("jev-decide", request),
     send: (_from, to, content, interrupt, force, forceReason) => hostInvoke("send", {
       to,
       content,
@@ -267,6 +278,16 @@ export async function invokePartyToolFromExecutionHost(
   if (!name) return { ok: false, error: `Unknown AgentParty tool '${tool}'.` };
   const input = args && typeof args === "object" && !Array.isArray(args) ? { ...(args as Record<string, unknown>) } : {};
   delete input[PARTY_HOST_IMAGE_FIELD];
+  if (name === "jev-decide-file") {
+    const outputPath = input.path;
+    if (typeof outputPath !== "string" || !path.isAbsolute(outputPath)) {
+      return { ok: false, error: "jev-decide-file requires an absolute path on the member's execution host." };
+    }
+    const { path: _path, overwrite, ...request } = input;
+    const result = await invoke("jev-decide", request);
+    if (!result.ok) return result;
+    return writeJevDecisionFile(outputPath, result.data as JevDecisionResult, overwrite === true);
+  }
   if ((name === "attach-image" || name === "discord-send-image") && typeof input.path === "string" && input.path) {
     try {
       input[PARTY_HOST_IMAGE_FIELD] = readImageFile(input.path);
@@ -277,8 +298,19 @@ export async function invokePartyToolFromExecutionHost(
   return invoke(name, input);
 }
 
-export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "member-runtime", "gate-set", "party-gate-set", "list", "list-locations", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image"] as const;
+async function writeJevDecisionFile(outputPath: string, result: JevDecisionResult, overwrite: boolean): Promise<PartyToolResult> {
+  try {
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, { encoding: "utf8", flag: overwrite ? "w" : "wx" });
+    return { ok: true, data: { path: outputPath, provider: result.provider, model: result.model, usage: result.usage, questionCount: Object.keys(result.answers).length } };
+  } catch (error) {
+    return { ok: false, error: `Jev answered, but writing '${outputPath}' failed: ${error instanceof Error ? error.message : String(error)}`, data: result };
+  }
+}
+
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "member-runtime", "gate-set", "party-gate-set", "list", "list-locations", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image", "jev-providers", "jev-default-provider", "jev-decide", "jev-decide-file"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
+export const JEV_PARTY_TOOL_NAMES: readonly PartyToolName[] = ["jev-providers", "jev-default-provider", "jev-decide", "jev-decide-file"];
 
 /**
  * The coordination controls used throughout ordinary party work. Codex gets
@@ -298,6 +330,10 @@ export const PARTY_CODEX_CORE_TOOL_ALIASES = {
 export type PartyCodexCoreToolAlias = keyof typeof PARTY_CODEX_CORE_TOOL_ALIASES;
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
+  "jev-providers": "List Jev providers, configuration/availability, and the app-wide default. Jev is a Decisions model, not a member chat model.",
+  "jev-default-provider": "Set the app-wide default Jev provider. This affects calls that omit provider. Use jev-providers first. A call may instead pass provider explicitly without changing this setting.",
+  "jev-decide": "Ask Jev one Decisions request. Pass state (string, object, or array of related context) and a questions object containing choice, noul, or score questions. Multiple questions about ONE state fit in one provider call. Pass provider to select it for this call; omitted uses the app default. Returns all answers and measured usage.",
+  "jev-decide-file": "Ask Jev once and write the complete JSON response at an absolute path on YOUR execution host. The tool returns path and usage; an existing file is protected unless overwrite=true. Source files are read by your own script, which can call the local Jev API directly.",
   send: "Send the same message to one or more members of your party. Pass `to` as one member name or an array of names. Batch results separate delivered, queued, and failed recipients. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in, or queue=true to explicitly wait behind the current turn. Legacy interrupt=false is treated as omitted so model-generated false values cannot disable the saved setting.",
   "member-create": "Create and start one or more members. Use the existing top-level fields for one member, or pass `members` as an array of member objects for a batch. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?, server?} to choose Windows, WSL, or SSH explicitly; server is required for SSH. Omit location to inherit your own execution location.",
   "member-remove": "Remove one or more members from your party. Pass `name` as one member name or an array of names.",
@@ -365,6 +401,30 @@ const partyCreateMemberDynamicProperties: Record<string, unknown> = {
 };
 
 const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = {
+  "jev-providers": { type: "object", properties: {}, additionalProperties: false },
+  "jev-default-provider": { type: "object", properties: { provider: { type: "string", description: "Provider id from jev-providers." } }, required: ["provider"], additionalProperties: false },
+  "jev-decide": {
+    type: "object",
+    properties: {
+      state: { oneOf: [{ type: "string" }, { type: "object" }, { type: "array" }], description: "Text or structured context to evaluate." },
+      questions: { type: "object", minProperties: 1, additionalProperties: { type: "object", properties: { type: { type: "string", enum: ["choice", "noul", "score"] }, instructions: { type: "string" }, criteria: { oneOf: [{ type: "object" }, { type: "array", items: { type: "string" } }] } }, required: ["type", "instructions", "criteria"] } },
+      provider: { type: "string", description: "Optional Jev provider id. Omit to use the app default." },
+    },
+    required: ["state", "questions"],
+    additionalProperties: false,
+  },
+  "jev-decide-file": {
+    type: "object",
+    properties: {
+      state: { oneOf: [{ type: "string" }, { type: "object" }, { type: "array" }] },
+      questions: { type: "object", minProperties: 1, additionalProperties: { type: "object", properties: { type: { type: "string", enum: ["choice", "noul", "score"] }, instructions: { type: "string" }, criteria: { oneOf: [{ type: "object" }, { type: "array", items: { type: "string" } }] } }, required: ["type", "instructions", "criteria"] } },
+      provider: { type: "string", description: "Optional provider id." },
+      path: { type: "string", description: "Absolute output JSON path on this member's host." },
+      overwrite: { type: "boolean", description: "Allow replacing an existing file. Default false." },
+    },
+    required: ["state", "questions", "path"],
+    additionalProperties: false,
+  },
   send: {
     type: "object",
     properties: {
@@ -626,9 +686,9 @@ export interface PartyMcpToolSpec {
  * Keeping names and schemas here prevents the raw stdio script from becoming a
  * second, stale copy of the AgentParty capability surface.
  */
-export function buildPartyMcpToolSpecs(): PartyMcpToolSpec[] {
-  const readOnly = new Set<PartyToolName>(["list", "list-locations", "list-models", "member-status"]);
-  return PARTY_TOOL_NAMES.map((name) => ({
+export function buildPartyMcpToolSpecs(jevEnabled = false): PartyMcpToolSpec[] {
+  const readOnly = new Set<PartyToolName>(["list", "list-locations", "list-models", "member-status", "jev-providers"]);
+  return PARTY_TOOL_NAMES.filter((name) => jevEnabled || !JEV_PARTY_TOOL_NAMES.includes(name)).map((name) => ({
     name,
     description: partyDynamicToolDescriptions[name],
     inputSchema: partyDynamicToolSchemas[name],
@@ -643,12 +703,12 @@ export function buildPartyMcpToolSpecs(): PartyMcpToolSpec[] {
   }));
 }
 
-export function buildPartyDynamicToolSpec(): PartyDynamicToolSpec {
+export function buildPartyDynamicToolSpec(jevEnabled = false): PartyDynamicToolSpec {
   return {
     type: "namespace",
     name: PARTY_MCP_SERVER,
     description: "AgentParty app party controls for messaging and member management.",
-    tools: buildPartyMcpToolSpecs().map(({ name, description, inputSchema }) => ({
+    tools: buildPartyMcpToolSpecs(jevEnabled).map(({ name, description, inputSchema }) => ({
       type: "function",
       name,
       description,
@@ -667,8 +727,8 @@ export function buildPartyDynamicToolSpec(): PartyDynamicToolSpec {
  * not new capabilities; every call is normalized back to PartyToolName before
  * it reaches the shared PartyBridge/AppController path.
  */
-export function buildCodexPartyDynamicToolSpecs(): Array<PartyDynamicFunctionSpec | PartyDynamicToolSpec> {
-  const specs = buildPartyMcpToolSpecs();
+export function buildCodexPartyDynamicToolSpecs(jevEnabled = false): Array<PartyDynamicFunctionSpec | PartyDynamicToolSpec> {
+  const specs = buildPartyMcpToolSpecs(jevEnabled);
   const byName = new Map(specs.map((spec) => [spec.name, spec]));
   const eager = Object.entries(PARTY_CODEX_CORE_TOOL_ALIASES).map(([alias, canonical]) => {
     const spec = byName.get(canonical);
@@ -683,7 +743,7 @@ export function buildCodexPartyDynamicToolSpecs(): Array<PartyDynamicFunctionSpe
       deferLoading: false as const,
     };
   });
-  return [...eager, buildPartyDynamicToolSpec()];
+  return [...eager, buildPartyDynamicToolSpec(jevEnabled)];
 }
 
 /** Critical Codex calling convention, generated from the same alias map. */
@@ -810,6 +870,22 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
   }
   const input = args && typeof args === "object" ? args as Record<string, unknown> : {};
   switch (name) {
+    case "jev-providers":
+      return bridge.jevProviders();
+    case "jev-default-provider":
+      return typeof input.provider === "string" && input.provider
+        ? bridge.jevSetDefault(input.provider)
+        : { ok: false, error: "jev-default-provider requires provider." };
+    case "jev-decide":
+      return bridge.jevDecide(input as unknown as JevDecisionRequest);
+    case "jev-decide-file": {
+      if (typeof input.path !== "string" || !path.isAbsolute(input.path)) {
+        return { ok: false, error: "jev-decide-file requires an absolute path on the member's execution host." };
+      }
+      const result = await bridge.jevDecide(input as unknown as JevDecisionRequest);
+      if (!result.ok) return result;
+      return writeJevDecisionFile(input.path, result.data as JevDecisionResult, input.overwrite === true);
+    }
     case "send": {
       const content = typeof input.content === "string" ? input.content : "";
       const targets = memberNamesOf(input.to, "send.to");
@@ -1048,7 +1124,7 @@ type ToolFactory = (
  * spawning a session: each returned def carries a `.handler` that routes to the
  * bridge with the caller's identity closure-bound (`from` is never agent input).
  */
-export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, identity: PartyIdentity): unknown[] {
+export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, identity: PartyIdentity, jevEnabled = false): unknown[] {
   const envelope = (result: PartyToolResult): McpToolResult => {
     const payload = result.data === undefined
       ? { ok: result.ok, error: result.error }
@@ -1090,7 +1166,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     role: z.string().describe("Short role description for the new member."),
     ...memberCreateOptionalFields,
   });
-  return [
+  const defs = [
     tool(
       "send",
       "Send the same message to one or more party members. Pass `to` as one name or an array. Fire-and-forget: replies arrive later as their own messages. Batch results separate delivered, queued, and failed recipients. Omit both delivery flags to use your member override then Runtime default; interrupt=true cuts in and queue=true explicitly waits.",
@@ -1270,5 +1346,22 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
         return envelope(await bridge.attachImage(args));
       },
     ),
+  ];
+  if (!jevEnabled) return defs;
+  return [...defs,
+    tool("jev-providers", partyDynamicToolDescriptions["jev-providers"], {}, async () => envelope(await bridge.jevProviders())),
+    tool("jev-default-provider", partyDynamicToolDescriptions["jev-default-provider"], { provider: z.string() }, async (args: { provider: string }) => envelope(await bridge.jevSetDefault(args.provider))),
+    tool("jev-decide", partyDynamicToolDescriptions["jev-decide"], {
+      state: z.union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())]),
+      questions: z.record(z.string(), z.unknown()),
+      provider: z.string().optional(),
+    }, async (args: JevDecisionRequest) => envelope(await bridge.jevDecide(args))),
+    tool("jev-decide-file", partyDynamicToolDescriptions["jev-decide-file"], {
+      state: z.union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())]),
+      questions: z.record(z.string(), z.unknown()),
+      provider: z.string().optional(),
+      path: z.string(),
+      overwrite: z.boolean().optional(),
+    }, async (args: JevDecisionRequest & { path: string; overwrite?: boolean }) => envelope(await invokePartyTool(bridge, identity, "jev-decide-file", args))),
   ];
 }

@@ -31,6 +31,7 @@ import type { UsageLimitsSnapshot } from "../shared/usageLimits";
 import { SubscriptionProxyService } from "./subscriptionProxyService";
 import { subscriptionProxyConfig } from "../core/subscriptionProxy";
 import { reviewGateMessage, type GateReviewMessage } from "../core/messageGateReviewer";
+import { decideJev } from "./jevService";
 import type { GateReviewer } from "../shared/messageGate";
 import { DiscordBridgeService } from "./discordBridgeService";
 import { UpdateService } from "./updateService";
@@ -597,6 +598,7 @@ ${body}
             routerBaseUrl: sessionManager.routerBaseUrl(),
             routerAuthToken: getSettings().routerAuthToken,
             subscriptionProxy: subscriptionProxyConfig(),
+            jevDecide: decideJev,
           });
         },
         appearanceGet: () => controller().getAppearance(),
@@ -659,6 +661,9 @@ ${body}
   // global party events are broadcast to every window by broadcastToWorkspace.
   sessionManager.on("party", (payload: { workspace: string }) => {
     void appController?.notifyPartyChanged(payload.workspace);
+  });
+  sessionManager.on("settings", () => {
+    appController?.refreshSettings();
   });
   // A provider catalog discovery settled (ready or error): push rebuilt model
   // routes so pickers update live and a failure is visible (no silent fallback).

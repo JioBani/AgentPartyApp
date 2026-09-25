@@ -80,6 +80,8 @@ export interface GateReviewResult {
   reason: string;
   violation?: GateViolation;
   usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+  costUsd?: number;
+  provider?: string;
 }
 
 const offAxis = (): PartyGateAxis => ({ enabled: false, rule: "" });

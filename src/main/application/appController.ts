@@ -42,6 +42,8 @@ import { getLogFilePath, log } from "../logger";
 import type { PartyApplicationService } from "./partyApplicationService";
 import { PartyRepository } from "../partyRepository";
 import { getPublicSettings, getSettings, storedThemePreference, updateSettings } from "../settings";
+import { decideJev, jevProviders } from "../jevService";
+import { isJevProviderId } from "../../shared/jev";
 import { applyPartyPrimerPatch, applyPartyPrimerTranslation, partyPrimerTotals, partyPrimerView, PARTY_PRIMER_DELIVERY, PARTY_PRIMER_VARIABLES, type PartyPrimerSectionView } from "../../shared/partyPrimer";
 import { translatePrimerSection } from "../../core/primerTranslator";
 import { matchesFontQuery, normalizeFontSettings, RECOMMENDED_FONTS, type FontSettings, type LocalFontFamily, type LocalFontListing, type RecommendedFont } from "../../shared/appFonts";
@@ -855,6 +857,12 @@ export class AppController {
   }
 
   updateSettings(patch: Partial<AppSettings>): AppSettings {
+    if (Object.prototype.hasOwnProperty.call(patch || {}, "jevDefaultProvider") && !isJevProviderId(patch.jevDefaultProvider)) {
+      throw new Error("Unknown Jev provider. Use GET /api/jev/providers to list providers.");
+    }
+    if (Object.prototype.hasOwnProperty.call(patch || {}, "jevMcpEnabled") && typeof patch.jevMcpEnabled !== "boolean") {
+      throw new Error("jevMcpEnabled must be a boolean.");
+    }
     if (Object.prototype.hasOwnProperty.call(patch || {}, "updateChannel")) {
       throw new Error("업데이트 채널은 POST /api/update/channel 또는 버전 탭에서 변경하세요.");
     }
@@ -890,6 +898,12 @@ export class AppController {
       this.applyWindowTheme(validatedPatch.theme as ThemePreference);
       this.broadcastAppearance();
     }
+    return this.publishSettings();
+  }
+
+  /** Re-publishes an app-wide setting changed by a member MCP call. */
+  refreshSettings(): AppSettings {
+    this.deps.onSettingsChanged();
     return this.publishSettings();
   }
 
@@ -1585,6 +1599,26 @@ export class AppController {
    */
   getTokenUsage(workspacePath: string, query: TokenUsageQuery): Promise<TokenUsageAggregate> {
     return this.partyEngine(workspacePath).getTokenUsage(query);
+  }
+
+  getJevProviders() {
+    return jevProviders();
+  }
+
+  setJevDefaultProvider(provider: unknown) {
+    if (!isJevProviderId(provider)) throw new Error(`Unknown Jev provider '${String(provider)}'.`);
+    this.updateSettings({ jevDefaultProvider: provider });
+    return jevProviders();
+  }
+
+  async decideJev(workspacePath: string, request: unknown) {
+    const result = await decideJev(request);
+    this.deps.sessionManager.recordJevDecision(this.partyStorageWorkspace(workspacePath), {
+      provider: result.provider,
+      model: result.model,
+      usage: result.usage,
+    });
+    return result;
   }
 
   /** Raw per-turn records for the member drill-in (context curve + expensive turns). */

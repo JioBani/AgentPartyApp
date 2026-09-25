@@ -16,6 +16,7 @@ import {
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { MuseModelDiscoveryState } from "../../shared/museModels";
 import type { GateReviewer } from "../../shared/messageGate";
+import { JEV_PROVIDER_IDS, JEV_PROVIDER_LABELS } from "../../shared/jev";
 import type { AgentTabId, SettingsTabId } from "../../shared/runtimeTabs";
 import { HARNESS_IDS, normalizeServiceTierSelection } from "../../shared/types";
 import { MessageGateIcon } from "../workbench/MessageGateIcon";
@@ -654,7 +655,7 @@ const AGENT_TABS: Array<{ id: AgentTabId; label: MessageKey; icon: ReactNode }> 
   { id: "discord", label: "runtime.tab.discord", icon: <DiscordGlyph size={14} /> },
 ];
 
-export function AgentSettingsView({ routes, settings, codexModels, museModels, discord, onRefreshCodexModels, onRefreshMuseModels, onSaveHarnessDefaults, onSetDefaultHarness, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, tabRequest }: {
+export function AgentSettingsView({ routes, settings, codexModels, museModels, discord, onRefreshCodexModels, onRefreshMuseModels, onSaveHarnessDefaults, onSetDefaultHarness, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSaveJevSettings, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, tabRequest }: {
   routes: RouteLike[];
   settings: InitialAppState["settings"];
   codexModels?: CodexModelDiscoveryState;
@@ -667,6 +668,7 @@ export function AgentSettingsView({ routes, settings, codexModels, museModels, d
   onSaveCompactDefault: (setting: AutoCompactSetting) => void;
   onSaveIdleSleep: (setting: IdleSleepSettings) => void;
   onSaveGateDefault: (reviewer: GateReviewer) => void;
+  onSaveJevSettings: (patch: { jevMcpEnabled?: boolean; jevDefaultProvider?: string }) => void;
   /** One primer section at a time — text override and/or on-off. */
   onSavePartyPrimer: (patch: PartyPrimerSectionPatch) => void;
   /** Translates one primer section into Korean (or clears that translation). */
@@ -848,6 +850,23 @@ export function AgentSettingsView({ routes, settings, codexModels, museModels, d
           <section className="set-card" data-layout-card="agent-gate">
             <div className="set-card-label"><LocalizedText id="STR-1086" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1085" /></span></div>
             <GateDefaultsCard routes={routes} reviewer={settings.gateDefaults} onSave={onSaveGateDefault} />
+          </section>
+          <section className="set-card" data-layout-card="agent-jev">
+            <div className="set-card-label">Jev Decisions</div>
+            <div className="set-card-body">
+              <button type="button" className="set-toggle" onClick={() => onSaveJevSettings({ jevMcpEnabled: !settings.jevMcpEnabled })}>
+                <span className={"set-switch" + (settings.jevMcpEnabled ? " is-on" : "")}><span className="set-switch-knob" /></span>
+                <span className="set-toggle-label">멤버 세션에 Jev MCP 도구 제공</span>
+              </button>
+              <label className="set-field">
+                <span className="set-field-label">기본 Jev 제공자</span>
+                <select className="set-select" value={settings.jevDefaultProvider} onChange={(event) => onSaveJevSettings({ jevDefaultProvider: event.target.value })}>
+                  {!JEV_PROVIDER_IDS.some((id) => id === settings.jevDefaultProvider) && <option value={settings.jevDefaultProvider}>{settings.jevDefaultProvider} (이 버전에서 지원하지 않음)</option>}
+                  {JEV_PROVIDER_IDS.map((id) => <option key={id} value={id}>{JEV_PROVIDER_LABELS[id]}</option>)}
+                </select>
+              </label>
+              <div className="set-inline-note"><InfoIcon size={14} /><span>{settings.openRouterApiKey ? "OpenRouter 키가 연결되어 있습니다. " : "OpenRouter 키가 없습니다. 인증 화면에서 연결하세요. "}MCP 도구 목록 변경은 새로 시작한 멤버 세션에 적용됩니다. 로컬 API는 이 설정과 관계없이 사용할 수 있습니다.</span></div>
+            </div>
           </section>
         </SubtreeVisibility>
         </div>

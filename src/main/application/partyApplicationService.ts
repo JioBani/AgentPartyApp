@@ -56,7 +56,9 @@ import { log } from "../logger";
 import { resolveHarnessOriginal, type HarnessOriginal } from "../harnessOriginal";
 import { cliContinuationTarget } from "../../shared/cliContinuation";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
-import { getSettings } from "../settings";
+import { getSettings, updateSettings } from "../settings";
+import { decideJev, jevProviders } from "../jevService";
+import { isJevProviderId } from "../../shared/jev";
 import { applyEvents, buildTranscriptSave } from "../../shared/transcriptEvents";
 import type { TranscriptBlock } from "../../shared/transcript";
 import {
@@ -78,7 +80,7 @@ import {
   type WorkbenchLayout,
 } from "../../shared/workbenchLayout";
 import type { SessionManager, SessionPartyBinding } from "../sessionManager";
-import { invokePartyTool, type PartyBridge, type PartyModelQuery, type PartyToolResult } from "../../core/partyBridge";
+import { invokePartyTool, JEV_PARTY_TOOL_NAMES, partyToolNameOf, type PartyBridge, type PartyModelQuery, type PartyToolResult } from "../../core/partyBridge";
 import { IMAGE_MEDIA_TYPES, readImageFile } from "../../core/imageFile";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { MuseModelDiscoveryState } from "../../shared/museModels";
@@ -2578,6 +2580,7 @@ export class PartyApplicationService {
             partyId: targetPartyId,
             member: sender.name,
             model: plan.reviewer.model,
+            provider: plan.reviewer.model.toLowerCase() === "jev" ? getSettings().jevDefaultProvider : undefined,
             failure: { layer: classifyGateFailure(error), detail },
           });
           this.emitGateBadge(sender, { gate: "failed", to: target.name, from: sender.name, reason: detail, errcode: "reviewer_error", scope: plan.scope, reviewer: plan.reviewer });
@@ -2605,6 +2608,8 @@ export class PartyApplicationService {
           model: plan.reviewer.model,
           verdict: verdict.verdict,
           usage: verdict.usage,
+          costUsd: verdict.costUsd,
+          provider: verdict.provider,
         });
         if (verdict.verdict === "reject") {
           // RE-READ. `state` was parsed BEFORE the review, and a review is a
@@ -3228,6 +3233,7 @@ export class PartyApplicationService {
     const binding: SessionPartyBinding = {
       bridge: this.partyBridgeFor(this.partyIdOf(member), member.name, member.location),
       identity: { party: this.partyIdOf(member), member: member.name, role: member.role },
+      jevMcpEnabled: getSettings().jevMcpEnabled,
     };
     // Resume the harness's own thread when we have one, so reopening the member
     // (or the app) continues the conversation with its model context intact.
@@ -3513,6 +3519,10 @@ export class PartyApplicationService {
    * harnesses now go through it and there is no second copy to drift.
    */
   async invokePartyToolAs(member: string, tool: string, args: unknown, partyId?: string): Promise<PartyToolResult> {
+    const canonicalTool = partyToolNameOf(tool);
+    if (canonicalTool && JEV_PARTY_TOOL_NAMES.includes(canonicalTool) && !getSettings().jevMcpEnabled) {
+      return { ok: false, error: "Jev MCP tools are disabled in app settings." };
+    }
     const state = this.repository.read(this.workspacePath());
     const caller = state.members.find((m) => m.name === member && (!partyId || m.partyId === partyId));
     if (!caller) {
@@ -3524,7 +3534,35 @@ export class PartyApplicationService {
 
   private partyBridgeFor(party: string, selfMember: string, selfLocation?: string): PartyBridge {
     const notify = () => this.deps.sessionManager.notifyPartyChanged(this.workspacePath());
+    // In-process MCP handlers call this bridge directly, bypassing
+    // invokePartyToolAs. Check the live toggle here as well as at the relay.
     return {
+      jevProviders: async () => getSettings().jevMcpEnabled
+        ? { ok: true, data: jevProviders() }
+        : { ok: false, error: "Jev MCP tools are disabled in app settings." },
+      jevSetDefault: async (provider) => {
+        if (!getSettings().jevMcpEnabled) return { ok: false, error: "Jev MCP tools are disabled in app settings." };
+        if (!isJevProviderId(provider)) return { ok: false, error: `Unknown Jev provider '${provider}'.` };
+        updateSettings({ jevDefaultProvider: provider });
+        this.deps.sessionManager.notifySettingsChanged();
+        return { ok: true, data: jevProviders() };
+      },
+      jevDecide: async (request) => {
+        if (!getSettings().jevMcpEnabled) return { ok: false, error: "Jev MCP tools are disabled in app settings." };
+        try {
+          const result = await decideJev(request);
+          this.deps.sessionManager.recordJevDecision(this.workspacePath(), {
+            partyId: party,
+            member: selfMember,
+            provider: result.provider,
+            model: result.model,
+            usage: result.usage,
+          });
+          return { ok: true, data: result };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
       send: async (from, to, content, interrupt, force, forceReason) => {
         try {
           const result = await this.sendGatedMessage(to, content, from || selfMember, undefined, party, { interrupt, force, forceReason });

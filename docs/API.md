@@ -1351,6 +1351,76 @@ Clears the stored OpenRouter API key.
 
 Calls OpenRouter's model endpoint to verify the configured key.
 
+### Jev Decisions gateway
+
+The app keeps the provider credential and exposes Jev as a single-call local API.
+Jev is a Decisions model, not a member chat model. Its input is `state` (a
+string, JSON object, or related-context array) and a non-empty `questions`
+object. Each question has `type` (`choice`, `noul`, or `score`), `instructions`,
+and `criteria`. Multiple questions about the same state fit in one paid call.
+For separate records, write a script that makes one call per record with the
+concurrency you choose. The app does not offer a batch job or source-file
+adapter. The OpenRouter Decisions request and response are documented in the
+[provider API](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request).
+
+`GET /api/jev/providers` returns `{ defaultProvider, providers }`. Each provider
+entry reports `id`, `label`, `configured`, `available`, and `model`. Currently
+`openrouter` is the only provider. `POST /api/jev/providers/default` accepts
+`{"provider":"openrouter"}` and sets the app-wide default. Calls can pass a
+`provider` per request without changing that setting. An unavailable selected
+provider produces an error; no other provider is tried silently.
+
+`POST /api/jev/decisions` makes exactly one provider call:
+
+```json
+{
+  "provider": "openrouter",
+  "state": { "posting": "Backend engineer, 3+ years of experience" },
+  "questions": {
+    "job_family": {
+      "type": "choice",
+      "instructions": "Which job family is this posting?",
+      "criteria": { "backend": "Backend software engineering", "frontend": "Frontend software engineering", "other": "Other" }
+    },
+    "three_years": {
+      "type": "noul",
+      "instructions": "Can a candidate with three years of experience apply?",
+      "criteria": { "true": "Eligible with three years", "false": "Not eligible with three years" }
+    }
+  }
+}
+```
+
+The response contains `provider`, actual `model`, optional provider request
+`id`, `answers` keyed by question ID, and `usage` with any reported
+`inputTokens`, `outputTokens`, and `costUsd`. The reported cost is also recorded
+in the Token Usage ledger as `jev-decision`. The API performs no probability
+thresholding or label interpretation; callers choose those rules.
+
+Settings `jevDefaultProvider` and `jevMcpEnabled` are persisted via
+`POST /api/settings`. `jevMcpEnabled` defaults to `false` for existing and new
+installs. It affects member MCP exposure only; the local API and Message Gate
+can still use Jev. Member sessions started after a toggle read the updated MCP
+tool catalog.
+
+When enabled, member MCP exposes `jev-providers`, `jev-default-provider`,
+`jev-decide`, and `jev-decide-file`. The first two list providers and change
+the app-wide default. `jev-decide` returns the complete response. The file tool
+accepts the same decision request plus an absolute `path` on the member's
+execution host and optional `overwrite` (default `false`). It writes the full
+response as JSON and returns path, model, provider, question count, and usage.
+If the provider answered but writing fails, the tool returns an error **and**
+the complete answer so the paid result is not lost. Existing files are not
+replaced unless `overwrite:true` is passed.
+
+The Message Gate model picker also offers `Jev` as a gate-only reviewer. It
+sends one `noul` compliance question for each active sender/recipient rule
+family, rejects when a compliance probability is below `0.5`, and reports the
+violated axis with a deterministic correction message. Jev has no reasoning
+effort or service tier option. Gate calls are recorded as `gate-review` with
+provider-reported usage and cost; invalid/missing probabilities follow the
+gate's existing visible fail-open error path.
+
 When `AGENTPARTY_E2E=1`, this endpoint returns a mocked verification result and does not call OpenRouter.
 
 ### `GET /api/auth/subscriptions`

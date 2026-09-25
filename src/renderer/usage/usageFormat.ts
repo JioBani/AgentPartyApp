@@ -99,6 +99,7 @@ export const INTERVAL_PRESETS: Array<{ key: string; label: string; minutes: numb
 
 /** Trigger display metadata (label hint + overhead flag + series color). */
 export const TRIGGER_META: Record<TokenTrigger, { note: string; overhead: boolean; color: string }> = {
+  "jev-decision": { note: "Jev 판단 호출", overhead: true, color: "#a78bfa" },
   "user": { note: "사람 지시 · 기준선", overhead: false, color: "#9aa1ac" },
   "party-message": { note: "멤버 간 메시지", overhead: true, color: "var(--accent)" },
   "gate-review": { note: "게이트 리뷰어", overhead: true, color: "var(--live)" },
@@ -110,7 +111,7 @@ export const TRIGGER_META: Record<TokenTrigger, { note: string; overhead: boolea
 
 /** Order triggers are shown in Table B / G2 (design order). */
 export const TRIGGER_ORDER: TokenTrigger[] = [
-  "user", "party-message", "gate-review", "compact", "subagent", "init", "unknown",
+  "user", "party-message", "gate-review", "jev-decision", "compact", "subagent", "init", "unknown",
 ];
 
 /**
@@ -121,7 +122,7 @@ export const TRIGGER_ORDER: TokenTrigger[] = [
  * fixed-effort member's lane flicker. Their COST still belongs to the member.
  */
 export function isMemberModelTurn(trigger: TokenTrigger | undefined): boolean {
-  return trigger !== "gate-review";
+  return trigger !== "gate-review" && trigger !== "jev-decision";
 }
 
 /** Format a bucket start (epoch ms) as an axis label for the given interval. */

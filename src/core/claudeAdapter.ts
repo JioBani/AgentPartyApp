@@ -31,7 +31,7 @@ import { BackgroundTaskTracker } from "./backgroundTasks";
 import { RawLogger } from "./rawLogger";
 import { approvalAnswers, claudeApprovalFields, extractToolFilePath, withFilePath } from "../shared/approvalRequest";
 import type { RouterTurnUsage } from "./routerShim";
-import { buildPartyPrimer, buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
+import { buildPartyMcpToolSpecs, buildPartyPrimer, buildPartyToolDefs, PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { PartyBridge, PartyIdentity } from "./partyBridge";
 import { probeClaudeNativeAuth, type ClaudeNativeAuthState } from "./claudeNativeAuth";
 import { currentSpawnHost, shortCwd, spawnFailureSummary } from "../shared/sessionSpawn";
@@ -73,6 +73,7 @@ export interface ClaudeAdapterOptions {
    */
   partyBridge?: PartyBridge;
   partyIdentity?: PartyIdentity;
+  partyJevEnabled?: boolean;
   /**
    * The primer text to append to the system prompt for this member, already
    * resolved against the user's Settings → 파티 프롬프트 customization. Absent =
@@ -795,7 +796,7 @@ export class ClaudeAdapter extends EventEmitter {
         // unlisted sender never reaches the model at all. Stating this as a
         // permission rule (not only inside canUseTool) is what makes a member's
         // reporting tools usable in every permission mode.
-        allowedTools: this.options.partyIdentity ? PARTY_TOOL_NAMES.map((name) => `${PARTY_TOOL_PREFIX}${name}`) : undefined,
+        allowedTools: this.options.partyIdentity ? buildPartyMcpToolSpecs(this.options.partyJevEnabled).map(({ name }) => `${PARTY_TOOL_PREFIX}${name}`) : undefined,
         canUseTool: this.canUseTool,
         includePartialMessages: true,
         includeHookEvents: true,
@@ -940,7 +941,7 @@ export class ClaudeAdapter extends EventEmitter {
     if (!bridge || !identity) {
       return {};
     }
-    const tools = buildPartyToolDefs(sdk.tool as never, bridge, identity) as Parameters<SdkModule["createSdkMcpServer"]>[0]["tools"];
+    const tools = buildPartyToolDefs(sdk.tool as never, bridge, identity, this.options.partyJevEnabled) as Parameters<SdkModule["createSdkMcpServer"]>[0]["tools"];
     const server = sdk.createSdkMcpServer({
       name: PARTY_MCP_SERVER,
       version: "0.1.0",

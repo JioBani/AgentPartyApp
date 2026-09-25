@@ -23,6 +23,7 @@ export type TokenTrigger =
   | "user"          // a person's direct send — the baseline
   | "party-message" // a member-to-member message drove the turn
   | "gate-review"   // Message Gate reviewer call
+  | "jev-decision" // Direct Jev gateway call
   | "compact"       // context compaction turn
   | "subagent"      // a subagent turn
   | "init"          // session init / background poll
@@ -32,6 +33,7 @@ export const TOKEN_TRIGGERS: TokenTrigger[] = [
   "user",
   "party-message",
   "gate-review",
+  "jev-decision",
   "compact",
   "subagent",
   "init",
@@ -171,6 +173,7 @@ export interface SeriesTotals {
 export const OVERHEAD_TRIGGERS: ReadonlySet<TokenTrigger> = new Set<TokenTrigger>([
   "party-message",
   "gate-review",
+  "jev-decision",
   "compact",
   "init",
 ]);
@@ -494,7 +497,7 @@ export function aggregateUsage(records: TurnUsageRecord[], query: TokenUsageQuer
       // gate-review turns: the reviewer is a separate agent on its own model, so
       // its runtime must not masquerade as the member's dominant model/effort.
       const t = Date.parse(r.at);
-      if (r.model && r.trigger !== "gate-review" && t >= (memberLastAt.get(memberKey) ?? -Infinity)) {
+      if (r.model && r.trigger !== "gate-review" && r.trigger !== "jev-decision" && t >= (memberLastAt.get(memberKey) ?? -Infinity)) {
         memberLastAt.set(memberKey, t);
         mrow.lastModel = r.model;
         mrow.lastEffort = r.effort;

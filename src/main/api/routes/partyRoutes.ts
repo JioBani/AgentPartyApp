@@ -1,6 +1,7 @@
 import { sanitizeAttachments } from "../../../shared/attachments";
 import { parseQueueCommand } from "../../../shared/messageQueue";
 import { buildPartyMcpToolSpecs } from "../../../core/partyBridge";
+import { getSettings } from "../../settings";
 import { PARTY_ACTION_NAMES } from "../../engine/partyActions";
 import type { CreateMemberInput } from "../../../shared/types";
 import { ApiError, camelAction, flag, optText, required, text, type MethodRoute } from "../methodRegistry";
@@ -169,7 +170,7 @@ export const partyRoutes: MethodRoute[] = [
     name: "party.toolSpec",
     http: "GET /api/harness/party/tool-spec",
     remote: false,
-    handler: () => ({ ok: true, tools: buildPartyMcpToolSpecs() }),
+    handler: () => ({ ok: true, tools: buildPartyMcpToolSpecs(getSettings().jevMcpEnabled) }),
   },
   {
     name: "party.message",

@@ -35,7 +35,7 @@ async function load(entry, name) {
 }
 
 const { PartyApplicationService } = await load("src/main/application/partyApplicationService.ts", "party-svc.mjs");
-const { adaptPartyPrimerForCodex, buildCodexPartyCoreInstructions, buildCodexPartyDynamicToolSpecs, buildPartyDynamicToolSpec, buildPartyToolDefs, buildPartyPrimer, codexPartyCoreToolNameOf, invokePartyTool, PARTY_CODEX_CORE_TOOL_ALIASES, PARTY_CORE_TOOL_NAMES, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } = await load("src/core/partyBridge.ts", "party-bridge.mjs");
+const { adaptPartyPrimerForCodex, buildCodexPartyCoreInstructions, buildCodexPartyDynamicToolSpecs, buildPartyDynamicToolSpec, buildPartyMcpToolSpecs, buildPartyToolDefs, buildPartyPrimer, codexPartyCoreToolNameOf, invokePartyTool, PARTY_CODEX_CORE_TOOL_ALIASES, PARTY_CORE_TOOL_NAMES, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } = await load("src/core/partyBridge.ts", "party-bridge.mjs");
 const sdk = await import("@anthropic-ai/claude-agent-sdk");
 
 // --- Fake SessionManager: captures bindings, never spawns a real session ------
@@ -377,7 +377,8 @@ assert(PARTY_MCP_SERVER === "agentparty-app", "MCP server name is agentparty-app
 assert(PARTY_TOOL_PREFIX === "mcp__agentparty-app__", "namespaced tool prefix matches");
 const defs = buildPartyToolDefs(sdk.tool, bridge, mainBinding.identity);
 const toolNames = defs.map((d) => d.name);
-assert(JSON.stringify(toolNames) === JSON.stringify(PARTY_TOOL_NAMES), "in-process MCP exposes every canonical party tool in order");
+assert(JSON.stringify(toolNames) === JSON.stringify(buildPartyMcpToolSpecs().map((item) => item.name)), "in-process MCP exposes the default party tools in order");
+assert(JSON.stringify(buildPartyToolDefs(sdk.tool, bridge, mainBinding.identity, true).map((item) => item.name)) === JSON.stringify(PARTY_TOOL_NAMES), "enabled Jev MCP appends every canonical party tool in order");
 // Re-create a target so the send tool delivers, then invoke the real handler.
 await bridge.createMember({ name: "buddy", role: "r", harness: "claude-code" });
 const sendTool = defs.find((d) => d.name === "send");
