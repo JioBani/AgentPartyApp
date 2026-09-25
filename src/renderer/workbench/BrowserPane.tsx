@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Combine, RotateCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Combine, MessageSquareText, RotateCw, SplitSquareHorizontal } from "lucide-react";
 import type { BrowserActionInput, BrowserState } from "../../shared/browserControl";
 
 // WebContentsView always paints above the renderer. Detach it whenever an
@@ -23,7 +23,7 @@ function overlayCrosses(viewport: DOMRect): boolean {
 }
 
 /** DOM chrome around the isolated native WebContentsView owned by this member. */
-export function BrowserPane({ partyId, member, canMerge }: { partyId: string; member: string; canMerge: boolean }) {
+export function BrowserPane({ partyId, member, detached }: { partyId: string; member: string; detached: boolean }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<BrowserState | null>(null);
   const [address, setAddress] = useState("");
@@ -96,15 +96,11 @@ export function BrowserPane({ partyId, member, canMerge }: { partyId: string; me
       const key = `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`;
       if (applied !== key) request({ action: "show", bounds }, key);
     };
-    const stopOpenListener = window.agentParty.onBrowserOpenRequested((request) => {
-      if (request.partyId === partyId && request.member === member) applied = "";
-    });
     sync();
     void act({ action: "state" }).then((result) => { if (result && !disposed) setAddress(result.state.url); });
     return () => {
       disposed = true;
       cancelAnimationFrame(frame);
-      stopOpenListener();
       if (activePanes.get(paneKey) !== paneLease) return;
       activePanes.delete(paneKey);
       // A moved tab mounts a new pane before the old show IPC settles. The old
@@ -132,8 +128,12 @@ export function BrowserPane({ partyId, member, canMerge }: { partyId: string; me
         <form onSubmit={navigate}>
           <input data-browser-address="true" aria-label="브라우저 주소" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="https://example.com" spellCheck={false} />
         </form>
-        <button type="button" className="wb-browser-merge" aria-label="멤버 탭과 합치기" title={canMerge ? "멤버 탭과 합치기" : "이미 멤버 탭과 같은 패널입니다"} disabled={!canMerge} onClick={() => void act({ action: "merge" })}>
-          <Combine size={14} /><span className="wb-browser-merge-label">멤버 탭과 합치기</span>
+        <button type="button" className="wb-browser-chat" aria-label={detached ? "대화 탭으로 이동" : "대화 탭 보기"} onClick={() => void act({ action: "chat" })}>
+          <MessageSquareText size={14} /><span className="wb-browser-merge-label">{detached ? "대화 탭으로 이동" : "대화 탭 보기"}</span>
+        </button>
+        <button type="button" className="wb-browser-merge" aria-label={detached ? "멤버 탭과 합치기" : "브라우저 탭 분리하기"} onClick={() => void act({ action: detached ? "merge" : "detach" })}>
+          {detached ? <Combine size={14} /> : <SplitSquareHorizontal size={14} />}
+          <span className="wb-browser-merge-label">{detached ? "멤버 탭과 합치기" : "브라우저 탭 분리하기"}</span>
         </button>
       </div>
       {error && <div className="wb-browser-error" role="alert">{error}</div>}

@@ -161,11 +161,11 @@ export function openMemberTab(layout: WorkbenchLayout, memberName: string): Work
   );
 }
 
-/** Opens the member's browser beside chat. Navigating an existing tab may preserve focus. */
-export function openBrowserTab(layout: WorkbenchLayout, memberName: string, focusExisting = true): WorkbenchLayout {
+/** Explicitly detaches the browser into a tab beside its member's chat tab. */
+export function openBrowserTab(layout: WorkbenchLayout, memberName: string): WorkbenchLayout {
   const browser = browserTabId(memberName);
   const existing = panelOf(layout, browser);
-  if (existing) return focusExisting ? activateIn(layout, existing.id, browser) : layout;
+  if (existing) return activateIn(layout, existing.id, browser);
   const withMember = panelOf(layout, memberName) ? layout : openMemberTab(layout, memberName);
   const owner = panelOf(withMember, memberName)!;
   const tabs = [...owner.tabs];
@@ -177,30 +177,35 @@ export function openBrowserTab(layout: WorkbenchLayout, memberName: string, focu
   );
 }
 
-/** Moves an already-open browser tab back beside its member, preserving the page. */
+/** Removes the detached tab so the member tab can show that same browser view. */
 export function mergeBrowserTabIntoMember(layout: WorkbenchLayout, memberName: string): WorkbenchLayout | undefined {
   const browser = browserTabId(memberName);
   const browserPanel = panelOf(layout, browser);
   if (!browserPanel) return undefined;
   const memberPanel = panelOf(layout, memberName);
   if (!memberPanel) {
-    // Closing the chat tab does not close its browser. Restore that tab in the
-    // browser's panel so the merge button still does what it promises.
-    const tabs = [...browserPanel.tabs];
-    tabs.splice(tabs.indexOf(browser), 0, memberName);
+    // A detached browser can outlive its chat tab. Restore the chat tab in
+    // place, then let that one tab alternate between chat and browser.
+    const tabs = browserPanel.tabs.map((tab) => tab === browser ? memberName : tab);
     return composeLayout(
-      layout.panels.map((panel) => panel.id === browserPanel.id ? { ...panel, tabs, active: browser } : panel),
+      layout.panels.map((panel) => panel.id === browserPanel.id ? { ...panel, tabs, active: memberName } : panel),
       browserPanel.id,
       layout.grid,
     );
   }
-  if (memberPanel.id === browserPanel.id) return layout;
+  if (memberPanel.id === browserPanel.id) {
+    return composeLayout(
+      layout.panels.map((panel) => panel.id === memberPanel.id
+        ? { ...panel, tabs: panel.tabs.filter((tab) => tab !== browser), active: memberName }
+        : panel),
+      memberPanel.id,
+      layout.grid,
+    );
+  }
   const sourceTabs = browserPanel.tabs.filter((tab) => tab !== browser);
-  const targetTabs = [...memberPanel.tabs];
-  targetTabs.splice(targetTabs.indexOf(memberName) + 1, 0, browser);
   const panels = layout.panels
     .map((panel) => panel.id === memberPanel.id
-      ? { ...panel, tabs: targetTabs, active: browser }
+      ? { ...panel, active: memberName }
       : panel.id === browserPanel.id
         ? { ...panel, tabs: sourceTabs, active: panel.active === browser ? sourceTabs[0] || "" : panel.active }
         : panel)

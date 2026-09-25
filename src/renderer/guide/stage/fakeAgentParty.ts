@@ -305,7 +305,7 @@ export function createFakeAgentParty(): FakeAgentParty {
     listMcpServers: () => Promise.resolve(current().mcp ?? { supported: true, harness: "claude-code" as const, servers: [] }),
     browserAction: () => refused(),
     onBrowserState: () => () => undefined,
-    onBrowserOpenRequested: () => () => undefined,
+    onBrowserViewRequested: () => () => undefined,
     reconnectMcpServer: () => refused(),
     setMcpServerEnabled: () => refused(),
     authenticateMcpServer: () => refused(),

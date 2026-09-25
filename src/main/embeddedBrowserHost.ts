@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { BrowserWindow, WebContentsView } from "electron";
-import type { BrowserActionInput, BrowserActionResult, BrowserControlPort, BrowserOpenRequest, BrowserState } from "../shared/browserControl";
+import type { BrowserActionInput, BrowserActionResult, BrowserControlPort, BrowserViewRequest, BrowserState } from "../shared/browserControl";
 
 interface BrowserEntry {
   partyId: string;
@@ -16,12 +16,16 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
   constructor(private readonly options: {
     resolveWindow: (windowId?: string) => BrowserWindow | undefined;
     onState: (state: BrowserState) => void;
-    onOpenRequested: (request: BrowserOpenRequest) => void;
+    onViewRequested: (request: BrowserViewRequest) => void;
   }) {}
 
   async action(partyId: string, member: string, input: BrowserActionInput, windowId?: string): Promise<BrowserActionResult> {
     if (input.action === "state") return { ok: true, state: this.state(partyId, member) };
-    if (input.action === "merge") throw new Error("Browser tab merge must be handled by the app controller.");
+    if (input.action === "merge" || input.action === "detach") throw new Error("Browser tab layout actions must be handled by the app controller.");
+    if (input.action === "chat") {
+      this.options.onViewRequested({ partyId, member, mode: "chat", windowId });
+      return { ok: true, state: this.state(partyId, member) };
+    }
     if (input.action === "close") {
       this.close(partyId, member);
       return { ok: true, state: this.state(partyId, member) };
@@ -36,7 +40,11 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
     const contents = entry.view.webContents;
     switch (input.action) {
       case "tab":
-        this.options.onOpenRequested({ partyId, member, focusExisting: true });
+        // Preparing a browser from member automation must not switch the user's
+        // visible view. The explicit UI view action is the only switch here.
+        break;
+      case "view":
+        this.options.onViewRequested({ partyId, member, mode: "browser", windowId });
         break;
       case "show": {
         const window = this.options.resolveWindow(windowId);
@@ -57,7 +65,6 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
       }
       case "open": {
         const target = this.safeUrl(input.url);
-        this.options.onOpenRequested({ partyId, member, focusExisting: false });
         await contents.loadURL(target);
         break;
       }
@@ -73,15 +80,16 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
       case "click": {
         this.requireVisible(entry);
         const { x, y } = this.point(input, entry);
-        contents.sendInputEvent({ type: "mouseMove", x, y });
-        contents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
-        contents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+        const debuggerApi = this.debuggerFor(entry);
+        await debuggerApi.sendCommand("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+        await debuggerApi.sendCommand("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+        await debuggerApi.sendCommand("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
         break;
       }
       case "type":
         this.requireVisible(entry);
         if (typeof input.text !== "string" || input.text.length > 10_000) throw new Error("text must be a string of at most 10,000 characters.");
-        contents.insertText(input.text);
+        await this.debuggerFor(entry).sendCommand("Input.insertText", { text: input.text });
         break;
       case "scroll": {
         this.requireVisible(entry);
@@ -128,8 +136,11 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
         return { ok: true, state: this.state(partyId, member), snapshot: String(snapshot) };
       }
       case "screenshot": {
+        // Chromium does not produce a frame for a detached WebContentsView;
+        // Page.captureScreenshot can otherwise wait indefinitely.
         this.requireVisible(entry);
-        const png = (await contents.capturePage()).toPNG();
+        const capture = await this.debuggerFor(entry).sendCommand("Page.captureScreenshot", { format: "png", captureBeyondViewport: false }) as { data?: string };
+        const png = Buffer.from(capture.data || "", "base64");
         if (!png.length) throw new Error("The browser returned an empty screenshot.");
         return { ok: true, state: this.state(partyId, member), image: { mimeType: "image/png", dataBase64: png.toString("base64") } };
       }
@@ -158,6 +169,8 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
       partition, sandbox: true, nodeIntegration: false, contextIsolation: true,
       webSecurity: true, backgroundThrottling: false,
     } });
+    // Keep a stable viewport for DOM inspection before the pane is shown.
+    view.setBounds({ x: 0, y: 0, width: 1024, height: 768 });
     view.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     view.webContents.setWindowOpenHandler(({ url }) => {
       try {
@@ -210,13 +223,21 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
     const y = defaultCenter && input.y === undefined ? Math.floor(bounds.height / 2) : input.y;
     if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)
       || x < 0 || y < 0 || x >= bounds.width || y >= bounds.height) {
-      throw new Error(`Coordinates must be inside the visible browser viewport (${bounds.width} x ${bounds.height}).`);
+      throw new Error(`Coordinates must be inside the browser viewport (${bounds.width} x ${bounds.height}).`);
     }
     return { x: Math.round(x), y: Math.round(y) };
   }
 
+  private debuggerFor(entry: BrowserEntry) {
+    const api = entry.view.webContents.debugger;
+    if (!api.isAttached()) api.attach();
+    return api;
+  }
+
   private requireVisible(entry: BrowserEntry): void {
-    if (!entry.owner || entry.owner.isDestroyed()) throw new Error("Open this member's Browser tab in AgentParty before controlling it.");
+    if (!entry.owner || entry.owner.isDestroyed()) {
+      throw new Error("Show this member's Browser pane before clicking, typing, scrolling, or taking a screenshot.");
+    }
   }
 
   private detach(entry: BrowserEntry): void {
