@@ -197,7 +197,7 @@ export function Panel(props: PanelProps) {
           <div className="wb-toolbar-id">
             {/* Status leads the row. It is the one thing here that changes on its
                 own, and reading it should not mean scanning past the location
-                first. A running turn shows motion instead of the word "working";
+                first. A running turn shows motion and an explicit label;
                 every other state is a stable fact and stays a label. Below wide
                 the label is dropped, never the chip: the tone and the pulse
                 still carry the state, and the tooltip spells it out. */}

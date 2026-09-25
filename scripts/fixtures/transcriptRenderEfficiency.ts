@@ -16,6 +16,10 @@ export function run(assert: Assert): void {
   const clockOnly = [{ ...current[0], snapshot: { ...baseSnapshot, lastEventAt: "12:00:01" } }];
   assert(mergeRendererSessions(current, clockOnly) === current, "a token-only activity clock does not replace renderer session state");
   assert(updateRendererSessionSnapshot(current, "session-1", clockOnly[0].snapshot) === current, "the duplicate snapshot channel skips the same volatile update");
+  const active = updateRendererSessionSnapshot(current, "session-1", baseSnapshot, true);
+  assert(active !== current && active[0].turnActive === true, "the snapshot channel carries the turn start even when display status is unchanged");
+  const completed = updateRendererSessionSnapshot(active, "session-1", baseSnapshot, false);
+  assert(completed !== active && completed[0].turnActive === false, "the snapshot channel carries the turn end even before the adapter status changes");
   const idle = [{ ...current[0], snapshot: { ...baseSnapshot, status: "idle" } }];
   assert(mergeRendererSessions(current, idle) !== current, "a visible session status change still reaches the renderer");
 

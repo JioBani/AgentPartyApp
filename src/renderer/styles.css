@@ -9418,14 +9418,14 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 
 /* ── W2: in-progress indicator ([P-3]7) ─────────────────────────────────── */
 
-/* Three bouncing dots standing in for the word "working" wherever a member's
-   turn is in flight (panel header pill, sidebar member row). Inherits the
-   surrounding color, so each surface keeps its own status palette. */
+/* The label and bouncing dots show a member's active turn in the panel and
+   sidebar. Both inherit the surrounding status color. */
 .wb-working-dots {
   display: inline-flex;
   align-items: center;
   gap: 3px;
   flex: none;
+  white-space: nowrap;
 }
 .wb-working-dots i {
   width: 4px;
@@ -9436,12 +9436,13 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 }
 .wb-working-dots i:nth-child(2) { animation-delay: .15s; }
 .wb-working-dots i:nth-child(3) { animation-delay: .3s; }
+.wb-working-dots > span { margin-left: 2px; }
 
 /* Deliberate, not leftover — do not delete as a stray "why is an animation off
    here?". The base `.wb-status-pill.is-working` rule above pulses the whole
    pill's opacity, which made sense while the pill was the WORD "working". The
-   pill now holds the bouncing dots, and a pill fading in and out underneath dots
-   that are already moving reads as flicker rather than as progress. Turned off
+   pill now holds dots and a label, and fading the whole pill in and out reads
+   as flicker rather than as progress. Turned off
    here as a new rule instead of by editing the base block, so this lane's
    additions to the file stay append-only. */
 .wb-status-pill.is-working { animation: none; }
@@ -10580,8 +10581,8 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   gap: 4px;
 }
 
-/* Below the wide tier the chip keeps its tone and its pulse but drops the word,
-   so the location gets the row instead of both of them being clipped. */
+/* Below the wide tier, inactive states drop their word so the location has
+   room. Active turns retain their label to confirm that a send was accepted. */
 .wb-toolbar-id .wb-status-pill .wb-dot {
   width: 7px;
   height: 7px;

@@ -43,12 +43,12 @@ export function mergeRendererSessions(current: SessionView[], incoming: SessionV
 }
 
 /** Applies one snapshot push only when it changes a renderer-visible fact. */
-export function updateRendererSessionSnapshot(current: SessionView[], sessionId: string, snapshot: ClaudeSessionSnapshot): SessionView[] {
+export function updateRendererSessionSnapshot(current: SessionView[], sessionId: string, snapshot: ClaudeSessionSnapshot, turnActive?: boolean): SessionView[] {
   const index = current.findIndex((session) => session.id === sessionId);
   if (index < 0) {
     return current;
   }
-  const candidate = { ...current[index], snapshot };
+  const candidate = { ...current[index], snapshot, turnActive: turnActive ?? current[index].turnActive };
   if (sameSessionForRenderer(current[index], candidate)) {
     return current;
   }
