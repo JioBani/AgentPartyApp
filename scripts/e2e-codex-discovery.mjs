@@ -70,7 +70,7 @@ async function main() {
     const orRoutes = catalog.modelRoutes.filter((route) => route.harnessId === "codex" && route.modelProvider === "openrouter");
     assert(orRoutes.length >= 10, "OpenRouter catalog models are also exposed as codex routes (Phase 2)");
 
-    await post("/api/parties", { name: "skill blocklist e2e" });
+    await post("/api/parties", { name: "Codex skill discovery e2e" });
     await post("/api/party/members", {
       name: "codey",
       requirement: "verify Codex skill discovery",
@@ -91,9 +91,9 @@ async function main() {
     assert(byName["legacy-skill"]?.disabledReason, "disabled skill carries a disabled reason");
     assert(byName.formatter?.source === "plugin", "installed plugin merged with source=plugin");
     assert(byName["blocked-plugin"]?.disabledReason, "admin-disabled plugin carries a disabled reason");
-    assert(!byName["browser:control-in-app-browser"], "unsupported in-app-browser skill is not advertised");
-    assert(!byName["computer-use:computer-use"], "desktop mouse control is not advertised to party members");
-    assert(!byName.browser, "in-app-browser plugin is not advertised");
+    assert(byName["browser:control-in-app-browser"]?.source === "skill", "Codex browser skill remains available to party members");
+    assert(byName["computer-use:computer-use"]?.source === "skill", "Codex Computer Use skill remains available to party members");
+    assert(byName.browser?.source === "plugin", "Codex browser plugin remains available to party members");
 
     // Drive the user-visible workflow through the same local automation API a
     // QA agent uses: open the real panel, type into the real composer, and read
@@ -122,6 +122,30 @@ async function main() {
     const legacy = blockedRows.elements.find((row) => row.text.startsWith("/legacy-skill"));
     assert(legacy?.attributes?.["aria-disabled"] === "true", "harness-disabled skill remains blocked in the real palette");
     assert(legacy?.attributes?.title === "비활성화된 skill", "blocked skill shows the harness reason");
+
+    await post("/api/qa/input", { selector: editor, text: "/computer-use" });
+    await delay(300);
+    const computerUseRows = await post("/api/measure", {
+      selector: ".wb-cmd-row",
+      attributes: ["aria-disabled"],
+    });
+    const computerUse = computerUseRows.elements.find((row) => row.text.startsWith("/computer-use:computer-use"));
+    assert(computerUse?.attributes?.["aria-disabled"] === "false", "native Computer Use is selectable in the real palette");
+
+    await post("/api/qa/input", { selector: editor, text: "/browser" });
+    await delay(300);
+    const browserRows = await post("/api/measure", {
+      selector: ".wb-cmd-row",
+      attributes: ["aria-disabled"],
+    });
+    assert(
+      browserRows.elements.some((row) => row.text.startsWith("/browser:control-in-app-browser") && row.attributes?.["aria-disabled"] === "false"),
+      "native Codex browser skill is selectable in the real palette",
+    );
+    assert(
+      browserRows.elements.some((row) => row.text.startsWith("/browser") && !row.text.startsWith("/browser:") && row.attributes?.["aria-disabled"] === "false"),
+      "native Codex browser plugin is selectable in the real palette",
+    );
 
     // The fake app-server does not know the new GPT-6 models. The real runtime
     // picker must nevertheless expose their bundled Fast capability.

@@ -1,5 +1,7 @@
 # Agent Instructions
 
+- 사용자 허락 없이 시스템·개발자·파티 프롬프트나 도구 사용 지침을 임의로 추가하거나 변경하지 않는다.
+- 사용자 지침 없이 기존 CLI에서 가능하던 기능을 AgentParty가 임의로 비활성화하거나 숨기거나 사용을 금지하지 않는다. AgentParty 자체 기능이 같은 작업을 지원하더라도 Computer Use 같은 CLI 기능을 제한할 근거가 되지 않는다. AgentParty는 CLI로 시작한 세션도 포함해 기존 CLI를 래핑하는 앱이지, 그 기능을 대체하는 별도의 데스크톱 앱이 아니다.
 - When problems occur, prioritize fixing the root cause over temporary workarounds. Short-term bypasses can create larger costs later.
 - Do not work only from unverified hypotheses. If something is uncertain, inspect the project or search reliable sources before acting.
 - Do not hide failures with silent fallback behavior. Surface errors through logs, notifications, or other visible diagnostics.

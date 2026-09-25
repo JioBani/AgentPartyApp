@@ -108,25 +108,17 @@ try {
   const outbound = frames.filter((frame) => frame.direction === "out").map((frame) => frame.payload);
   const threadStart = outbound.find((message) => message.method === "thread/start");
   const turnStart = outbound.find((message) => message.method === "turn/start");
-  const disabledSkills = threadStart?.params?.config?.skills?.config || [];
   const dynamicTools = threadStart?.params?.dynamicTools || [];
   const eagerTools = dynamicTools.filter((tool) => tool.type === "function");
   const compatibilityNamespace = dynamicTools.find((tool) => tool.type === "namespace" && tool.name === "agentparty-app");
   assert(dynamicTools.length === 6, "thread start carries five eager Party Core tools plus one compatibility namespace");
-  assert(threadStart?.params?.config?.dynamic_tools == null, "dynamic tools use the app-server protocol field instead of an ignored config key");
+  assert(threadStart?.params?.config == null, "thread start leaves native Codex configuration and skills untouched");
   assert(
     JSON.stringify(eagerTools.map((tool) => tool.name)) === JSON.stringify(["party_send", "party_status", "party_list", "party_interrupt", "party_broadcast"])
       && eagerTools.every((tool) => tool.deferLoading === false),
     "Codex Party Core controls are first-class and always loaded",
   );
   assert(compatibilityNamespace?.tools?.length === 19 && compatibilityNamespace.tools.every((tool) => tool.deferLoading === true), "the complete AgentParty catalog remains available on demand without filling every turn");
-  assert(
-    disabledSkills.length === 2
-      && disabledSkills.every((skill) => skill.enabled === false)
-      && disabledSkills.some((skill) => /control-in-app-browser[\\/]SKILL\.md$/i.test(skill.path))
-      && disabledSkills.some((skill) => /computer-use[\\/]SKILL\.md$/i.test(skill.path)),
-    "thread config disables host-only browser and desktop mouse skills by SKILL.md path",
-  );
   assert(
     threadStart?.params?.developerInstructions?.includes("# AgentParty — party member session")
       && threadStart.params.developerInstructions.includes("team-qa")
@@ -171,6 +163,7 @@ try {
     .find((message) => message.method === "thread/resume");
   const dynamicTools = threadResume?.params?.dynamicTools || [];
   assert(threadResume?.params?.threadId === "thr-existing", "existing Codex conversations use thread/resume");
+  assert(threadResume?.params?.config == null, "thread resume leaves native Codex configuration and skills untouched");
   assert(
     dynamicTools.length === 0,
     "thread/resume does not send the unsupported dynamicTools field",

@@ -16,50 +16,15 @@ export interface CodexDiscoveredCommand {
   disabledReason?: string;
 }
 
-export const CODEX_IN_APP_BROWSER_SKILL = "browser:control-in-app-browser";
-export const CODEX_IN_APP_BROWSER_PLUGIN = "browser@openai-bundled";
-export const CODEX_DESKTOP_COMPUTER_USE_SKILL = "computer-use:computer-use";
-export const CODEX_PARTY_UNSUPPORTED_SKILLS = new Set([CODEX_IN_APP_BROWSER_SKILL, CODEX_DESKTOP_COMPUTER_USE_SKILL]);
-
-export interface CodexSkillConfigOverride {
-  path: string;
-  enabled: false;
-}
-
-/**
- * Party browser control is member-scoped. Codex's separate in-app browser
- * plugin is not connected to it, while desktop Computer Use moves the real OS
- * pointer. Disable those skills for this thread, not in the user's global config.
- */
-export function unsupportedHostSkillOverrides(
-  response: any,
-  disabledNames: ReadonlySet<string> = new Set([CODEX_IN_APP_BROWSER_SKILL]),
-): CodexSkillConfigOverride[] {
-  const entries: any[] = Array.isArray(response?.data) ? response.data : [];
-  const paths = new Set<string>();
-  for (const entry of entries) {
-    for (const skill of Array.isArray(entry?.skills) ? entry.skills : []) {
-      if (!disabledNames.has(String(skill?.name ?? ""))) {
-        continue;
-      }
-      const skillPath = String(skill?.path ?? "").trim();
-      if (skillPath) {
-        paths.add(skillPath);
-      }
-    }
-  }
-  return [...paths].map((skillPath) => ({ path: skillPath, enabled: false as const }));
-}
-
 /** Flattens a skills/list response ({ data: SkillsListEntry[] }) into palette commands. */
-export function skillCommands(response: any, excludedNames: ReadonlySet<string> = new Set()): CodexDiscoveredCommand[] {
+export function skillCommands(response: any): CodexDiscoveredCommand[] {
   const entries: any[] = Array.isArray(response?.data) ? response.data : [];
   const out: CodexDiscoveredCommand[] = [];
   const seen = new Set<string>();
   for (const entry of entries) {
     for (const skill of Array.isArray(entry?.skills) ? entry.skills : []) {
       const name = String(skill?.name ?? "");
-      if (!name || excludedNames.has(name) || seen.has(name)) {
+      if (!name || seen.has(name)) {
         continue;
       }
       seen.add(name);
@@ -75,15 +40,14 @@ export function skillCommands(response: any, excludedNames: ReadonlySet<string> 
 }
 
 /** Flattens a plugin/installed response (marketplaces → plugins) into palette commands. */
-export function pluginCommands(response: any, excludedIds: ReadonlySet<string> = new Set()): CodexDiscoveredCommand[] {
+export function pluginCommands(response: any): CodexDiscoveredCommand[] {
   const marketplaces: any[] = Array.isArray(response?.marketplaces) ? response.marketplaces : [];
   const out: CodexDiscoveredCommand[] = [];
   const seen = new Set<string>();
   for (const marketplace of marketplaces) {
     for (const plugin of collectPluginSummaries(marketplace)) {
-      const id = String(plugin?.id ?? "");
       const name = String(plugin?.name ?? plugin?.id ?? "");
-      if (!name || excludedIds.has(id) || !plugin?.installed || seen.has(name)) {
+      if (!name || !plugin?.installed || seen.has(name)) {
         continue;
       }
       seen.add(name);
