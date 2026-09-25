@@ -268,8 +268,7 @@ function MemberRow({
       {sshState && <SshStatus tone={SSH_MEMBER_CHIP[sshState].tone} label={SSH_MEMBER_CHIP[sshState].label} />}
       {view.pendingApproval && <span className="wb-member-badge"><LocalizedText id="STR-2066" /></span>}
       {view.unread > 0 && <span className="wb-mono wb-member-unread">{view.unread}</span>}
-      {/* A running turn is motion, not the grey word "working" that read as a
-          label and was easy to miss down the list. */}
+      {/* Keep the running turn's motion and label visible in the member list. */}
       {!view.pendingApproval && (view.status === "working"
         ? <WorkingDots label={localized("STR-2067")} />
         : <span className="wb-mono wb-member-status">{statusLabel(view.status)}</span>)}
