@@ -3421,25 +3421,29 @@ this route call the same `AppController.browserAction` method. A member should
 normally use its own `browser` MCP tool through the member-scoped transport
 below, which binds identity rather than accepting a member name in the body.
 
-`action` can be `state`, `tab`, `merge`, `show`, `hide`, `open`, `back`, `forward`, `reload`,
+`action` can be `state`, `tab`, `view`, `chat`, `detach`, `merge`, `show`, `hide`, `open`, `back`, `forward`, `reload`,
 `snapshot`, `screenshot`, `click`, `type`, `scroll`, or `close`. `open` accepts an
-HTTP(S) `url` and opens the member's browser tab. A new browser tab starts
-beside the member chat tab in the same panel. Later `open` calls navigate that
-tab without changing the active tab or focused panel. `tab` explicitly opens or
-focuses the browser without navigating, matching the member header's detail
-menu action; it moves focus to an existing separated tab without changing its
-placement. `merge` moves an already-open browser tab back beside its member
-chat tab, focuses it, and preserves the current page. It restores the chat tab
-first if that tab was closed; it returns an error if no browser tab is open.
-The browser toolbar's “멤버 탭과 합치기” button uses this same action. Read
-`GET /api/party/layout` to inspect whether the two tabs share a panel, or use
-`POST /api/party/layout` to split them for side-by-side viewing. The member's
-`browser` MCP tool exposes `tab`, `open`, and `merge` through its real transport.
+HTTP(S) `url` without changing the selected app tab or focused panel. `tab`
+prepares the browser without navigating or switching views. The member header's
+**브라우저 탭 보기** button uses `view`: when merged, the existing member tab
+changes from chat to browser without creating another tab; when detached, it
+selects the existing browser tab. The browser toolbar's `chat` action returns
+to the conversation. `detach` creates a separate browser tab in the member's
+tab group and selects it. `merge` removes that tab and shows the browser inside
+the member tab, preserving the page. It restores the member tab if closed and
+errors when no detached browser tab exists. Read `GET /api/party/layout` to
+inspect detached tabs; the inline chat/browser choice is window-local UI state,
+not another persisted tab. Use `POST /api/party/layout` to split detached tabs
+for side-by-side viewing. The member's `browser` MCP tool exposes `tab`, `open`,
+`detach`, and `merge` through its real transport. Navigation and page-input
+actions never change the selected tab; explicit view and layout actions can.
+Existing layouts with a separate browser tab remain valid.
 `show` accepts viewport `bounds` in window CSS pixels; `click`
 accepts viewport-relative `x` and `y`; `type` inserts `text` into the focused
 field; `scroll` accepts `deltaY` and optional `x`/`y`, and returns requested
 and actually applied vertical distances. These actions target the member's
-Chromium view and do not move the desktop pointer. A visible Browser pane
+Chromium view and do not move the desktop pointer, selected tab, or focused
+panel. A visible Browser pane
 is required for pointer, typing, scrolling, and screenshot actions. `snapshot`
 returns page text plus visible controls and their viewport coordinates.
 `screenshot` returns PNG base64 under `image`; the MCP relay turns it into an

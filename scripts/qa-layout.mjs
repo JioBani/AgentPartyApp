@@ -104,13 +104,13 @@ p = L.openMember(p, "y");
 p = L.pruneLayout(p, new Set(["x"]));
 assert(p.panels[0].tabs.length === 1 && p.panels[0].tabs[0] === "x", "prune removes tabs for missing members");
 
-// A browser is a separate tab, not a replacement view inside the member tab.
+// Explicit detachment creates a separate tab beside the member tab.
 let browserLayout = L.openBrowserTab(L.emptyLayout(), "main");
 const browserTab = browserLayout.panels[0].tabs.find((tab) => tab !== "main");
-assert(Boolean(browserTab) && browserLayout.panels[0].tabs.length === 2, "browser open keeps chat and browser as two tabs");
-assert(browserLayout.panels[0].active === browserTab, "browser open focuses its own tab");
+assert(Boolean(browserTab) && browserLayout.panels[0].tabs.length === 2, "browser detachment creates the second tab");
+assert(browserLayout.panels[0].active === browserTab, "browser detachment selects its new tab");
 browserLayout = L.openBrowserTab(browserLayout, "main");
-assert(browserLayout.panels[0].tabs.length === 2, "reopening browser does not duplicate the tab");
+assert(browserLayout.panels[0].tabs.length === 2, "repeated detachment does not duplicate the tab");
 browserLayout = L.moveTabToNewPanel(browserLayout, browserTab, browserLayout.panels[0].id, "right");
 assert(browserLayout.panels.length === 2 && browserLayout.panels.some((panel) => panel.tabs.join() === "main"), "browser tab can split beside chat");
 assert(browserLayout.panels.some((panel) => panel.tabs.join() === browserTab), "split keeps browser alone in its panel");

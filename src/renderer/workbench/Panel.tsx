@@ -31,6 +31,8 @@ interface PanelProps {
   focused: boolean;
   /** Whether the active member already has a browser tab in any panel. */
   browserTabOpen: boolean;
+  /** Whether this window shows the browser inside the active member tab. */
+  inlineBrowserShown: boolean;
   draggingMember: string | null;
   dropTarget: boolean;
   /**
@@ -76,11 +78,12 @@ interface PanelProps {
 }
 
 export function Panel(props: PanelProps) {
-  const { panel, views, focused, browserTabOpen, draggingMember, dropTarget, dropSide, dropAt, actions, onFocus, onSelectTab, onCloseTab, onSplit, chrome, onToggleChrome, onPromoteTab, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenCompact, onOpenUsage, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
+  const { panel, views, focused, browserTabOpen, inlineBrowserShown, draggingMember, dropTarget, dropSide, dropAt, actions, onFocus, onSelectTab, onCloseTab, onSplit, chrome, onToggleChrome, onPromoteTab, onOpenRuntime, onOpenPermissions, onOpenMcp, onOpenStatus, onOpenCompact, onOpenUsage, onOpenGate, onTabPointerDown, openSubId, subDockCollapsed, onToggleSubDock, onOpenSub, onCloseSub } = props;
   const { ref, density, width } = useDensity<HTMLDivElement>();
   const browserMember = browserTabMember(panel.active);
   const browserOwner = browserMember ? views.get(browserMember) : undefined;
   const view = browserMember ? undefined : views.get(panel.active);
+  const inlineBrowser = Boolean(view && inlineBrowserShown && !browserTabOpen);
   const cliOwned = view?.status === "external-cli";
   // The header's ⋯ overflow menu (session restart / MCP). Local to this panel.
   const [menuOpen, setMenuOpen] = useState(false);
@@ -284,11 +287,11 @@ export function Panel(props: PanelProps) {
                       onClick={() => {
                         setMenuOpen(false);
                         setBrowserOpenError("");
-                        void window.agentParty.browserAction(view.member.partyId || "", view.name, { action: "tab" })
+                        void window.agentParty.browserAction(view.member.partyId || "", view.name, { action: "view" })
                           .catch((error) => setBrowserOpenError(error instanceof Error ? error.message : String(error)));
                       }}
                     >
-                      <Globe2 size={14} /> {browserTabOpen ? "브라우저 탭으로 이동" : "브라우저 탭 열기"}
+                      <Globe2 size={14} /> {browserTabOpen ? "브라우저 탭으로 이동" : "브라우저 탭 보기"}
                     </button>
                     <button
                       type="button"
@@ -349,10 +352,12 @@ export function Panel(props: PanelProps) {
 
       {browserOpenError && view && <div className="wb-browser-error" role="alert">{browserOpenError}</div>}
 
-      {dock && <SubagentDock view={dock} onToggle={onToggleSubDock} onOpen={onOpenSub} />}
+      {dock && !inlineBrowser && <SubagentDock view={dock} onToggle={onToggleSubDock} onOpen={onOpenSub} />}
 
       {browserOwner && browserMember ? (
-        <BrowserPane key={`${browserOwner.member.partyId}:${browserMember}`} partyId={browserOwner.member.partyId || ""} member={browserMember} canMerge={!panel.tabs.includes(browserMember)} />
+        <BrowserPane key={`${browserOwner.member.partyId}:${browserMember}`} partyId={browserOwner.member.partyId || ""} member={browserMember} detached />
+      ) : inlineBrowser && view ? (
+        <BrowserPane key={`${view.member.partyId}:${view.name}`} partyId={view.member.partyId || ""} member={view.name} detached={false} />
       ) : view && cliOwned ? (
         <div className="wb-external-cli-state" role="status">
           <SquareTerminal size={28} />

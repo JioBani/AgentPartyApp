@@ -1,9 +1,9 @@
 /** One browser belongs to one party member. The browser profile is ephemeral in the MVP. */
 export const BROWSER_MEMBER_ACTIONS = [
-  "state", "tab", "open", "merge", "back", "forward", "reload",
+  "state", "tab", "open", "detach", "merge", "back", "forward", "reload",
   "snapshot", "screenshot", "click", "type", "scroll", "close",
 ] as const;
-export type BrowserActionName = typeof BROWSER_MEMBER_ACTIONS[number] | "show" | "hide";
+export type BrowserActionName = typeof BROWSER_MEMBER_ACTIONS[number] | "show" | "hide" | "view" | "chat";
 
 export interface BrowserActionInput {
   action: BrowserActionName;
@@ -15,11 +15,12 @@ export interface BrowserActionInput {
   bounds?: { x: number; y: number; width: number; height: number };
 }
 
-/** A navigation may create a tab without taking focus from an existing chat. */
-export interface BrowserOpenRequest {
+/** An explicit UI view switch targets one window; navigation never requests it. */
+export interface BrowserViewRequest {
   partyId: string;
   member: string;
-  focusExisting: boolean;
+  mode: "browser" | "chat";
+  windowId?: string;
 }
 
 export interface BrowserState {

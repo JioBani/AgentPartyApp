@@ -20,7 +20,7 @@ import type { DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentReport } from "../../shared/environment";
 import { probeEnvironment, probeNativeCliAuthentication, runEnvironmentRepair, setMockEnvironmentReport, type EnvironmentRepairResult } from "../environmentService";
 import { GALLERY_ENVIRONMENT_REPORT } from "../../shared/environmentGallery";
-import { EMPTY_LAYOUT, mergeBrowserTabIntoMember, openMemberTab, type WorkbenchLayout } from "../../shared/workbenchLayout";
+import { EMPTY_LAYOUT, mergeBrowserTabIntoMember, openBrowserTab, openMemberTab, type WorkbenchLayout } from "../../shared/workbenchLayout";
 import type { CodexPolicy } from "../../shared/codexPolicy";
 import type { CursorPolicy } from "../../shared/cursorPolicy";
 import { permissionDiscoveryFor } from "../../shared/permissionDiscovery";
@@ -273,12 +273,21 @@ export class AppController {
     if (!listing.members.some((entry) => entry.partyId === partyId && entry.name === member)) {
       throw new Error(`Member '${member}' does not exist in party '${partyId}'.`);
     }
+    if (input.action === "detach") {
+      const layout = await this.partyEngine(workspacePath).getPartyLayout(partyId);
+      const detached = openBrowserTab(layout ?? EMPTY_LAYOUT, member);
+      await this.deps.browser.action(partyId, member, { action: "tab" }, windowId);
+      await this.setPartyLayoutForParty(workspacePath, partyId, detached);
+      return this.deps.browser.action(partyId, member, { action: "state" }, windowId);
+    }
     if (input.action === "merge") {
       const layout = await this.partyEngine(workspacePath).getPartyLayout(partyId);
       const merged = layout && mergeBrowserTabIntoMember(layout, member);
       if (!merged) throw new Error(`Browser tab for '${member}' is not open.`);
       await this.setPartyLayoutForParty(workspacePath, partyId, merged);
-      return this.deps.browser.action(partyId, member, { action: "state" }, windowId);
+      // A toolbar click returns to the same member tab with its browser on
+      // show. A member MCP merge has no window target, so it cannot steal one.
+      return this.deps.browser.action(partyId, member, { action: windowId ? "view" : "state" }, windowId);
     }
     return this.deps.browser.action(partyId, member, input, windowId);
   }

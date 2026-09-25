@@ -13,7 +13,7 @@ import type { GuideHostApi } from "../shared/guideHost";
 import type { TranscriptBlock } from "../shared/transcript";
 import type { TranscriptSnapshot } from "../shared/sessionEventStream";
 import type { SshConnectAttempt, SshDeleteResult, SshFieldError, SshKeyInspection, SshRemoteDirectoryResult, SshRemotePathCheck, SshRemotePathSuggestions, SshServerDraft, SshServerView } from "../shared/sshServers";
-import type { BrowserActionInput, BrowserActionResult, BrowserOpenRequest, BrowserState } from "../shared/browserControl";
+import type { BrowserActionInput, BrowserActionResult, BrowserViewRequest, BrowserState } from "../shared/browserControl";
 
 const appearanceBoot = parseAppearanceBootArgs(process.argv)
   || ipcRenderer.sendSync("appearance:boot");
@@ -161,10 +161,10 @@ const api = {
     ipcRenderer.on("browser:state", listener);
     return () => { ipcRenderer.off("browser:state", listener); };
   },
-  onBrowserOpenRequested: (callback: (target: BrowserOpenRequest) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, target: BrowserOpenRequest) => callback(target);
-    ipcRenderer.on("browser:openRequested", listener);
-    return () => { ipcRenderer.off("browser:openRequested", listener); };
+  onBrowserViewRequested: (callback: (target: BrowserViewRequest) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, target: BrowserViewRequest) => callback(target);
+    ipcRenderer.on("browser:viewRequested", listener);
+    return () => { ipcRenderer.off("browser:viewRequested", listener); };
   },
   reconnectMcpServer: (sessionId: string, server: string) => ipcRenderer.invoke("session:mcpReconnect", sessionId, server),
   setMcpServerEnabled: (sessionId: string, server: string, enabled: boolean) => ipcRenderer.invoke("session:mcpToggle", sessionId, server, enabled),

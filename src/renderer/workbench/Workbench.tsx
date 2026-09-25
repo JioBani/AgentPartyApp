@@ -290,6 +290,9 @@ export function Workbench(props: WorkbenchProps) {
   usePublishModelRoutes(routes);
 
   const [layout, setLayout] = useState<LayoutState>(emptyLayout);
+  /** A window's choice of chat or browser inside each member tab. Only detached
+   *  browser tabs belong in the persisted party layout. */
+  const [inlineBrowserMembers, setInlineBrowserMembers] = useState<Set<string>>(() => new Set());
   /**
    * The party whose MEMBER LIST has actually loaded when we seeded the layout.
    * Workbench can mount before the party state arrives (views=[]); seeding,
@@ -444,10 +447,20 @@ export function Workbench(props: WorkbenchProps) {
     });
   }, [validTabs]);
 
-  // UI menu and member MCP both announce browser tabs through the same action.
-  useEffect(() => window.agentParty.onBrowserOpenRequested(({ partyId, member, focusExisting }) => {
+  // Navigation and member browser tools never change the visible tab. Only an
+  // explicit view action from this window can switch chat and browser.
+  useEffect(() => window.agentParty.onBrowserViewRequested(({ partyId, member, mode }) => {
     if (partyId === partyKey && validMembers.has(member)) {
-      setLayout((current) => openBrowserTab(current, member, focusExisting));
+      const key = `${partyId}\0${member}`;
+      setInlineBrowserMembers((current) => {
+        const next = new Set(current);
+        if (mode === "browser") next.add(key);
+        else next.delete(key);
+        return next;
+      });
+      setLayout((current) => mode === "browser" && current.panels.some((panel) => panel.tabs.includes(browserTabId(member)))
+        ? openBrowserTab(current, member)
+        : openMember(current, member));
     }
   }), [partyKey, validMembers]);
 
@@ -786,6 +799,7 @@ export function Workbench(props: WorkbenchProps) {
         views={viewMap}
         focused={panel.id === layout.focusedPanelId}
         browserTabOpen={layout.panels.some((item) => item.tabs.includes(browserTabId(panel.active)))}
+        inlineBrowserShown={inlineBrowserMembers.has(`${partyKey}\0${panel.active}`)}
         draggingMember={drag?.member ?? null}
         // The middle of the panel means "join this group"; an edge means "split
         // here", and the two must not light up at once.
