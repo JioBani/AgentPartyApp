@@ -35,7 +35,8 @@ async function load(entry, name) {
 }
 
 const { PartyApplicationService } = await load("src/main/application/partyApplicationService.ts", "party-svc.mjs");
-const { adaptPartyPrimerForCodex, buildCodexPartyCoreInstructions, buildCodexPartyDynamicToolSpecs, buildPartyDynamicToolSpec, buildPartyToolDefs, buildPartyPrimer, codexPartyCoreToolNameOf, invokePartyTool, PARTY_CODEX_CORE_TOOL_ALIASES, PARTY_CORE_TOOL_NAMES, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } = await load("src/core/partyBridge.ts", "party-bridge.mjs");
+const { reviewGateMessage } = await load("src/core/messageGateReviewer.ts", "gate-reviewer.mjs");
+const { adaptPartyPrimerForCodex, buildCodexPartyCoreInstructions, buildCodexPartyDynamicToolSpecs, buildPartyDynamicToolSpec, buildPartyMcpToolSpecs, buildPartyToolDefs, buildPartyPrimer, codexPartyCoreToolNameOf, invokePartyTool, PARTY_CODEX_CORE_TOOL_ALIASES, PARTY_CORE_TOOL_NAMES, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } = await load("src/core/partyBridge.ts", "party-bridge.mjs");
 const sdk = await import("@anthropic-ai/claude-agent-sdk");
 
 // --- Fake SessionManager: captures bindings, never spawns a real session ------
@@ -52,6 +53,8 @@ let seq = 0;
 // continuity (resume the harness thread) can be asserted. A session's harness
 // thread id is deterministic (`thread-<sessionId>`).
 const resumedWith = [];
+const gateBadges = [];
+const gateReviews = [];
 const sessionManager = {
   // The service subscribes to session events (it records a member's harness
   // thread as soon as a turn commits, #19). This fake emits nothing, so the
@@ -87,6 +90,8 @@ const sessionManager = {
   isCompacting(id) { return this.compacting.has(id); },
   listSessions() { return [...live].map((id) => ({ id, title: "t", workspace, snapshot: snapshots.get(id) || {} })); },
   notifyPartyChanged() { notifyCount += 1; },
+  emitGateBadge(id, gate) { gateBadges.push({ id, gate }); },
+  recordGateReview(_workspace, review) { gateReviews.push(review); },
   // Live codex catalog: discovered, so list-models must expose it per-harness.
   getCodexModelState() {
     return { status: "ready", models: [{ model: "gpt-5.5", displayName: "GPT-5.5", isDefault: true, hidden: false, defaultReasoningEffort: "medium", reasoningEfforts: [{ id: "low" }, { id: "medium" }, { id: "high" }, { id: "xhigh" }], serviceTiers: [{ id: "priority", name: "Fast", description: "QA Fast tier" }] }] };
@@ -377,7 +382,33 @@ assert(PARTY_MCP_SERVER === "agentparty-app", "MCP server name is agentparty-app
 assert(PARTY_TOOL_PREFIX === "mcp__agentparty-app__", "namespaced tool prefix matches");
 const defs = buildPartyToolDefs(sdk.tool, bridge, mainBinding.identity);
 const toolNames = defs.map((d) => d.name);
-assert(JSON.stringify(toolNames) === JSON.stringify(PARTY_TOOL_NAMES), "in-process MCP exposes every canonical party tool in order");
+assert(JSON.stringify(toolNames) === JSON.stringify(buildPartyMcpToolSpecs().map((item) => item.name)), "in-process MCP exposes the default party tools in order");
+assert(JSON.stringify(buildPartyToolDefs(sdk.tool, bridge, mainBinding.identity, true).map((item) => item.name)) === JSON.stringify(PARTY_TOOL_NAMES), "enabled Jev MCP appends every canonical party tool in order");
+const jevTool = buildPartyMcpToolSpecs(true).find((item) => item.name === "jev-decide");
+const jevVariants = jevTool?.inputSchema?.properties?.questions?.additionalProperties?.oneOf;
+assert(Array.isArray(jevVariants) && jevVariants.length === 3 && jevVariants.every((variant) => typeof variant.description === "string" && variant.description.length > 30), "Jev MCP schema explains Choice, Noul, and Score separately");
+assert(jevVariants.find((variant) => variant.properties?.type?.enum?.[0] === "noul")?.required?.includes("criteria") === false, "Jev MCP schema marks Noul criteria optional");
+const gateReviewerSchema = buildPartyMcpToolSpecs(true).find((item) => item.name === "party-gate-set")?.inputSchema?.properties?.reviewer;
+assert(gateReviewerSchema?.properties?.provider?.type === "string", "Message Gate MCP schema accepts an explicit Jev provider");
+const jevGateReviewer = { model: "jev", effort: "none", provider: "openrouter" };
+const gateMessage = { senderRules: "Include APPLE", recipientRules: "Be concise", from: "main", to: "buddy", content: "APPLE" };
+async function jevGateChoice(send, recv) {
+  return reviewGateMessage(gateMessage, jevGateReviewer, { jevDecide: async (request) => {
+    assert(request.provider === "openrouter" && request.questions.send_complies.type === "choice" && Object.keys(request.questions.send_complies.criteria).join() === "allow,reject,undecidable", "Jev gate sends three explicit options to the selected provider");
+    return { provider: "openrouter", model: "jev", answers: { send_complies: { choice: send }, recv_complies: { choice: recv } }, usage: { inputTokens: 4, outputTokens: 2 } };
+  } });
+}
+assert((await jevGateChoice("allow", "allow")).verdict === "allow", "Jev gate allows two passing rules");
+assert((await jevGateChoice("allow", "undecidable")).verdict === "undecidable", "Jev gate preserves an undecidable result");
+assert((await jevGateChoice("reject", "undecidable")).verdict === "reject", "Jev gate blocks a clear violation even when another rule is undecidable");
+let legacyProviderWasOmitted = false;
+await reviewGateMessage({ senderRules: "Be clear", from: "main", to: "buddy", content: "Clear" }, { model: "jev", effort: "none" }, {
+  jevDecide: async (request) => {
+    legacyProviderWasOmitted = request.provider === undefined;
+    return { provider: "openrouter", model: "jev", answers: { send_complies: { choice: "allow" } }, usage: {} };
+  },
+});
+assert(legacyProviderWasOmitted, "older Jev gate reviewers without a provider still use the app default");
 // Re-create a target so the send tool delivers, then invoke the real handler.
 await bridge.createMember({ name: "buddy", role: "r", harness: "claude-code" });
 const sendTool = defs.find((d) => d.name === "send");
@@ -567,6 +598,22 @@ assert(!live.has(beforeSession), "respawn closed the previous session (old app s
 assert(live.has(afterSession), "the reloaded session is live");
 assert(resumedWith.includes(beforeThread), "respawn RESUMES the old harness thread (conversation continues, not a fresh chat)");
 assert(svc.list().members.find((m) => m.name === "respawner")?.harnessSessionId === beforeThread, "the live harness thread id was captured onto the member before teardown");
+
+// The reviewer classifier test above proves the Jev result mapping. This
+// exercises the service's delivery decision with a completed undecidable result.
+const undecidableWorkspace = mkdtempSync(path.join(os.tmpdir(), "agentparty-gate-undecidable-"));
+const undecidableSvc = new PartyApplicationService({
+  sessionManager,
+  getWorkspacePath: () => undecidableWorkspace,
+  reviewGate: async () => ({ verdict: "undecidable", reason: "Jev could not determine compliance." }),
+});
+const undecidableParty = undecidableSvc.createParty({ name: "undecidable gate" }).currentPartyId;
+undecidableSvc.createMember({ name: "peer", partyId: undecidableParty });
+undecidableSvc.startMember("peer", {}, {}, undecidableParty);
+undecidableSvc.setPartyGate(undecidableParty, { enabled: true, rule: "Be clear.", reviewer: jevGateReviewer });
+const undecidableSend = await undecidableSvc.sendGatedMessage("peer", "An ambiguous message", "main", undefined, undecidableParty);
+assert(undecidableSend.partyMessage?.delivered === true && /could not determine compliance/.test(undecidableSend.message), "completed undecidable Jev review delivers with a visible notice");
+assert(gateBadges.at(-1)?.gate?.gate === "undecidable" && gateReviews.at(-1)?.verdict === "undecidable", "undecidable delivery has its own sender badge and usage verdict");
 assert(svc.list().members.find((m) => m.name === "respawner")?.model === "sonnet", "respawn preserves the member's persisted config (model)");
 
 // --- member-remove: every member is removable, 'main' included ---------------

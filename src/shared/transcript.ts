@@ -65,7 +65,7 @@ export type TranscriptBlock =
   // A Message Gate outcome for an OUTGOING send by this member (inline badge).
   // rejected = blocked (not delivered) · forced = bypassed the gate · failed =
   // reviewer errored so it was delivered unreviewed (fail-open). UI-only.
-  | { id: string; kind: "gate"; gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: GateScope; violation?: GateViolation; reviewer?: GateReviewer; at?: string }
+  | { id: string; kind: "gate"; gate: "rejected" | "forced" | "failed" | "undecidable"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: GateScope; violation?: GateViolation; reviewer?: GateReviewer; at?: string }
   /**
    * A context compaction, as ONE block that is replaced in place rather than a
    * trail of raw log lines (`compacting` → `compacted: success` → `compact:

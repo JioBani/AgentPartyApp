@@ -58,7 +58,9 @@ import { log } from "../logger";
 import { resolveHarnessOriginal, type HarnessOriginal } from "../harnessOriginal";
 import { cliContinuationTarget } from "../../shared/cliContinuation";
 import { PartyRepository, StoredPartyState } from "../partyRepository";
-import { getSettings } from "../settings";
+import { getSettings, updateSettings } from "../settings";
+import { decideJev, jevProviders } from "../jevService";
+import { isJevProviderId } from "../../shared/jev";
 import { applyEvents, buildTranscriptSave } from "../../shared/transcriptEvents";
 import type { TranscriptBlock } from "../../shared/transcript";
 import {
@@ -80,7 +82,7 @@ import {
   type WorkbenchLayout,
 } from "../../shared/workbenchLayout";
 import type { SessionManager, SessionPartyBinding } from "../sessionManager";
-import { invokePartyTool, type PartyBridge, type PartyModelQuery, type PartyToolResult } from "../../core/partyBridge";
+import { invokePartyTool, JEV_PARTY_TOOL_NAMES, partyToolNameOf, type PartyBridge, type PartyModelQuery, type PartyToolResult } from "../../core/partyBridge";
 import { IMAGE_MEDIA_TYPES, readImageFile } from "../../core/imageFile";
 import type { CodexModelDiscoveryState } from "../../shared/codexModels";
 import type { MuseModelDiscoveryState } from "../../shared/museModels";
@@ -2589,6 +2591,7 @@ export class PartyApplicationService {
             partyId: targetPartyId,
             member: sender.name,
             model: plan.reviewer.model,
+            provider: plan.reviewer.model.toLowerCase() === "jev" ? (plan.reviewer.provider || getSettings().jevDefaultProvider) : undefined,
             failure: { layer: classifyGateFailure(error), detail },
           });
           this.emitGateBadge(sender, { gate: "failed", to: target.name, from: sender.name, reason: detail, errcode: "reviewer_error", scope: plan.scope, reviewer: plan.reviewer });
@@ -2616,6 +2619,8 @@ export class PartyApplicationService {
           model: plan.reviewer.model,
           verdict: verdict.verdict,
           usage: verdict.usage,
+          costUsd: verdict.costUsd,
+          provider: verdict.provider,
         });
         if (verdict.verdict === "reject") {
           // RE-READ. `state` was parsed BEFORE the review, and a review is a
@@ -2653,6 +2658,12 @@ export class PartyApplicationService {
           log("info", "party", "message gate rejected", { workspace, partyId: targetPartyId, from: sender.name, to: freshTarget.name, scope: plan.scope, violation: verdict.violation ?? plan.scope, reviewer: plan.reviewer.model });
           return { ...this.result(`Message to '${freshTarget.name}' was rejected by the message gate.`, fresh, freshTarget), partyMessage: message };
         }
+        if (verdict.verdict === "undecidable") {
+          this.emitGateBadge(sender, { gate: "undecidable", to: target.name, from: sender.name, reason: verdict.reason, scope: plan.scope, reviewer: plan.reviewer });
+          log("info", "party", "message gate undecidable (delivery proceeds)", { workspace, partyId: targetPartyId, from: sender.name, to: target.name, scope: plan.scope, reviewer: plan.reviewer.model, provider: verdict.provider });
+          const delivered = this.sendMessage(to, content, from, attachments, partyId, { interrupt: options?.interrupt });
+          return { ...delivered, message: `${delivered.message} Message gate could not determine compliance; delivery proceeded.` };
+        }
         // allow → fall through to delivery.
       } else if (plan.active && options?.force) {
         this.emitGateBadge(sender, { gate: "forced", to: target.name, from: sender.name, reason: options.forceReason, scope: plan.scope });
@@ -2670,7 +2681,7 @@ export class PartyApplicationService {
   /** Surfaces a Message Gate outcome as an inline badge in the SENDER's transcript (UI-only). */
   private emitGateBadge(
     sender: PartyMember,
-    gate: { gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: "send" | "recv" | "both"; violation?: "send" | "recv" | "both"; reviewer?: GateReviewer },
+    gate: { gate: "rejected" | "forced" | "failed" | "undecidable"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: "send" | "recv" | "both"; violation?: "send" | "recv" | "both"; reviewer?: GateReviewer },
   ): void {
     if (sender.sessionId && this.deps.sessionManager.hasSession(sender.sessionId)) {
       this.deps.sessionManager.emitGateBadge(sender.sessionId, gate);
@@ -3239,6 +3250,7 @@ export class PartyApplicationService {
     const binding: SessionPartyBinding = {
       bridge: this.partyBridgeFor(this.partyIdOf(member), member.name, member.location),
       identity: { party: this.partyIdOf(member), member: member.name, role: member.role },
+      jevMcpEnabled: getSettings().jevMcpEnabled,
     };
     // Resume the harness's own thread when we have one, so reopening the member
     // (or the app) continues the conversation with its model context intact.
@@ -3524,6 +3536,10 @@ export class PartyApplicationService {
    * harnesses now go through it and there is no second copy to drift.
    */
   async invokePartyToolAs(member: string, tool: string, args: unknown, partyId?: string): Promise<PartyToolResult> {
+    const canonicalTool = partyToolNameOf(tool);
+    if (canonicalTool && JEV_PARTY_TOOL_NAMES.includes(canonicalTool) && !getSettings().jevMcpEnabled) {
+      return { ok: false, error: "Jev MCP tools are disabled in app settings." };
+    }
     const state = this.repository.read(this.workspacePath());
     const caller = state.members.find((m) => m.name === member && (!partyId || m.partyId === partyId));
     if (!caller) {
@@ -3535,7 +3551,35 @@ export class PartyApplicationService {
 
   private partyBridgeFor(party: string, selfMember: string, selfLocation?: string): PartyBridge {
     const notify = () => this.deps.sessionManager.notifyPartyChanged(this.workspacePath());
+    // In-process MCP handlers call this bridge directly, bypassing
+    // invokePartyToolAs. Check the live toggle here as well as at the relay.
     return {
+      jevProviders: async () => getSettings().jevMcpEnabled
+        ? { ok: true, data: jevProviders() }
+        : { ok: false, error: "Jev MCP tools are disabled in app settings." },
+      jevSetDefault: async (provider) => {
+        if (!getSettings().jevMcpEnabled) return { ok: false, error: "Jev MCP tools are disabled in app settings." };
+        if (!isJevProviderId(provider)) return { ok: false, error: `Unknown Jev provider '${provider}'.` };
+        updateSettings({ jevDefaultProvider: provider });
+        this.deps.sessionManager.notifySettingsChanged();
+        return { ok: true, data: jevProviders() };
+      },
+      jevDecide: async (request) => {
+        if (!getSettings().jevMcpEnabled) return { ok: false, error: "Jev MCP tools are disabled in app settings." };
+        try {
+          const result = await decideJev(request);
+          this.deps.sessionManager.recordJevDecision(this.workspacePath(), {
+            partyId: party,
+            member: selfMember,
+            provider: result.provider,
+            model: result.model,
+            usage: result.usage,
+          });
+          return { ok: true, data: result };
+        } catch (error) {
+          return { ok: false, error: errorMessage(error) };
+        }
+      },
       send: async (from, to, content, interrupt, force, forceReason) => {
         try {
           const result = await this.sendGatedMessage(to, content, from || selfMember, undefined, party, { interrupt, force, forceReason });

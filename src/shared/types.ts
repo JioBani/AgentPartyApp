@@ -124,6 +124,10 @@ export interface AppSettings {
   routerBaseUrl: string;
   routerAuthToken: string;
   openRouterApiKey: string;
+  /** App-wide Jev provider used when a call does not select one. */
+  jevDefaultProvider: string;
+  /** Whether Jev tools are discoverable and callable from member MCP sessions. */
+  jevMcpEnabled: boolean;
   /** DeepSeek official API key (DEEPSEEK_API_KEY). Used by provider "deepseek" models. */
   deepseekApiKey: string;
   /** B.AI unified API key (BAI_API_KEY). Used by provider "bai" models. */
@@ -703,6 +707,7 @@ export interface CreateSessionInput {
 export interface HostedPartySessionBinding {
   ownerWorkspace: string;
   identity: PartyIdentity;
+  jevMcpEnabled?: boolean;
 }
 
 export interface WindowInfo {

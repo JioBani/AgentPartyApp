@@ -48,6 +48,8 @@ export const initialState: InitialAppState = {
     routerBaseUrl: "http://127.0.0.1:3455",
     routerAuthToken: "dummy",
     openRouterApiKey: "",
+    jevDefaultProvider: "openrouter",
+    jevMcpEnabled: false,
     deepseekApiKey: "",
     baiApiKey: "",
     automationApiPort: 47831,

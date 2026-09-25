@@ -15,7 +15,7 @@ import type { TurnUsage } from "./costing";
 import { addCodexUsage, codexTokenBreakdown, normalizeCodexUsage } from "./codexUsage";
 import { imageContentResult } from "./imageFile";
 import type { PartyBridge, PartyIdentity } from "./partyBridge";
-import { adaptPartyPrimerForCodex, buildCodexPartyCoreInstructions, buildCodexPartyDynamicToolSpecs, buildPartyPrimer, codexPartyCoreToolNameOf, invokePartyTool, partyToolNameOf, PARTY_CORE_TOOL_NAMES, PARTY_MCP_SERVER, PARTY_TOOL_NAMES, PARTY_TOOL_PREFIX } from "./partyBridge";
+import { adaptPartyPrimerForCodex, buildCodexPartyCoreInstructions, buildCodexPartyDynamicToolSpecs, buildPartyMcpToolSpecs, buildPartyPrimer, codexPartyCoreToolNameOf, invokePartyTool, partyToolNameOf, PARTY_CORE_TOOL_NAMES, PARTY_MCP_SERVER, PARTY_TOOL_PREFIX } from "./partyBridge";
 import type { CodexPolicy, SandboxMode } from "../shared/codexPolicy";
 import { codexPolicyFromPermissionMode } from "../shared/codexPolicy";
 import {
@@ -81,6 +81,7 @@ export interface CodexAdapterOptions {
   usageSourceId?: string;
   partyBridge?: PartyBridge;
   partyIdentity?: PartyIdentity;
+  partyJevEnabled?: boolean;
   /**
    * The primer text for this member, already resolved against the user's
    * Settings → 파티 프롬프트 customization. Absent = the built-in primer.
@@ -583,7 +584,7 @@ export class CodexAdapter extends EventEmitter {
       transport: "unknown",
       scope: "session",
       version: "0.1.0",
-      tools: PARTY_TOOL_NAMES.map((name) => ({ name: `${PARTY_TOOL_PREFIX}${name}` })),
+      tools: buildPartyMcpToolSpecs(this.options.partyJevEnabled).map(({ name }) => ({ name: `${PARTY_TOOL_PREFIX}${name}` })),
       canReconnect: false,
       canToggle: false,
       canAuthenticate: false,
@@ -921,7 +922,7 @@ export class CodexAdapter extends EventEmitter {
 
   private partyDynamicTools(): ReturnType<typeof buildCodexPartyDynamicToolSpecs> | undefined {
     return this.options.partyBridge && this.options.partyIdentity
-      ? buildCodexPartyDynamicToolSpecs()
+      ? buildCodexPartyDynamicToolSpecs(this.options.partyJevEnabled)
       : undefined;
   }
 

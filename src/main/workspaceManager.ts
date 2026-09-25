@@ -4,6 +4,7 @@ import type { SessionManager } from "./sessionManager";
 import { getSettings } from "./settings";
 import { subscriptionProxyConfig } from "../core/subscriptionProxy";
 import { reviewGateMessage, type GateReviewMessage } from "../core/messageGateReviewer";
+import { decideJev } from "./jevService";
 import type { GateReviewer, GateReviewResult } from "../shared/messageGate";
 import type { BrowserActionInput, BrowserActionResult } from "../shared/browserControl";
 
@@ -39,6 +40,7 @@ export class WorkspaceContext {
           routerBaseUrl: sessionManager.routerBaseUrl(),
           routerAuthToken: settings.routerAuthToken,
           subscriptionProxy: subscriptionProxyConfig(),
+          jevDecide: decideJev,
         });
       }),
     });

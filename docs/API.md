@@ -1144,12 +1144,17 @@ gives that. Folds persist across restarts.
 Tidying the list is an explicit write to this endpoint, never a side effect of
 opening a screen.
 
-`gateDefaults` is the **Message Gate** reviewer default — `{ "model", "effort", "serviceTier"? }`
+`gateDefaults` is the **Message Gate** reviewer default — `{ "model", "effort", "serviceTier"?, "provider"? }`
 only (NO harness; the reviewer runs headless). Any gate-on member that has not
 set its own reviewer uses this. Recommended: a cheap/fast model, e.g.
 `{ "gateDefaults": { "model": "GPT-5.6 Terra", "effort": "low" } }` — the
 built-in default, picked on measured accuracy rather than price. See the Message
 Gate endpoints below.
+
+For Jev Decisions, use `{ "gateDefaults": { "model": "jev", "effort": "none", "provider": "openrouter" } }`.
+`provider` selects a Jev provider listed by `GET /api/jev/providers`; omit it to
+follow the app-wide Jev default. The Message Gate UI has a separate **Use Jev**
+switch and provider selector. Jev does not appear in the ordinary model catalog.
 
 Example:
 
@@ -1363,6 +1368,92 @@ Clears the stored OpenRouter API key.
 ### `POST /api/auth/openrouter/test`
 
 Calls OpenRouter's model endpoint to verify the configured key.
+
+### Jev Decisions gateway
+
+The app keeps the provider credential and exposes Jev as a single-call local API.
+Jev is a Decisions model, not a member chat model. Its input is `state` (a
+string, JSON object, or related-context array) and a non-empty `questions`
+object. Each question has `type` and `instructions`; `criteria` is required for
+`choice` and `score`, and optional for `noul`. Multiple questions about the same
+state fit in one paid call.
+For separate records, write a script that makes one call per record with the
+concurrency you choose. The app does not offer a batch job or source-file
+adapter. The OpenRouter Decisions request and response are documented in the
+[provider API](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request).
+
+| Question type | Ask it when | `criteria` | Answer |
+| --- | --- | --- | --- |
+| `choice` | Exactly one named option should be selected, such as a job family or one company from a candidate list. | Object mapping 2–255 option IDs to descriptions. Include `none` when the list may not contain the answer. | `choice` is the selected ID; `probabilities` covers every option; `confidence` summarizes how concentrated they are. |
+| `noul` | One proposition has a yes/no answer, such as “Can someone with three years' experience apply?” | Optional object with `true` and `false` descriptions to clarify the boundary. | `noul` is the probability of **yes** from 0 to 1. Near 0 means no, near 1 means yes, and near 0.5 is uncertain. It is not a degree or score and has no separate `confidence`. |
+| `score` | The answer lies on an ordered scale, such as required seniority or severity. | Array of 2–10 level descriptions ordered low to high. | `score` is a weighted position from level 0 to level N−1 and may fall between levels; `probabilities` and `confidence` are also returned. |
+
+The caller chooses thresholds and how to handle uncertain answers. See the
+[TypeSafe question guide](https://docs.typesafe.ai/primitives) for the provider's
+full semantics.
+
+`GET /api/jev/providers` returns `{ defaultProvider, providers }`. Each provider
+entry reports `id`, `label`, `configured`, `available`, and `model`. Currently
+`openrouter` is the only provider. `POST /api/jev/providers/default` accepts
+`{"provider":"openrouter"}` and sets the app-wide default. Calls can pass a
+`provider` per request without changing that setting. An unavailable selected
+provider produces an error; no other provider is tried silently.
+
+`POST /api/jev/decisions` makes exactly one provider call:
+
+```json
+{
+  "provider": "openrouter",
+  "state": { "posting": "Backend engineer, 3+ years of experience" },
+  "questions": {
+    "job_family": {
+      "type": "choice",
+      "instructions": "Which job family is this posting?",
+      "criteria": { "backend": "Backend software engineering", "frontend": "Frontend software engineering", "other": "Other" }
+    },
+    "three_years": {
+      "type": "noul",
+      "instructions": "Can a candidate with three years of experience apply?",
+      "criteria": { "true": "Eligible with three years", "false": "Not eligible with three years" }
+    },
+    "seniority": {
+      "type": "score",
+      "instructions": "What is the required experience level?",
+      "criteria": ["Entry level", "Around three years", "Senior, five years or more"]
+    }
+  }
+}
+```
+
+The response contains `provider`, actual `model`, optional provider request
+`id`, `answers` keyed by question ID, and `usage` with any reported
+`inputTokens`, `outputTokens`, and `costUsd`. The reported cost is also recorded
+in the Token Usage ledger as `jev-decision`. The API performs no probability
+thresholding or label interpretation; callers choose those rules.
+
+Settings `jevDefaultProvider` and `jevMcpEnabled` are persisted via
+`POST /api/settings`. `jevMcpEnabled` defaults to `false` for existing and new
+installs. It affects member MCP exposure only; the local API and Message Gate
+can still use Jev. Member sessions started after a toggle read the updated MCP
+tool catalog.
+
+When enabled, member MCP exposes `jev-providers`, `jev-default-provider`,
+`jev-decide`, and `jev-decide-file`. The first two list providers and change
+the app-wide default. `jev-decide` returns the complete response. The file tool
+accepts the same decision request plus an absolute `path` on the member's
+execution host and optional `overwrite` (default `false`). It writes the full
+response as JSON and returns path, model, provider, question count, and usage.
+If the provider answered but writing fails, the tool returns an error **and**
+the complete answer so the paid result is not lost. Existing files are not
+replaced unless `overwrite:true` is passed.
+
+The Message Gate model picker also offers `Jev` as a gate-only reviewer. It
+sends one `noul` compliance question for each active sender/recipient rule
+family, rejects when a compliance probability is below `0.5`, and reports the
+violated axis with a deterministic correction message. Jev has no reasoning
+effort or service tier option. Gate calls are recorded as `gate-review` with
+provider-reported usage and cost; invalid/missing probabilities follow the
+gate's existing visible fail-open error path.
 
 When `AGENTPARTY_E2E=1`, this endpoint returns a mocked verification result and does not call OpenRouter.
 
@@ -2663,11 +2754,19 @@ fail-open: the message is delivered unreviewed with a visible notice. A human
 independently because every recipient may have a different receive rule; one
 rejection does not stop the other deliveries.
 
+With Jev as reviewer, each active rule axis is a three-option Decisions
+`choice`: `allow`, `reject`, or `undecidable`. Any clear rejection blocks the
+message. If no axis rejects and at least one is undecidable, the message is
+delivered with a **판정 불가** badge and a `gate-review` ledger verdict of
+`undecidable`. This is a completed Jev decision, distinct from a transport or
+parsing failure. Existing Jev reviewers without `provider` continue to use the
+app-wide Jev default; no stored gate setting needs migration.
+
 When both axes specify a reviewer, an explicit receive reviewer wins, followed
 by an explicit send reviewer, then `gateDefaults`. An unset axis reviewer does
 not suppress an explicit reviewer on the other axis. Gate transcript events
 record `scope` (`send|recv|both`), rejection `violation`, and the actual
-`reviewer` (`model` + `effort` + optional concrete `serviceTier`). Legacy events
+`reviewer` (`model` + `effort` + optional concrete `serviceTier` or Jev `provider`). Legacy events
 omit these optional fields.
 
 For a **member-originated** message, omitting `interrupt` uses the sender's
@@ -2684,12 +2783,14 @@ silently disabling the user's setting while preserving explicit queueing through
 when the message arrives: an idle, sleeping, or unstarted recipient is sent to,
 woken, or started normally and is never immediately stopped.
 
-The reviewer's `effort` reaches the model differently per provider — `thinking`
+For chat reviewers, `effort` reaches the model differently per provider — `thinking`
 for Anthropic (which rejects `effort` outright), `effort` for router-backed
 models — and reasoning is never disabled, because a classifier that cannot
 reason rejects compliant messages. This behaves identically for local and WSL
 workspaces; for WSL the reviewer call runs on the desktop while the gate
-decision stays in the distro's engine.
+decision stays in the distro's engine. Jev is a Decisions reviewer with
+`effort: "none"`; it uses its selected `provider` and a three-option `choice`
+instead of a chat completion.
 When the chosen model exposes a Fast serving tier, `serviceTier` is the concrete
 catalog id (`"standard"`, `"priority"`, `"fast"`, etc.) and is forwarded as
 `service_tier` on the headless request. `"inherit"` is not valid for a gate
@@ -3106,10 +3207,12 @@ agent-facing `gate-set` tool.
 - `mode`: `"inherit"` (follow the party gate) | `"on"` | `"off"`.
 - `rule`: the communication rule the headless reviewer enforces. `null` = inherit
   the party rule.
-- `reviewer`: `{ model, effort, serviceTier? }` for a custom headless reviewer (no harness —
+- `reviewer`: `{ model, effort, serviceTier?, provider? }` for a custom headless reviewer (no harness —
   it runs as a raw completion). `null` = use the settings default
   (`gateDefaults`). `serviceTier`, when supported, must be a concrete catalog
   tier and never `"inherit"`.
+  For Jev use `{ "model": "jev", "effort": "none", "provider": "openrouter" }`.
+  `provider` is Jev-only and can be omitted to follow the app-wide Jev default.
 
 ### `POST /api/parties/:id/gate`
 

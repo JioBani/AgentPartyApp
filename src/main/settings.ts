@@ -75,6 +75,8 @@ const defaults: AppSettings = {
   routerBaseUrl: "",
   routerAuthToken: "dummy",
   openRouterApiKey: process.env.OPENROUTER_API_KEY || "",
+  jevDefaultProvider: "openrouter",
+  jevMcpEnabled: false,
   deepseekApiKey: process.env[DEEPSEEK_API_KEY_ENV] || "",
   baiApiKey: process.env[BAI_API_KEY_ENV] || "",
   automationApiPort: Number(process.env.AGENTPARTY_AUTOMATION_PORT || "") || 0,
@@ -206,6 +208,7 @@ function mergeHarnessDefaults(stored: Partial<Record<HarnessId, HarnessDefaults>
  */
 function normalizeGateDefaults(value: unknown): GateReviewer {
   const reviewer = normalizeGateReviewer(value) || { ...DEFAULT_GATE_REVIEWER };
+  if (reviewer.model.toLowerCase() === "jev") return { model: "jev", effort: "none", ...(reviewer.provider ? { provider: reviewer.provider } : {}) };
   if (!catalogModelById(reviewer.model) && !catalogModelByRuntime(reviewer.model)) {
     return { ...reviewer, model: DEFAULT_GATE_REVIEWER.model };
   }
@@ -260,7 +263,7 @@ function sanitizeSettings(settings: AppSettings): AppSettings {
   // start with a prompt the settings screen would not show.
   const partyPrimer = normalizePartyPrimerSettings(withRuntimeOverrides.partyPrimer);
   const sidebarDrawers = normalizeSidebarDrawers(withRuntimeOverrides.sidebarDrawers);
-  return { ...withRuntimeOverrides, locale: normalizeAppLocale(withRuntimeOverrides.locale), updateChannel, harnessDefaults, compactDefault, modelAutoCompact, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, favoriteParties, sidebarGroupFolds, discord, theme, fonts, mobile, partyPrimer, sidebarDrawers, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
+  return { ...withRuntimeOverrides, jevDefaultProvider: typeof withRuntimeOverrides.jevDefaultProvider === "string" && withRuntimeOverrides.jevDefaultProvider.trim() ? withRuntimeOverrides.jevDefaultProvider.trim() : "openrouter", jevMcpEnabled: withRuntimeOverrides.jevMcpEnabled === true, locale: normalizeAppLocale(withRuntimeOverrides.locale), updateChannel, harnessDefaults, compactDefault, idleSleep, gateDefaults, composer, memberMessaging, favoriteModels, favoriteParties, sidebarGroupFolds, discord, theme, fonts, mobile, partyPrimer, sidebarDrawers, transcriptFontScale: clampFontScale(withRuntimeOverrides.transcriptFontScale) };
 }
 
 export function getPublicSettings(): AppSettings {

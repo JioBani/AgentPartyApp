@@ -1629,6 +1629,15 @@ export function App() {
     setState((current) => ({ ...current, settings }));
   }
 
+  async function saveJevSettings(patch: { jevMcpEnabled?: boolean; jevDefaultProvider?: string }) {
+    try {
+      const settings = await window.agentParty.updateSettings(patch);
+      setState((current) => ({ ...current, settings }));
+    } catch (error) {
+      noticeOnFailure("Jev 설정을 저장하지 못했습니다.")(error);
+    }
+  }
+
   /**
    * Edits one section of the member primer. Goes through the controller (not a
    * raw settings patch) so the UI and `POST /api/party/primer` share the same
@@ -2358,6 +2367,7 @@ export function App() {
                 defaultProfile={defaultMemberProfileOf(state.settings)}
                 harnessDefaults={state.settings.harnessDefaults}
                 gateDefaults={state.settings.gateDefaults}
+                defaultJevProvider={state.settings.jevDefaultProvider}
                 debugEnabled={state.settings.debugEnabled}
                 drawers={drawers}
                 layoutRequest={layoutRequest}
@@ -2439,6 +2449,7 @@ export function App() {
                   onSaveModelAutoCompact={saveModelAutoCompact}
                   onSaveIdleSleep={saveIdleSleep}
                   onSaveGateDefault={saveGateDefault}
+                  onSaveJevSettings={saveJevSettings}
                   onSavePartyPrimer={savePartyPrimerSection}
                   onTranslatePartyPrimer={translatePartyPrimerSection}
                   onSaveComposer={saveComposerSettings}

@@ -4,6 +4,9 @@ import type { CursorPolicy } from "../shared/cursorPolicy";
 import { MEMBER_EXECUTION_HOSTS, type MemberExecutionLocationRequest } from "../shared/memberLocation";
 import { readImageFile } from "./imageFile";
 import { BROWSER_MEMBER_ACTIONS, type BrowserActionInput } from "../shared/browserControl";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import type { JevDecisionRequest, JevDecisionResult } from "../shared/jev";
 
 // Boundary 2 of the party-communication design (the party-communication design):
 // the seam through which an app-hosted member session reaches the app's party
@@ -129,7 +132,7 @@ export interface PartyGatePatch {
   axis?: "send" | "recv";
   mode?: "inherit" | "on" | "off";
   rule?: string | null;
-  reviewer?: { model: string; effort: string; serviceTier?: string } | null;
+  reviewer?: { model: string; effort: string; serviceTier?: string; provider?: string } | null;
 }
 
 /**
@@ -142,13 +145,18 @@ export interface PartyGateGlobalPatch {
   axis?: "send" | "recv";
   enabled?: boolean;
   rule?: string;
-  reviewer?: { model: string; effort: string; serviceTier?: string } | null;
+  reviewer?: { model: string; effort: string; serviceTier?: string; provider?: string } | null;
 }
 
 // The capability surface a hosted member can drive. Every method routes through
 // the same `AppController`/`PartyApplicationService` path the UI and HTTP use,
 // and resolves to a plain result (never throws) so tool handlers stay trivial.
 export interface PartyBridge {
+  /** Jev provider discovery and app-wide default. */
+  jevProviders(): Promise<PartyToolResult>;
+  jevSetDefault(provider: string): Promise<PartyToolResult>;
+  /** Single paid decision call; no source-format adapter or hidden batching. */
+  jevDecide(request: JevDecisionRequest): Promise<PartyToolResult>;
   /** Fire-and-forget send to another member; errors if target is off/missing.
    *  `interrupt: true` stops the recipient's in-flight turn first so the message
    *  is handled immediately instead of queueing behind it. `force: true` bypasses
@@ -229,6 +237,9 @@ export function partyBridgeFromInvoker(
 ): PartyBridge {
   const hostInvoke = (tool: PartyToolName, args: unknown) => invokePartyToolFromExecutionHost(invoke, tool, args);
   return {
+    jevProviders: () => hostInvoke("jev-providers", {}),
+    jevSetDefault: (provider) => hostInvoke("jev-default-provider", { provider }),
+    jevDecide: (request) => hostInvoke("jev-decide", request),
     send: (_from, to, content, interrupt, force, forceReason) => hostInvoke("send", {
       to,
       content,
@@ -271,6 +282,16 @@ export async function invokePartyToolFromExecutionHost(
   if (!name) return { ok: false, error: `Unknown AgentParty tool '${tool}'.` };
   const input = args && typeof args === "object" && !Array.isArray(args) ? { ...(args as Record<string, unknown>) } : {};
   delete input[PARTY_HOST_IMAGE_FIELD];
+  if (name === "jev-decide-file") {
+    const outputPath = input.path;
+    if (typeof outputPath !== "string" || !path.isAbsolute(outputPath)) {
+      return { ok: false, error: "jev-decide-file requires an absolute path on the member's execution host." };
+    }
+    const { path: _path, overwrite, ...request } = input;
+    const result = await invoke("jev-decide", request);
+    if (!result.ok) return result;
+    return writeJevDecisionFile(outputPath, result.data as JevDecisionResult, overwrite === true);
+  }
   if ((name === "attach-image" || name === "discord-send-image") && typeof input.path === "string" && input.path) {
     try {
       input[PARTY_HOST_IMAGE_FIELD] = readImageFile(input.path);
@@ -281,8 +302,19 @@ export async function invokePartyToolFromExecutionHost(
   return invoke(name, input);
 }
 
-export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "member-runtime", "gate-set", "party-gate-set", "list", "list-locations", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image", "browser"] as const;
+async function writeJevDecisionFile(outputPath: string, result: JevDecisionResult, overwrite: boolean): Promise<PartyToolResult> {
+  try {
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, { encoding: "utf8", flag: overwrite ? "w" : "wx" });
+    return { ok: true, data: { path: outputPath, provider: result.provider, model: result.model, usage: result.usage, questionCount: Object.keys(result.answers).length } };
+  } catch (error) {
+    return { ok: false, error: `Jev answered, but writing '${outputPath}' failed: ${error instanceof Error ? error.message : String(error)}`, data: result };
+  }
+}
+
+export const PARTY_TOOL_NAMES = ["send", "member-create", "member-remove", "member-permission", "member-runtime", "gate-set", "party-gate-set", "list", "list-locations", "list-models", "member-status", "interrupt", "broadcast", "discord-connect", "discord-send", "discord-send-image", "discord-disconnect", "attach-image", "browser", "jev-providers", "jev-default-provider", "jev-decide", "jev-decide-file"] as const;
 export type PartyToolName = (typeof PARTY_TOOL_NAMES)[number];
+export const JEV_PARTY_TOOL_NAMES: readonly PartyToolName[] = ["jev-providers", "jev-default-provider", "jev-decide", "jev-decide-file"];
 
 /**
  * The coordination controls used throughout ordinary party work. Codex gets
@@ -302,13 +334,17 @@ export const PARTY_CODEX_CORE_TOOL_ALIASES = {
 export type PartyCodexCoreToolAlias = keyof typeof PARTY_CODEX_CORE_TOOL_ALIASES;
 
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
+  "jev-providers": "List Jev providers, configuration/availability, and the app-wide default. Jev is a Decisions model, not a member chat model.",
+  "jev-default-provider": "Set the app-wide default Jev provider. This affects calls that omit provider. Use jev-providers first. A call may instead pass provider explicitly without changing this setting.",
+  "jev-decide": "Ask Jev one Decisions request about a state. choice selects ONE named option and returns probabilities; noul answers a yes/no proposition with the probability of YES from 0 to 1 (0.5 is uncertain, not a halfway score); score places the state on ordered levels and may return a value between them. Put multiple independent questions about the same state in one call. Pass provider to override the app default. Returns all answers and measured usage.",
+  "jev-decide-file": "Ask Jev once and write the complete JSON response at an absolute path on YOUR execution host. The tool returns path and usage; an existing file is protected unless overwrite=true. Source files are read by your own script, which can call the local Jev API directly.",
   send: "Send the same message to one or more members of your party. Pass `to` as one member name or an array of names. Batch results separate delivered, queued, and failed recipients. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in, or queue=true to explicitly wait behind the current turn. Legacy interrupt=false is treated as omitted so model-generated false values cannot disable the saved setting.",
   "member-create": "Create and start one or more members. Use the existing top-level fields for one member, or pass `members` as an array of member objects for a batch. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?, server?} to choose Windows, WSL, or SSH explicitly; server is required for SSH. Omit location to inherit your own execution location.",
   "member-remove": "Remove one or more members from your party. Pass `name` as one member name or an array of names.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
   "member-runtime": "Change one other member's model, reasoning effort, and/or Fast mode without changing its harness. Call list-models with the member's harness for valid model ids and effort options. Fast is a boolean: true selects that route's native Fast tier (for example priority on Codex or fast on Cursor), false selects Standard or clears an inapplicable stale tier. Existing conversation is preserved when a session restart is required. A busy target is refused instead of having its turn killed.",
-  "gate-set": "Set one axis of another member's Message Gate. axis: send|recv (omitted = send for compatibility). mode: inherit|on|off. rule: text to enforce (null = inherit the matching party axis). reviewer: {model, effort, serviceTier?} (null = no axis-specific reviewer). Send and receive rules are combined into one review when both apply. Any member may edit any member's gate. The result confirms ruleChars without echoing the rule; use list {name} to inspect it.",
-  "party-gate-set": "Set one PARTY-WIDE Message Gate axis. axis: send|recv (omitted = send for compatibility). enabled, rule, and reviewer patch only that axis; every matching inheriting member follows it. Send and receive rules are combined into one delivery-time review. Prefer gate-set when only one member should change. The result confirms ruleChars without echoing the rule.",
+  "gate-set": "Set one axis of another member's Message Gate. axis: send|recv (omitted = send for compatibility). mode: inherit|on|off. rule: text to enforce (null = inherit the matching party axis). reviewer: {model, effort, serviceTier?} for ordinary models, or {model:'jev', effort:'none', provider?} for Jev Decisions (null = inherit). Jev classifies allow/reject/undecidable; undecidable is delivered. Send and receive rules are combined into one review when both apply. The result confirms ruleChars without echoing the rule; use list {name} to inspect it.",
+  "party-gate-set": "Set one PARTY-WIDE Message Gate axis. axis: send|recv (omitted = send for compatibility). enabled, rule, and reviewer patch only that axis; every matching inheriting member follows it. Use reviewer {model:'jev', effort:'none', provider?} to select Jev Decisions; undecidable messages are delivered. Send and receive rules are combined into one delivery-time review. The result confirms ruleChars without echoing the rule.",
   list: "List compact member summaries and current tabGroups. Pass `name` to inspect one member's full model, permission, location, and Message Gate settings. Full detail for every member is intentionally unavailable because long inherited gate rules would be repeated once per member. Pass a chosen tabGroups[].id to member-create.tabGroup.",
   "list-locations": "List the execution hosts this app supports plus recent and default cwd suggestions. Use a returned host/cwd/distro/server tuple as member-create.location. Entries with problem are shown for diagnostics but must not be used until repaired.",
   "list-models": "Discover available harnesses, models, and reasoning options for member-create. Called with NO arguments it returns a compact index of every model — label, which harnesses run it, and the id to pass to member-create when that id differs from the label. Pass `harness`, `provider`, and/or `query` to get the FULL detail (effort/thinking options, service tier, pricing, context window) for just the matches; that is the cheap way to answer 'what settings does this one model take'. Filters narrow, they never paginate: dropping them always widens back to everything. A filter that matches nothing is an ERROR listing what does exist, never an empty result — so an empty answer never means 'this model is unavailable'. Routes that cannot currently be used are excluded from detail rows but their count is always reported and `includeUnavailable: true` brings them back with the reason.",
@@ -369,7 +405,60 @@ const partyCreateMemberDynamicProperties: Record<string, unknown> = {
   },
 };
 
+const jevQuestionSchema = {
+  oneOf: [
+    {
+      type: "object", description: "Choice: select exactly one of 2 to 255 named options. Returns choice, probabilities for every option, and confidence.",
+      properties: {
+        type: { type: "string", enum: ["choice"] },
+        instructions: { type: "string", minLength: 1, description: "What should Jev choose?" },
+        criteria: { type: "object", minProperties: 2, maxProperties: 255, additionalProperties: { type: "string", minLength: 1 }, description: "Map each stable option ID to a description. Include a none option when none may fit." },
+      }, required: ["type", "instructions", "criteria"], additionalProperties: false,
+    },
+    {
+      type: "object", description: "Noul: judge one yes/no proposition. Returns noul, the probability of YES from 0 to 1; there is no separate confidence field. It does not measure degree.",
+      properties: {
+        type: { type: "string", enum: ["noul"] },
+        instructions: { type: "string", minLength: 1, description: "One yes/no question or statement to judge; a high result means yes." },
+        criteria: { type: "object", properties: { true: { type: "string", minLength: 1 }, false: { type: "string", minLength: 1 } }, required: ["true", "false"], additionalProperties: false, description: "Optional definitions of what counts as yes and no." },
+      }, required: ["type", "instructions"], additionalProperties: false,
+    },
+    {
+      type: "object", description: "Score: rate a degree on 2 to 10 ordered levels. Returns a weighted score between level indices, probabilities, and confidence.",
+      properties: {
+        type: { type: "string", enum: ["score"] },
+        instructions: { type: "string", minLength: 1, description: "What degree should Jev rate?" },
+        criteria: { type: "array", minItems: 2, maxItems: 10, items: { type: "string", minLength: 1 }, description: "Level descriptions ordered low to high; indices start at 0." },
+      }, required: ["type", "instructions", "criteria"], additionalProperties: false,
+    },
+  ],
+};
+
+const jevDecisionProperties = {
+  state: { oneOf: [{ type: "string" }, { type: "object" }, { type: "array" }], description: "Text or structured context to evaluate. Every question sees this same state." },
+  questions: { type: "object", minProperties: 1, additionalProperties: jevQuestionSchema, description: "Question IDs map to independent Choice, Noul, or Score questions. Answers use these IDs; the IDs themselves are not shown to Jev." },
+  provider: { type: "string", description: "Optional Jev provider id. Omit to use the app default." },
+};
+
 const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = {
+  "jev-providers": { type: "object", properties: {}, additionalProperties: false },
+  "jev-default-provider": { type: "object", properties: { provider: { type: "string", description: "Provider id from jev-providers." } }, required: ["provider"], additionalProperties: false },
+  "jev-decide": {
+    type: "object",
+    properties: jevDecisionProperties,
+    required: ["state", "questions"],
+    additionalProperties: false,
+  },
+  "jev-decide-file": {
+    type: "object",
+    properties: {
+      ...jevDecisionProperties,
+      path: { type: "string", description: "Absolute output JSON path on this member's host." },
+      overwrite: { type: "boolean", description: "Allow replacing an existing file. Default false." },
+    },
+    required: ["state", "questions", "path"],
+    additionalProperties: false,
+  },
   send: {
     type: "object",
     properties: {
@@ -480,6 +569,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
           model: { type: "string", description: "Model id from list-models." },
           effort: { type: "string", description: "Model-supported effort, e.g. none | low | medium | high | xhigh | max." },
           serviceTier: { type: "string", description: "Concrete serving tier from list-models, for example standard or priority (Fast). Do not pass inherit." },
+          provider: { type: "string", description: "Jev provider id from jev-providers; only used when model is jev. Omit to use the app default." },
         },
         required: ["model", "effort"],
         additionalProperties: false,
@@ -501,6 +591,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
           model: { type: "string", description: "Model id from list-models." },
           effort: { type: "string", description: "Model-supported effort, e.g. none | low | medium | high | xhigh | max." },
           serviceTier: { type: "string", description: "Concrete serving tier from list-models, for example standard or priority (Fast). Do not pass inherit." },
+          provider: { type: "string", description: "Jev provider id from jev-providers; only used when model is jev. Omit to use the app default." },
         },
         required: ["model", "effort"],
         additionalProperties: false,
@@ -643,9 +734,9 @@ export interface PartyMcpToolSpec {
  * Keeping names and schemas here prevents the raw stdio script from becoming a
  * second, stale copy of the AgentParty capability surface.
  */
-export function buildPartyMcpToolSpecs(): PartyMcpToolSpec[] {
-  const readOnly = new Set<PartyToolName>(["list", "list-locations", "list-models", "member-status"]);
-  return PARTY_TOOL_NAMES.map((name) => ({
+export function buildPartyMcpToolSpecs(jevEnabled = false): PartyMcpToolSpec[] {
+  const readOnly = new Set<PartyToolName>(["list", "list-locations", "list-models", "member-status", "jev-providers"]);
+  return PARTY_TOOL_NAMES.filter((name) => jevEnabled || !JEV_PARTY_TOOL_NAMES.includes(name)).map((name) => ({
     name,
     description: partyDynamicToolDescriptions[name],
     inputSchema: partyDynamicToolSchemas[name],
@@ -660,12 +751,12 @@ export function buildPartyMcpToolSpecs(): PartyMcpToolSpec[] {
   }));
 }
 
-export function buildPartyDynamicToolSpec(): PartyDynamicToolSpec {
+export function buildPartyDynamicToolSpec(jevEnabled = false): PartyDynamicToolSpec {
   return {
     type: "namespace",
     name: PARTY_MCP_SERVER,
     description: "AgentParty app party controls for messaging and member management.",
-    tools: buildPartyMcpToolSpecs().map(({ name, description, inputSchema }) => ({
+    tools: buildPartyMcpToolSpecs(jevEnabled).map(({ name, description, inputSchema }) => ({
       type: "function",
       name,
       description,
@@ -684,8 +775,8 @@ export function buildPartyDynamicToolSpec(): PartyDynamicToolSpec {
  * not new capabilities; every call is normalized back to PartyToolName before
  * it reaches the shared PartyBridge/AppController path.
  */
-export function buildCodexPartyDynamicToolSpecs(): Array<PartyDynamicFunctionSpec | PartyDynamicToolSpec> {
-  const specs = buildPartyMcpToolSpecs();
+export function buildCodexPartyDynamicToolSpecs(jevEnabled = false): Array<PartyDynamicFunctionSpec | PartyDynamicToolSpec> {
+  const specs = buildPartyMcpToolSpecs(jevEnabled);
   const byName = new Map(specs.map((spec) => [spec.name, spec]));
   const eager = Object.entries(PARTY_CODEX_CORE_TOOL_ALIASES).map(([alias, canonical]) => {
     const spec = byName.get(canonical);
@@ -700,7 +791,7 @@ export function buildCodexPartyDynamicToolSpecs(): Array<PartyDynamicFunctionSpe
       deferLoading: false as const,
     };
   });
-  return [...eager, buildPartyDynamicToolSpec()];
+  return [...eager, buildPartyDynamicToolSpec(jevEnabled)];
 }
 
 /** Critical Codex calling convention, generated from the same alias map. */
@@ -827,6 +918,22 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
   }
   const input = args && typeof args === "object" ? args as Record<string, unknown> : {};
   switch (name) {
+    case "jev-providers":
+      return bridge.jevProviders();
+    case "jev-default-provider":
+      return typeof input.provider === "string" && input.provider
+        ? bridge.jevSetDefault(input.provider)
+        : { ok: false, error: "jev-default-provider requires provider." };
+    case "jev-decide":
+      return bridge.jevDecide(input as unknown as JevDecisionRequest);
+    case "jev-decide-file": {
+      if (typeof input.path !== "string" || !path.isAbsolute(input.path)) {
+        return { ok: false, error: "jev-decide-file requires an absolute path on the member's execution host." };
+      }
+      const result = await bridge.jevDecide(input as unknown as JevDecisionRequest);
+      if (!result.ok) return result;
+      return writeJevDecisionFile(input.path, result.data as JevDecisionResult, input.overwrite === true);
+    }
     case "send": {
       const content = typeof input.content === "string" ? input.content : "";
       const targets = memberNamesOf(input.to, "send.to");
@@ -930,7 +1037,7 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         patch.reviewer = input.reviewer === null
           ? null
           : input.reviewer && typeof input.reviewer === "object"
-            ? input.reviewer as { model: string; effort: string; serviceTier?: string }
+            ? input.reviewer as { model: string; effort: string; serviceTier?: string; provider?: string }
             : undefined;
       }
       return bridge.gateSet(memberName, patch);
@@ -951,7 +1058,7 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         patch.reviewer = input.reviewer === null
           ? null
           : input.reviewer && typeof input.reviewer === "object"
-            ? input.reviewer as { model: string; effort: string; serviceTier?: string }
+            ? input.reviewer as { model: string; effort: string; serviceTier?: string; provider?: string }
             : undefined;
       }
       if (!Object.keys(patch).length) {
@@ -1073,13 +1180,36 @@ type ToolFactory = (
   handler: (args: any) => Promise<McpToolResult>,
 ) => unknown;
 
+const jevQuestionInput = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("choice"),
+    instructions: z.string().describe("What should Jev choose?"),
+    criteria: z.record(z.string(), z.string()).describe("2 to 255 named options, each with a description; include none when needed."),
+  }),
+  z.object({
+    type: z.literal("noul"),
+    instructions: z.string().describe("One yes/no proposition. The answer is the probability of YES from 0 to 1, not a degree score."),
+    criteria: z.object({ true: z.string(), false: z.string() }).optional().describe("Optional definitions of yes and no."),
+  }),
+  z.object({
+    type: z.literal("score"),
+    instructions: z.string().describe("What degree should Jev rate?"),
+    criteria: z.array(z.string()).min(2).max(10).describe("Ordered level descriptions from low to high; level indices start at 0."),
+  }),
+]);
+const jevDecisionInput = {
+  state: z.union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())]).describe("Text or structured context shared by all questions."),
+  questions: z.record(z.string(), jevQuestionInput).describe("Independent questions keyed by answer ID. Choice returns one option and probabilities; Noul returns yes probability; Score returns a position on ordered levels."),
+  provider: z.string().optional(),
+};
+
 /**
  * Builds the party tool definitions for the in-process MCP server. Pure and
  * SDK-agnostic (the `tool` factory is injected), so it is unit-testable without
  * spawning a session: each returned def carries a `.handler` that routes to the
  * bridge with the caller's identity closure-bound (`from` is never agent input).
  */
-export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, identity: PartyIdentity): unknown[] {
+export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, identity: PartyIdentity, jevEnabled = false): unknown[] {
   const envelope = (result: PartyToolResult): McpToolResult => {
     const payload = result.data === undefined
       ? { ok: result.ok, error: result.error }
@@ -1129,7 +1259,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     role: z.string().describe("Short role description for the new member."),
     ...memberCreateOptionalFields,
   });
-  return [
+  const defs = [
     tool(
       "send",
       "Send the same message to one or more party members. Pass `to` as one name or an array. Fire-and-forget: replies arrive later as their own messages. Batch results separate delivered, queued, and failed recipients. Omit both delivery flags to use your member override then Runtime default; interrupt=true cuts in and queue=true explicitly waits.",
@@ -1203,6 +1333,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
           model: z.string().describe("Model id from list-models."),
           effort: z.string().describe("Model-supported effort, e.g. none | low | medium | high | xhigh | max."),
           serviceTier: z.string().optional().describe("Concrete serving tier from list-models, e.g. standard or priority (Fast). Do not pass inherit."),
+          provider: z.string().optional().describe("Jev provider id from jev-providers; only when model is jev. Omit for app default."),
         }).nullable().optional().describe("Custom reviewer for this axis (null = no axis-specific reviewer; the other active axis may still select one)."),
       },
       async (args: { name: string } & PartyGatePatch) => envelope(await bridge.gateSet(args.name, args)),
@@ -1218,6 +1349,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
           model: z.string().describe("Model id from list-models."),
           effort: z.string().describe("Model-supported effort, e.g. none | low | medium | high | xhigh | max."),
           serviceTier: z.string().optional().describe("Concrete serving tier from list-models, e.g. standard or priority (Fast). Do not pass inherit."),
+          provider: z.string().optional().describe("Jev provider id from jev-providers; only when model is jev. Omit for app default."),
         }).nullable().optional().describe("Party-wide reviewer for this axis (null = no axis-specific reviewer). A member's matching-axis reviewer still wins."),
       },
       async (args: PartyGateGlobalPatch) => envelope(await bridge.partyGateSet(args)),
@@ -1320,5 +1452,18 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       },
       async (args: BrowserActionInput) => envelope(await invokePartyTool(bridge, identity, "browser", args)),
     ),
+  ];
+  if (!jevEnabled) return defs;
+  return [...defs,
+    tool("jev-providers", partyDynamicToolDescriptions["jev-providers"], {}, async () => envelope(await bridge.jevProviders())),
+    tool("jev-default-provider", partyDynamicToolDescriptions["jev-default-provider"], { provider: z.string() }, async (args: { provider: string }) => envelope(await bridge.jevSetDefault(args.provider))),
+    tool("jev-decide", partyDynamicToolDescriptions["jev-decide"], {
+      ...jevDecisionInput,
+    }, async (args: JevDecisionRequest) => envelope(await bridge.jevDecide(args))),
+    tool("jev-decide-file", partyDynamicToolDescriptions["jev-decide-file"], {
+      ...jevDecisionInput,
+      path: z.string(),
+      overwrite: z.boolean().optional(),
+    }, async (args: JevDecisionRequest & { path: string; overwrite?: boolean }) => envelope(await invokePartyTool(bridge, identity, "jev-decide-file", args))),
   ];
 }

@@ -74,6 +74,7 @@ interface WorkbenchProps {
   harnessDefaults: Record<string, HarnessDefaults>;
   /** Settings reviewer default (model + effort) for the Message Gate. */
   gateDefaults: GateReviewer;
+  defaultJevProvider: string;
   debugEnabled: boolean;
   drawers: SidebarDrawerSettings;
   /** QA-driven panel arrangement; applied whenever `nonce` changes. */
@@ -270,7 +271,7 @@ function loadSubagentUi(): SubagentUiState {
 }
 
 export function Workbench(props: WorkbenchProps) {
-  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, museModels, onRefreshCodexModels, onRefreshMuseModels, defaultProfile, harnessDefaults, gateDefaults, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onReorderParties, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, appWorkspaceRoot, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, onOpenUsage } = props;
+  const { parties, activePartyId, partyLayout, onPersistLayout, views, routes, codexModels, museModels, onRefreshCodexModels, onRefreshMuseModels, defaultProfile, harnessDefaults, gateDefaults, defaultJevProvider, debugEnabled, drawers, layoutRequest, subagentOpenRequest, gateOpenRequest, actions, onCreateParty, onCreateGroup, onMovePartyToGroup, onRenameGroup, onRemoveGroup, onReorderGroups, onReorderParties, onBrowseCwd, wsl, groups, registeredParties, cwdPrefs, appWorkspaceRoot, now, onCreateMember, onRemoveMember, onSetMemberKeepAwake, onSleepMember, onWakeMember, onRemoveParty, onOpenPartyInNewWindow, onSelectParty, onMemberOpened, onVisibleMembersChange, onToggleDrawer, favoriteParties, onToggleFavoriteParty, groupFolds, onToggleGroupFold, onOpenUsage } = props;
 
   const viewMap = useMemo(() => new Map(views.map((view) => [view.name, view])), [views]);
   const validMembers = useMemo(() => new Set(views.map((view) => view.name)), [views]);
@@ -1029,6 +1030,7 @@ export function Workbench(props: WorkbenchProps) {
           routes={routes}
           partyGate={activeParty?.gate}
           gateDefaults={gateDefaults}
+          defaultJevProvider={defaultJevProvider}
           onApply={(patch) => actions.setMemberGate(gateView.name, patch)}
           onBack={gateBackPartyId ? () => {
             setGateTarget(null);
@@ -1045,6 +1047,7 @@ export function Workbench(props: WorkbenchProps) {
           members={views}
           routes={routes}
           gateDefaults={gateDefaults}
+          defaultJevProvider={defaultJevProvider}
           onSetPartyGate={(gate) => actions.setPartyGate(gateParty.id, gate)}
           onSetMemberGate={(name, axis, mode) => actions.setMemberGate(name, { axis, mode })}
           onClearMemberRule={(name, axis) => actions.setMemberGate(name, { axis, rule: null })}

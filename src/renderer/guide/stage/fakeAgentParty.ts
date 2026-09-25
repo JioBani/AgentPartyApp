@@ -49,6 +49,8 @@ export const EMPTY_GUIDE_SNAPSHOT: GuideSnapshot = {
       routerBaseUrl: "http://127.0.0.1:3455",
       routerAuthToken: "",
       openRouterApiKey: "",
+      jevDefaultProvider: "openrouter",
+      jevMcpEnabled: false,
       deepseekApiKey: "",
       baiApiKey: "",
       automationApiPort: 47831,

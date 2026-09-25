@@ -662,6 +662,7 @@ const GATE_META = {
   rejected: { label: "반려됨", tone: "live", note: "전달 안 됨 · 재작성 필요", Icon: CornerUpLeft },
   forced: { label: "강제 전송", tone: "accent", note: "우회하여 전달됨", Icon: FastForward },
   failed: { label: "리뷰 실패", tone: "danger", note: "심사 없이 전달됨", Icon: AlertTriangle },
+  undecidable: { label: "판정 불가", tone: "accent", note: "전송 허용", Icon: AlertTriangle },
 } as const;
 
 /**
@@ -880,7 +881,7 @@ function GateBlock({ block, view }: { block: Extract<TranscriptBlock, { kind: "g
   const details = [
     block.gate === "failed" ? (block.errcode ? `오류 · ${block.errcode}` : "") : (block.rule ? `위반 규칙 · ${block.rule}` : ""),
     block.reviewer
-      ? `${block.reviewer.model} · ${block.reviewer.effort}${block.reviewer.serviceTier && block.reviewer.serviceTier !== "standard" ? " · Fast" : ""}`
+      ? `${block.reviewer.model}${block.reviewer.provider ? ` · ${block.reviewer.provider}` : ""}${block.reviewer.model === "jev" ? "" : ` · ${block.reviewer.effort}${block.reviewer.serviceTier && block.reviewer.serviceTier !== "standard" ? " · Fast" : ""}`}`
       : "",
   ].filter(Boolean);
   return (

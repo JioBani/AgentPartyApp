@@ -22,6 +22,7 @@ interface PartyGateModalProps {
   members: MemberView[];
   routes: RouteLike[];
   gateDefaults: GateReviewer;
+  defaultJevProvider: string;
   onSetPartyGate: (gate: PartyGatePatch) => void;
   onSetMemberGate: (name: string, axis: GateAxis, mode: GateMode) => void;
   onClearMemberRule: (name: string, axis: GateAxis) => void;
@@ -38,7 +39,7 @@ const AXES: Array<{ id: GateAxis; label: "STR-3828" | "STR-3830"; hint: "STR-384
 ];
 const emptyAxis = (): PartyGateAxis => ({ enabled: false, rule: "" });
 
-export function PartyGateModal({ party, members, routes, gateDefaults, onSetPartyGate, onSetMemberGate, onClearMemberRule, onOpenMemberGate, onClose }: PartyGateModalProps) {
+export function PartyGateModal({ party, members, routes, gateDefaults, defaultJevProvider, onSetPartyGate, onSetMemberGate, onClearMemberRule, onOpenMemberGate, onClose }: PartyGateModalProps) {
   useModalEscape(onClose);
   const [axis, setAxis] = useState<GateAxis>("send");
   const [draft, setDraft] = useState<PartyGate>(() => party.gate ?? { send: emptyAxis(), recv: emptyAxis() });
@@ -86,9 +87,11 @@ export function PartyGateModal({ party, members, routes, gateDefaults, onSetPart
             {current.enabled && <>
               <textarea className="wb-gate-textarea" value={current.rule} placeholder={rulePlaceholder} onChange={(event) => patchLocal({ rule: event.target.value })} onBlur={() => onSetPartyGate({ axis, rule: current.rule })} />
               <GateReviewerInlineControl
+                key={axis}
                 routes={routes}
                 reviewer={current.reviewer ?? gateDefaults}
                 defaultReviewer={gateDefaults}
+                defaultJevProvider={defaultJevProvider}
                 inherited={!current.reviewer}
                 onChange={(reviewer) => commit({ reviewer })}
                 onInherit={() => commit({ reviewer: null })}

@@ -25,6 +25,7 @@
     "test:e2e:live-cursor-grok": "npm run build && node scripts/e2e-live-cursor.mjs --grok",
     "test:e2e:live-grok-usage": "npm run build && node scripts/e2e-live-grok-usage.mjs",
     "test:e2e:live-grok": "npm run build && node scripts/e2e-live-grok.mjs",
+    "test:e2e:live-jev": "npm run build && node scripts/e2e-live-jev.mjs",
     "test:e2e:live-grok-46": "npm run build && node scripts/e2e-live-grok.mjs --model grok-4.6",
     "test:e2e:live-codex-party-tools": "npm run build && node scripts/e2e-live-codex-party-tools.mjs",
     "test:e2e:live-claude-party-tools": "npm run build && node scripts/e2e-live-claude-channel-folding.mjs",

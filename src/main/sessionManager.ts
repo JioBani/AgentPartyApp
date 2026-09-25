@@ -138,6 +138,7 @@ interface ManagedSession {
 export interface SessionPartyBinding {
   bridge: PartyBridge;
   identity: PartyIdentity;
+  jevMcpEnabled?: boolean;
 }
 
 export interface CrossHostSessionAdapterInput {
@@ -327,7 +328,7 @@ export class SessionManager extends EventEmitter {
       cwd,
       request,
       resumeSessionId,
-      binding: { ownerWorkspace: workspace, identity: binding.identity },
+      binding: { ownerWorkspace: workspace, identity: binding.identity, jevMcpEnabled: binding.jevMcpEnabled },
     });
     const requestedHarness = request.selectedHarnessId || settings.selectedHarnessId;
     return this.registerSession(
@@ -353,6 +354,7 @@ export class SessionManager extends EventEmitter {
     return this.createSession(input, resumeSessionId, {
       identity: binding.identity,
       bridge: createBridge(binding),
+      jevMcpEnabled: binding.jevMcpEnabled,
     });
   }
 
@@ -363,6 +365,11 @@ export class SessionManager extends EventEmitter {
    */
   notifyPartyChanged(workspace: string): void {
     this.emit("party", { workspace });
+  }
+
+  /** A member MCP tool changed an app-wide setting outside AppController. */
+  notifySettingsChanged(): void {
+    this.emit("settings");
   }
 
   /** Live embedded-router base URL (actual bound port) for headless helper calls (Message Gate reviewer). */
@@ -377,7 +384,7 @@ export class SessionManager extends EventEmitter {
    */
   emitGateBadge(
     sessionId: string,
-    gate: { gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: GateScope; violation?: GateViolation; reviewer?: GateReviewer },
+    gate: { gate: "rejected" | "forced" | "failed" | "undecidable"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: GateScope; violation?: GateViolation; reviewer?: GateReviewer },
   ): void {
     const session = this.sessions.get(sessionId);
     if (!session || session.closed) {
@@ -1772,6 +1779,7 @@ export class SessionManager extends EventEmitter {
         resumeSessionId,
         partyBridge: binding?.bridge,
         partyIdentity: binding?.identity,
+        partyJevEnabled: binding?.jevMcpEnabled ?? settings.jevMcpEnabled,
         partyPrimer,
         automationBaseUrl: this.codexAutomationBaseUrl(settings.automationApiPort),
         // Enables Codex→OpenRouter routing for OpenRouter-slug models; absent =
@@ -1815,6 +1823,7 @@ export class SessionManager extends EventEmitter {
       resumeSessionId,
       partyBridge: binding?.bridge,
       partyIdentity: binding?.identity,
+      partyJevEnabled: binding?.jevMcpEnabled ?? settings.jevMcpEnabled,
       partyPrimer,
       usageSourceId,
     });
@@ -1942,18 +1951,20 @@ export class SessionManager extends EventEmitter {
     member?: string;
     model?: string;
     /** Set when the review reached a decision. Omit when it failed open. */
-    verdict?: "allow" | "reject";
+    verdict?: "allow" | "reject" | "undecidable";
     /** Set INSTEAD of `verdict` when the review failed and the gate let the
      *  message through unreviewed. Without this the failure left no trace. */
     failure?: { layer: GateFailureLayer; detail?: string };
     usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+    costUsd?: number;
+    provider?: string;
   }): void {
     const record: TurnUsageRecord = {
       at: new Date().toISOString(),
       partyId: input.partyId,
       member: input.member,
       appSessionId: `gate-review:${input.partyId || "?"}:${input.member || "?"}`,
-      provider: "claude",
+      provider: input.provider || "claude",
       model: input.model,
       trigger: "gate-review",
       tokens: {
@@ -1962,11 +1973,34 @@ export class SessionManager extends EventEmitter {
         cacheRead: input.usage?.cacheRead,
         cacheWrite: input.usage?.cacheWrite,
       },
-      costBasis: "subscription",
-      costSource: "estimate",
+      costUsd: input.costUsd,
+      costBasis: input.costUsd !== undefined ? "provider-reported" : input.provider ? undefined : "subscription",
+      costSource: input.costUsd !== undefined ? input.provider : input.provider ? undefined : "estimate",
       gate: input.failure ? { failure: input.failure } : { verdict: input.verdict },
     };
     this.ledger.append(workspace, record);
+  }
+
+  recordJevDecision(workspace: string, input: {
+    partyId?: string;
+    member?: string;
+    provider: string;
+    model: string;
+    usage: { inputTokens?: number; outputTokens?: number; costUsd?: number };
+  }): void {
+    this.ledger.append(workspace, {
+      at: new Date().toISOString(),
+      partyId: input.partyId,
+      member: input.member,
+      appSessionId: `jev:${input.partyId || "local"}:${input.member || "api"}`,
+      provider: input.provider,
+      model: input.model,
+      trigger: "jev-decision",
+      tokens: { input: input.usage.inputTokens, output: input.usage.outputTokens },
+      costUsd: input.usage.costUsd,
+      costBasis: input.usage.costUsd === undefined ? undefined : "provider-reported",
+      costSource: input.usage.costUsd === undefined ? undefined : input.provider,
+    });
   }
 
   /**

@@ -8,6 +8,8 @@ export interface GateReviewer {
   effort: string;
   /** Concrete provider serving tier. Omitted means the ordinary tier. */
   serviceTier?: string;
+  /** Jev Decisions provider. Omitted on older settings means the app default. */
+  provider?: string;
 }
 
 export interface PartyGateAxis {
@@ -76,10 +78,12 @@ export function isGateMode(value: unknown): value is GateMode {
 }
 
 export interface GateReviewResult {
-  verdict: "allow" | "reject";
+  verdict: "allow" | "reject" | "undecidable";
   reason: string;
   violation?: GateViolation;
   usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+  costUsd?: number;
+  provider?: string;
 }
 
 const offAxis = (): PartyGateAxis => ({ enabled: false, rule: "" });
@@ -140,7 +144,11 @@ export function normalizeGateReviewer(value: unknown): GateReviewer | undefined 
   const serviceTier = typeof rawTier === "string" && rawTier.trim() && rawTier.trim() !== "inherit"
     ? rawTier.trim()
     : undefined;
-  return { model: model.trim(), effort: effort.trim(), ...(serviceTier ? { serviceTier } : {}) };
+  const rawProvider = (value as { provider?: unknown }).provider;
+  const provider = model.trim().toLowerCase() === "jev" && typeof rawProvider === "string" && rawProvider.trim()
+    ? rawProvider.trim()
+    : undefined;
+  return { model: model.trim(), effort: effort.trim(), ...(serviceTier ? { serviceTier } : {}), ...(provider ? { provider } : {}) };
 }
 
 function normalizePartyGateAxis(value: unknown): PartyGateAxis | undefined {
