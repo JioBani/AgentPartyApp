@@ -390,7 +390,7 @@ export const STORIES: Story[] = [
     id: "versions-wide",
     group: "Screens",
     title: "제안 · 버전 화면 — 넓은 창",
-    note: "설정의 버전 탭을 사이드바의 한 화면으로. 기능은 그대로(설치된 버전·업데이트 확인·업데이트 창·채널·최신 노트·릴리스 페이지·이전 버전·오류 재시도)이고, 모양은 설정 화면의 카드·행·버튼·배지 그대로다. 달라진 것은 노트가 320px 상자에서 풀려 카드 폭 그대로 끝까지 읽힌다는 것.",
+    note: "설정의 버전 탭을 사이드바의 한 화면으로. 기능은 그대로(설치된 버전·설치/다시 시작·업데이트 확인·업데이트 창·채널·릴리스 노트·릴리스 페이지·이전 버전·오류 재시도)이고, 모양은 설정 화면 컴포넌트 그대로다. 노트는 상자 없이 제목 한 문장과 본문으로 읽고, 이전 버전은 아래로 쌓지 않고 ‹ 버전 선택 › 과 글 끝의 이웃 카드로 옆으로 넘긴다.",
     width: 1440,
     variants: ["available", "downloaded", "current", "error"],
     render: (_d, v) => <div className="st-screen"><VersionsWindow key={v} state={(v || "available") as VersionsState} /></div>,

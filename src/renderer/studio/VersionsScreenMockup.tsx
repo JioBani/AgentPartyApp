@@ -7,20 +7,21 @@
  *
  * 달라지는 것은 둘이다.
  *   1. 사이드바에 `버전` 이 생기고, 업데이트가 있으면 아이콘에 작은 점이 붙는다.
- *   2. 노트를 320px 상자에 가두지 않는다. 최신 릴리스는 제목 한 문장과 본문을
- *      카드 폭 그대로 펼쳐 이미지까지 끝까지 읽히고, 이전 버전도 펼치면 같은
- *      모양으로 읽힌다.
+ *   2. 노트를 320px 상자에 가두지 않는다. 릴리스 하나를 제목 한 문장과 본문으로
+ *      페이지 폭 그대로 펼치고, 이전 버전은 아래로 쌓지 않고 옆으로 넘겨 같은
+ *      모양으로 읽는다(‹ 버전 선택 › 와 글 끝의 이전/다음 카드).
  *
  * 모양은 설정 화면의 디자인 시스템 그대로다 — `screen-header`, `set-page`,
  * `set-section`, `set-card`, `set-row`, `set-btn-*`, `set-ver-*`, 채널 카드(`set-update-channel-*`).
  * 최신 릴리스만 카드 밖에서 읽는 글로 펼친다(제목 한 문장 · 넓은 줄간격 · 큰 이미지).
  * 새 CSS 는 `proposedVersions.css` 의 몇 줄뿐이다.
  */
-import { useState } from "react";
-import { AlertTriangle, ArrowDownToLine, ArrowRight, ChevronDown, FlaskConical, RefreshCw, RotateCw, ShieldCheck } from "lucide-react";
+import { useRef, useState } from "react";
+import { AlertTriangle, ArrowDownToLine, ArrowRight, ChevronLeft, ChevronRight, FlaskConical, RefreshCw, RotateCw, ShieldCheck } from "lucide-react";
 import { NAV_ICONS, NavRail, TitleBar, type NavBadge } from "../app/AppChrome";
 import { UpdatePill } from "../workbench/UpdatePill";
 import { Markdown } from "../workbench/Markdown";
+import { Dropdown } from "../workbench/Dropdown";
 import { useTheme } from "../theme/ThemeProvider";
 import { THEME_METADATA } from "../../shared/appTheme";
 import { UPDATE_FEED, type ReleaseSummary } from "../../shared/appUpdate";
@@ -84,7 +85,7 @@ function date(iso: string) {
 }
 
 function ReleaseNotes({ release }: { release: ReleaseSummary }) {
-  const title = headline(release);
+  const title = headline(release) || `AgentParty ${release.version}`;
   const text = body(release);
   return (
     <div className="ver-notes">
@@ -145,14 +146,23 @@ function UpdateCard({ state, installed, latest }: { state: VersionsState; instal
 export function VersionsScreen({ state }: { state: VersionsState }) {
   const installed = INSTALLED[state];
   const latest = RELEASES[0];
-  const history = RELEASES.slice(1);
-  const [showHistory, setShowHistory] = useState(true);
-  const [open, setOpen] = useState<Set<string>>(new Set());
-  const toggle = (version: string) => setOpen((cur) => {
-    const next = new Set(cur);
-    if (next.has(version)) next.delete(version); else next.add(version);
-    return next;
-  });
+  const [index, setIndex] = useState(0);
+  const pageRef = useRef<HTMLElement>(null);
+  const release = RELEASES[index];
+  const newer = RELEASES[index - 1];
+  const older = RELEASES[index + 1];
+
+  /** Turn the page, and bring its top into view — a long note would otherwise open mid-way. */
+  function go(next: number) {
+    setIndex(next);
+    pageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  const options = RELEASES.map((r) => ({
+    id: r.version,
+    label: `v${r.version}`,
+    hint: [r === latest ? "최신" : "", r.version === installed ? "설치됨" : "", date(r.publishedAt)].filter(Boolean).join(" · "),
+  }));
 
   return (
     <main className="program-main">
@@ -175,53 +185,45 @@ export function VersionsScreen({ state }: { state: VersionsState }) {
             </div>
           )}
 
-          <section className="set-section">
-            <div className="set-section-head"><span className="set-section-label">최신 버전</span><span className="set-section-rule" /></div>
+          <section className="set-section" ref={pageRef}>
+            <div className="set-section-head">
+              <span className="set-section-label">{index === 0 ? "최신 버전" : "이전 버전"}</span>
+              <span className="set-section-rule" />
+              {/* Pager: newer ‹ [jump to any version] › older. Pages turn sideways, never stack below. */}
+              <div className="ver-pager">
+                <button type="button" className="ver-pager-btn" aria-label="더 새 버전" disabled={!newer} onClick={() => go(index - 1)}><ChevronLeft size={15} /></button>
+                <Dropdown value={release.version} options={options} onChange={(v) => go(RELEASES.findIndex((r) => r.version === v))} title="버전으로 이동" align="right" />
+                <span className="ver-pager-count wb-mono">{index + 1} / {RELEASES.length}</span>
+                <button type="button" className="ver-pager-btn" aria-label="이전 버전" disabled={!older} onClick={() => go(index + 1)}><ChevronRight size={15} /></button>
+              </div>
+            </div>
             {/* Read, not operated: meta line, one headline, prose and full-width images — no box. */}
-            <article className="ver-release">
+            <article className="ver-release" key={release.version}>
               <div className="ver-release-meta">
-                <span className="wb-mono set-ver-badge is-latest">v{latest.version}</span>
-                {latest.version !== installed && <span className="set-ver-tag is-new">새 버전</span>}
-                {latest.version === installed && <span className="set-ver-tag is-ok">설치됨</span>}
-                {latest.prerelease && <span className="set-ver-tag">베타</span>}
-                <span className="ver-release-date">{date(latest.publishedAt)}</span>
+                <span className={`wb-mono set-ver-badge${index === 0 ? " is-latest" : ""}`}>v{release.version}</span>
+                {release === latest && latest.version !== installed && <span className="set-ver-tag is-new">새 버전</span>}
+                {release.version === installed && <span className="set-ver-tag is-ok">설치됨</span>}
+                {release.prerelease && <span className="set-ver-tag">베타</span>}
+                <span className="ver-release-date">{date(release.publishedAt)}</span>
                 <button type="button" className="set-link-btn ver-release-link"><ArrowRight size={12} /> 릴리스 페이지</button>
               </div>
-              <ReleaseNotes release={latest} />
+              <ReleaseNotes release={release} />
             </article>
-          </section>
-
-          <section className="set-section">
-            <div className="set-section-head"><span className="set-section-label">이전 버전</span><span className="set-section-rule" /></div>
-            <div className="set-card">
-              <button type="button" className="set-ver-toggle" onClick={() => setShowHistory((v) => !v)}>
-                <ChevronDown size={14} className={showHistory ? "set-ver-chev is-open" : "set-ver-chev"} />
-                <span>이전 버전 보기</span>
-                <span className="set-card-sub wb-mono">{history.length}개</span>
-              </button>
-              {showHistory && (
-                <ul className="set-ver-list">
-                  {history.map((release) => (
-                    <li key={release.version} className="set-ver-item">
-                      <button type="button" className="set-ver-item-head" onClick={() => toggle(release.version)}>
-                        <ChevronDown size={13} className={open.has(release.version) ? "set-ver-chev is-open" : "set-ver-chev"} />
-                        <span className="wb-mono set-ver-badge">v{release.version}</span>
-                        <span className="set-ver-name ver-item-title">{headline(release) || firstLine(release)}</span>
-                        {release.prerelease && <span className="set-ver-tag">베타</span>}
-                        {release.version === installed && <span className="set-ver-tag is-ok">설치됨</span>}
-                        <span className="set-ver-date wb-mono">{date(release.publishedAt)}</span>
-                      </button>
-                      {open.has(release.version) && (
-                        <div className="ver-item-body">
-                          <ReleaseNotes release={release} />
-                          <button type="button" className="set-link-btn"><ArrowRight size={12} /> 릴리스 페이지</button>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            {/* The end of a note is where the reader decides to keep going: offer both neighbours by name. */}
+            <nav className="ver-turn" aria-label="버전 넘기기">
+              {newer ? (
+                <button type="button" className="ver-turn-card" onClick={() => go(index - 1)}>
+                  <span className="ver-turn-dir"><ChevronLeft size={13} /> 더 새 버전 · v{newer.version}</span>
+                  <span className="ver-turn-title">{headline(newer) || firstLine(newer)}</span>
+                </button>
+              ) : <span />}
+              {older ? (
+                <button type="button" className="ver-turn-card is-older" onClick={() => go(index + 1)}>
+                  <span className="ver-turn-dir">이전 버전 · v{older.version} <ChevronRight size={13} /></span>
+                  <span className="ver-turn-title">{headline(older) || firstLine(older)}</span>
+                </button>
+              ) : <span />}
+            </nav>
           </section>
         </div>
       </div>
