@@ -2357,6 +2357,7 @@ export function App() {
                 defaultProfile={defaultMemberProfileOf(state.settings)}
                 harnessDefaults={state.settings.harnessDefaults}
                 gateDefaults={state.settings.gateDefaults}
+                defaultJevProvider={state.settings.jevDefaultProvider}
                 debugEnabled={state.settings.debugEnabled}
                 drawers={drawers}
                 layoutRequest={layoutRequest}

@@ -849,7 +849,7 @@ export function AgentSettingsView({ routes, settings, codexModels, museModels, d
         <SubtreeVisibility visible={tab === "gate"}>
           <section className="set-card" data-layout-card="agent-gate">
             <div className="set-card-label"><LocalizedText id="STR-1086" /><span className="set-card-sub wb-mono"><LocalizedText id="STR-1085" /></span></div>
-            <GateDefaultsCard routes={routes} reviewer={settings.gateDefaults} onSave={onSaveGateDefault} />
+            <GateDefaultsCard routes={routes} reviewer={settings.gateDefaults} defaultJevProvider={settings.jevDefaultProvider} onSave={onSaveGateDefault} />
           </section>
           <section className="set-card" data-layout-card="agent-jev">
             <div className="set-card-label">Jev Decisions</div>
@@ -1642,18 +1642,21 @@ function ComposerSettingsCard({ settings, onSave }: { settings: ComposerSettings
  * headless as a raw completion). Any gate-on member without its own reviewer
  * uses this. Recommends a cheap/fast model (Haiku).
  */
-function GateDefaultsCard({ routes, reviewer, onSave }: { routes: RouteLike[]; reviewer: GateReviewer; onSave: (reviewer: GateReviewer) => void }) {
+function GateDefaultsCard({ routes, reviewer, defaultJevProvider, onSave }: { routes: RouteLike[]; reviewer: GateReviewer; defaultJevProvider: string; onSave: (reviewer: GateReviewer) => void }) {
   const recommended = reviewer.model === "haiku";
 
   return (
     <div className="set-gate-defaults">
       <div className="set-inline-note">
         <MessageGateIcon size={14} />
-        <span><LocalizedText id="STR-1193" /> <b><LocalizedText id="STR-1195" /></b><LocalizedText id="STR-1194" /></span>
+        {reviewer.model.toLowerCase() === "jev"
+          ? <span>멤버가 리뷰어를 따로 지정하지 않으면 Jev가 이 설정으로 메시지를 심사합니다.</span>
+          : <span><LocalizedText id="STR-1193" /> <b><LocalizedText id="STR-1195" /></b><LocalizedText id="STR-1194" /></span>}
       </div>
       <GateReviewerControl
         routes={routes}
         reviewer={reviewer}
+        defaultJevProvider={defaultJevProvider}
         onChange={onSave}
         badge={recommended ? <span className="set-reco-badge"><LocalizedText id="STR-1196" /></span> : undefined}
       />

@@ -1131,12 +1131,17 @@ gives that. Folds persist across restarts.
 Tidying the list is an explicit write to this endpoint, never a side effect of
 opening a screen.
 
-`gateDefaults` is the **Message Gate** reviewer default — `{ "model", "effort", "serviceTier"? }`
+`gateDefaults` is the **Message Gate** reviewer default — `{ "model", "effort", "serviceTier"?, "provider"? }`
 only (NO harness; the reviewer runs headless). Any gate-on member that has not
 set its own reviewer uses this. Recommended: a cheap/fast model, e.g.
 `{ "gateDefaults": { "model": "GPT-5.6 Terra", "effort": "low" } }` — the
 built-in default, picked on measured accuracy rather than price. See the Message
 Gate endpoints below.
+
+For Jev Decisions, use `{ "gateDefaults": { "model": "jev", "effort": "none", "provider": "openrouter" } }`.
+`provider` selects a Jev provider listed by `GET /api/jev/providers`; omit it to
+follow the app-wide Jev default. The Message Gate UI has a separate **Use Jev**
+switch and provider selector. Jev does not appear in the ordinary model catalog.
 
 Example:
 
@@ -2736,11 +2741,19 @@ fail-open: the message is delivered unreviewed with a visible notice. A human
 independently because every recipient may have a different receive rule; one
 rejection does not stop the other deliveries.
 
+With Jev as reviewer, each active rule axis is a three-option Decisions
+`choice`: `allow`, `reject`, or `undecidable`. Any clear rejection blocks the
+message. If no axis rejects and at least one is undecidable, the message is
+delivered with a **판정 불가** badge and a `gate-review` ledger verdict of
+`undecidable`. This is a completed Jev decision, distinct from a transport or
+parsing failure. Existing Jev reviewers without `provider` continue to use the
+app-wide Jev default; no stored gate setting needs migration.
+
 When both axes specify a reviewer, an explicit receive reviewer wins, followed
 by an explicit send reviewer, then `gateDefaults`. An unset axis reviewer does
 not suppress an explicit reviewer on the other axis. Gate transcript events
 record `scope` (`send|recv|both`), rejection `violation`, and the actual
-`reviewer` (`model` + `effort` + optional concrete `serviceTier`). Legacy events
+`reviewer` (`model` + `effort` + optional concrete `serviceTier` or Jev `provider`). Legacy events
 omit these optional fields.
 
 For a **member-originated** message, omitting `interrupt` uses the sender's
@@ -2757,12 +2770,14 @@ silently disabling the user's setting while preserving explicit queueing through
 when the message arrives: an idle, sleeping, or unstarted recipient is sent to,
 woken, or started normally and is never immediately stopped.
 
-The reviewer's `effort` reaches the model differently per provider — `thinking`
+For chat reviewers, `effort` reaches the model differently per provider — `thinking`
 for Anthropic (which rejects `effort` outright), `effort` for router-backed
 models — and reasoning is never disabled, because a classifier that cannot
 reason rejects compliant messages. This behaves identically for local and WSL
 workspaces; for WSL the reviewer call runs on the desktop while the gate
-decision stays in the distro's engine.
+decision stays in the distro's engine. Jev is a Decisions reviewer with
+`effort: "none"`; it uses its selected `provider` and a three-option `choice`
+instead of a chat completion.
 When the chosen model exposes a Fast serving tier, `serviceTier` is the concrete
 catalog id (`"standard"`, `"priority"`, `"fast"`, etc.) and is forwarded as
 `service_tier` on the headless request. `"inherit"` is not valid for a gate
@@ -3178,10 +3193,12 @@ agent-facing `gate-set` tool.
 - `mode`: `"inherit"` (follow the party gate) | `"on"` | `"off"`.
 - `rule`: the communication rule the headless reviewer enforces. `null` = inherit
   the party rule.
-- `reviewer`: `{ model, effort, serviceTier? }` for a custom headless reviewer (no harness —
+- `reviewer`: `{ model, effort, serviceTier?, provider? }` for a custom headless reviewer (no harness —
   it runs as a raw completion). `null` = use the settings default
   (`gateDefaults`). `serviceTier`, when supported, must be a concrete catalog
   tier and never `"inherit"`.
+  For Jev use `{ "model": "jev", "effort": "none", "provider": "openrouter" }`.
+  `provider` is Jev-only and can be omitted to follow the app-wide Jev default.
 
 ### `POST /api/parties/:id/gate`
 

@@ -6,6 +6,7 @@ import { Segmented } from "./Segmented";
 import { Dropdown } from "./Dropdown";
 import { findRoute, type RouteLike } from "./routes";
 import type { GateReviewer } from "../../shared/messageGate";
+import { JEV_PROVIDER_IDS, JEV_PROVIDER_LABELS } from "../../shared/jev";
 import { LocalizedText, localized } from "../i18n/I18nProvider";
 
 /**
@@ -19,15 +20,6 @@ import { LocalizedText, localized } from "../i18n/I18nProvider";
  */
 export function headlessReviewerRoutes(routes: RouteLike[]): RouteLike[] {
   const byModel = new Map<string, RouteLike>();
-  // Gate-only Decisions route. It is deliberately absent from member model routes.
-  byModel.set("jev", {
-    model: "jev",
-    label: "Jev",
-    providerId: "openrouter",
-    description: "Jev Decisions reviewer. Returns compliance probabilities; no reasoning effort.",
-    enabled: true,
-    capabilities: { effort: { supported: false, options: [] }, serviceTier: { supported: false, options: [] }, vision: { image: false } },
-  });
   for (const route of routes) {
     const key = route.model.trim().toLowerCase().replace(/[\s_-]+/g, "-");
     if (key === "jev") continue; // Decisions transport, never a chat route.
@@ -59,19 +51,53 @@ export function headlessReviewerRoutes(routes: RouteLike[]): RouteLike[] {
   return Array.from(byModel.values());
 }
 
+function standardReviewer(models: RouteLike[]): GateReviewer {
+  const route = models.find((item) => item.model === "GPT-5.6 Terra" && item.enabled !== false)
+    ?? models.find((item) => item.enabled !== false)
+    ?? models[0];
+  const efforts = route?.capabilities?.effort?.supported ? route.capabilities.effort.options || [] : [];
+  return {
+    model: route?.model ?? "GPT-5.6 Terra",
+    effort: efforts.find((item) => item.id === "low")?.id ?? efforts[0]?.id ?? "none",
+  };
+}
+
+function JevGateMode({ enabled, provider, onToggle, onProvider }: {
+  enabled: boolean;
+  provider: string;
+  onToggle: (enabled: boolean) => void;
+  onProvider: (provider: string) => void;
+}) {
+  return <div className="wb-gate-jev-mode">
+    <label className="wb-gate-jev-toggle">
+      <span>메시지 게이트에 Jev 사용하기</span>
+      <input type="checkbox" className="wb-switch" checked={enabled} onChange={(event) => onToggle(event.target.checked)} />
+    </label>
+    {enabled && <>
+      <p className="wb-gate-jev-note">Jev는 메시지가 규칙을 지키는지 통과·반려·판정 불가로 분류합니다. 판정 불가이면 전송합니다. 메시지마다 Jev API 호출 비용이 발생합니다.</p>
+      <label className="wb-gate-jev-provider">
+        <span>Jev 제공자</span>
+        <select className="set-select" value={provider} onChange={(event) => onProvider(event.target.value)}>
+          {!JEV_PROVIDER_IDS.some((id) => id === provider) && <option value={provider}>{provider} (이 버전에서 지원하지 않음)</option>}
+          {JEV_PROVIDER_IDS.map((id) => <option key={id} value={id}>{JEV_PROVIDER_LABELS[id]}</option>)}
+        </select>
+      </label>
+    </>}
+  </div>;
+}
+
 /**
- * Picks the model + effort a Message Gate reviewer runs on.
+ * Picks an ordinary model + effort or the separate Jev Decisions mode.
  *
  * One control for all three places a reviewer is chosen — the Runtime settings
- * default, a member's own gate, and the party-wide gate — laid out the same way
- * as a harness card: browse models in the catalog modal (search, cost, context),
- * retune effort inline. Each of those screens used to carry its own copy of the
- * trigger AND of the headless de-duplication above, so they drifted apart.
+ * default, a member's own gate, and the party-wide gate. Ordinary models use
+ * the headless catalog; Jev uses an explicit switch and provider selector.
  */
 export function GateReviewerControl({
   routes,
   reviewer,
   onChange,
+  defaultJevProvider,
   modelLabel = "리뷰어 모델",
   effortLabel = "리뷰어 effort",
   badge,
@@ -80,35 +106,53 @@ export function GateReviewerControl({
   routes: RouteLike[];
   reviewer: GateReviewer;
   onChange: (reviewer: GateReviewer) => void;
+  defaultJevProvider: string;
   modelLabel?: string;
   effortLabel?: string;
   /** e.g. the settings screen's 권장 marker, shown beside the model label. */
   badge?: ReactNode;
 }) {
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [previousStandard, setPreviousStandard] = useState<GateReviewer | null>(reviewer.model.toLowerCase() === "jev" ? null : reviewer);
   const models = useMemo(() => headlessReviewerRoutes(routes), [routes]);
+  const jevEnabled = reviewer.model.toLowerCase() === "jev";
   const selected = findRoute(reviewer.model, models);
   const effortOptions = selected?.capabilities?.effort?.supported ? (selected.capabilities.effort.options || []) : [];
 
   return (
     <>
-      <div className="set-field">
-        <span className="set-field-label">{modelLabel} {badge}</span>
-        <button type="button" className="wb-model-picker-trigger set-model-trigger" onClick={() => setCatalogOpen(true)}>
-          <span className="wb-mono">{selected?.label || reviewer.model}</span>
-          <ChevronDown size={14} />
-        </button>
-      </div>
-      {effortOptions.length > 0 && (
+      <JevGateMode
+        enabled={jevEnabled}
+        provider={reviewer.provider || defaultJevProvider}
+        onToggle={(enabled) => {
+          if (enabled) {
+            setPreviousStandard(reviewer);
+            onChange({ model: "jev", effort: "none", provider: defaultJevProvider });
+          } else {
+            onChange(previousStandard ?? standardReviewer(models));
+          }
+        }}
+        onProvider={(provider) => onChange({ model: "jev", effort: "none", provider })}
+      />
+      {!jevEnabled && <>
         <div className="set-field">
-          <span className="set-field-label">{effortLabel}</span>
-          <Segmented
-            value={reviewer.effort}
-            options={effortOptions.map((option) => ({ id: option.id, label: option.label }))}
-            onChange={(effort) => onChange({ ...reviewer, effort })}
-          />
+          <span className="set-field-label">{modelLabel} {badge}</span>
+          <button type="button" className="wb-model-picker-trigger set-model-trigger" onClick={() => setCatalogOpen(true)}>
+            <span className="wb-mono">{selected?.label || reviewer.model}</span>
+            <ChevronDown size={14} />
+          </button>
         </div>
-      )}
+        {effortOptions.length > 0 && (
+          <div className="set-field">
+            <span className="set-field-label">{effortLabel}</span>
+            <Segmented
+              value={reviewer.effort}
+              options={effortOptions.map((option) => ({ id: option.id, label: option.label }))}
+              onChange={(effort) => onChange({ ...reviewer, effort })}
+            />
+          </div>
+        )}
+      </>}
       {catalogOpen && (
         <ModelCatalogModal
           title={localized("STR-1671")}
@@ -118,11 +162,11 @@ export function GateReviewerControl({
           value={{ model: reviewer.model, effort: reviewer.effort, serviceTier: reviewer.serviceTier }}
           config={{ effort: true, serviceTier: true }}
           applyLabel="선택"
-          onApply={(next) => onChange({
-            model: next.model,
-            effort: next.model === "jev" ? "none" : next.effort || reviewer.effort,
-            ...(next.model !== "jev" && next.serviceTier ? { serviceTier: next.serviceTier } : {}),
-          })}
+          onApply={(next) => {
+            const selectedReviewer = { model: next.model, effort: next.effort || reviewer.effort, ...(next.serviceTier ? { serviceTier: next.serviceTier } : {}) };
+            setPreviousStandard(selectedReviewer);
+            onChange(selectedReviewer);
+          }}
           onClose={() => setCatalogOpen(false)}
         />
       )}
@@ -135,6 +179,7 @@ export function GateReviewerInlineControl({
   routes,
   reviewer,
   defaultReviewer,
+  defaultJevProvider,
   inherited,
   onChange,
   onInherit,
@@ -142,6 +187,7 @@ export function GateReviewerInlineControl({
   routes: RouteLike[];
   reviewer: GateReviewer;
   defaultReviewer: GateReviewer;
+  defaultJevProvider: string;
   inherited: boolean;
   onChange: (reviewer: GateReviewer) => void;
   onInherit: () => void;
@@ -149,6 +195,8 @@ export function GateReviewerInlineControl({
   const [catalogOpen, setCatalogOpen] = useState(false);
   const models = useMemo(() => headlessReviewerRoutes(routes), [routes]);
   const effective = inherited ? defaultReviewer : reviewer;
+  const [previousStandard, setPreviousStandard] = useState<GateReviewer | null>(effective.model.toLowerCase() === "jev" ? null : effective);
+  const jevEnabled = effective.model.toLowerCase() === "jev";
   const selected = findRoute(effective.model, models);
   const effortOptions = selected?.capabilities?.effort?.supported
     ? (selected.capabilities.effort.options || [])
@@ -166,40 +214,60 @@ export function GateReviewerInlineControl({
 
   return (
     <>
-      <div className="wb-gate-reviewer-row">
-        <strong><LocalizedText id="STR-3866" /></strong>
-        <button
-          type="button"
-          className="wb-pill wb-dd-trigger"
-          title={`${localized("STR-1669")}: ${selected?.label || effective.model}`}
-          onClick={() => setCatalogOpen(true)}
-        >
-          <span className="wb-dd-label">{selected?.label || effective.model}</span>
-          <ChevronDown size={11} className="wb-pill-caret" />
-        </button>
-        {selected?.model !== "jev" && <Dropdown
-          value={effective.effort}
-          options={displayedEfforts}
-          title={localized("STR-1670")}
-          onChange={(effort) => onChange({
-            model: effective.model,
-            effort,
-            ...(concreteTier ? { serviceTier: concreteTier } : {}),
-          })}
-        />}
-        {displayedTiers.length > 0 && concreteTier && (
+      <div className="wb-gate-reviewer-setting">
+        <JevGateMode
+          enabled={jevEnabled}
+          provider={effective.provider || defaultJevProvider}
+          onToggle={(enabled) => {
+            if (enabled) {
+              setPreviousStandard(effective);
+              onChange({ model: "jev", effort: "none", provider: defaultJevProvider });
+            } else {
+              onChange(previousStandard ?? standardReviewer(models));
+            }
+          }}
+          onProvider={(provider) => onChange({ model: "jev", effort: "none", provider })}
+        />
+        {!jevEnabled && <div className="wb-gate-reviewer-row">
+          <strong><LocalizedText id="STR-3866" /></strong>
+          <button
+            type="button"
+            className="wb-pill wb-dd-trigger"
+            title={`${localized("STR-1669")}: ${selected?.label || effective.model}`}
+            onClick={() => setCatalogOpen(true)}
+          >
+            <span className="wb-dd-label">{selected?.label || effective.model}</span>
+            <ChevronDown size={11} className="wb-pill-caret" />
+          </button>
           <Dropdown
-            value={concreteTier}
-            options={displayedTiers}
-            title="Fast"
-            onChange={(serviceTier) => onChange({
+            value={effective.effort}
+            options={displayedEfforts}
+            title={localized("STR-1670")}
+            onChange={(effort) => onChange({
               model: effective.model,
-              effort: effective.effort,
-              serviceTier,
+              effort,
+              ...(concreteTier ? { serviceTier: concreteTier } : {}),
             })}
           />
-        )}
-        {!inherited && (
+          {displayedTiers.length > 0 && concreteTier && (
+            <Dropdown
+              value={concreteTier}
+              options={displayedTiers}
+              title="Fast"
+              onChange={(serviceTier) => onChange({
+                model: effective.model,
+                effort: effective.effort,
+                serviceTier,
+              })}
+            />
+          )}
+          {!inherited && (
+            <button type="button" className="wb-gate-reset" onClick={onInherit}>
+              <Undo2 size={12} /> <LocalizedText id="STR-3868" />
+            </button>
+          )}
+        </div>}
+        {jevEnabled && !inherited && (
           <button type="button" className="wb-gate-reset" onClick={onInherit}>
             <Undo2 size={12} /> <LocalizedText id="STR-3868" />
           </button>
@@ -214,11 +282,9 @@ export function GateReviewerInlineControl({
           config={{ effort: true, serviceTier: true }}
           applyLabel="선택"
           onApply={(next) => {
-            onChange({
-              model: next.model,
-              effort: next.model === "jev" ? "none" : next.effort || effective.effort,
-              ...(next.model !== "jev" && next.serviceTier ? { serviceTier: next.serviceTier } : {}),
-            });
+            const selectedReviewer = { model: next.model, effort: next.effort || effective.effort, ...(next.serviceTier ? { serviceTier: next.serviceTier } : {}) };
+            setPreviousStandard(selectedReviewer);
+            onChange(selectedReviewer);
           }}
           onClose={() => setCatalogOpen(false)}
         />

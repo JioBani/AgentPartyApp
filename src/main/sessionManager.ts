@@ -384,7 +384,7 @@ export class SessionManager extends EventEmitter {
    */
   emitGateBadge(
     sessionId: string,
-    gate: { gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: GateScope; violation?: GateViolation; reviewer?: GateReviewer },
+    gate: { gate: "rejected" | "forced" | "failed" | "undecidable"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: GateScope; violation?: GateViolation; reviewer?: GateReviewer },
   ): void {
     const session = this.sessions.get(sessionId);
     if (!session || session.closed) {
@@ -1951,7 +1951,7 @@ export class SessionManager extends EventEmitter {
     member?: string;
     model?: string;
     /** Set when the review reached a decision. Omit when it failed open. */
-    verdict?: "allow" | "reject";
+    verdict?: "allow" | "reject" | "undecidable";
     /** Set INSTEAD of `verdict` when the review failed and the gate let the
      *  message through unreviewed. Without this the failure left no trace. */
     failure?: { layer: GateFailureLayer; detail?: string };

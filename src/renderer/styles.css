@@ -8907,6 +8907,17 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   min-height: 160px;
 }
 
+/* The party dialog has a member list below the rule. Keep the Jev controls in
+   normal document flow and let the body scroll when the window is short. */
+.wb-party-gate-modal.wb-gate-rule-first .wb-gate-rule-block { flex: none; }
+.wb-party-gate-modal.wb-gate-rule-first .wb-gate-rule-block .wb-gate-textarea {
+  flex: none;
+  height: clamp(90px, 15vh, 150px);
+  min-height: 90px;
+}
+.wb-party-gate-modal .wb-gate-list-block.is-open { flex: none; min-height: 0; }
+.wb-party-gate-modal .wb-gate-list-block.is-open .wb-gate-member-list { max-height: 180px; overflow-y: auto; }
+
 .wb-gate-mode-row {
   display: flex;
   flex: none;
@@ -8927,13 +8938,31 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
   border-radius: var(--radius-card);
 }
 
+.wb-gate-reviewer-setting { display: flex; flex: none; flex-direction: column; gap: 8px; min-width: 0; }
+.wb-gate-reviewer-setting > .wb-gate-reset { align-self: flex-end; }
+.wb-gate-jev-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.wb-gate-jev-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text-1); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.wb-gate-jev-toggle .wb-switch { flex: none; }
+.wb-gate-jev-note { margin: 0; color: var(--text-2); font-size: 11.5px; line-height: 1.5; }
+.wb-gate-jev-provider { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text-2); font-size: 11.5px; }
+.wb-gate-jev-provider .set-select { width: min(100%, 200px); min-width: 120px; }
+
 .wb-gate-reviewer-row strong {
   flex: none;
   font-size: 12.5px;
   color: var(--text-1);
 }
 
-.wb-gate-block > .wb-gate-reviewer-row {
+.wb-gate-block .wb-gate-reviewer-setting > .wb-gate-reviewer-row {
   padding: 0;
   background: none;
   border: none;
@@ -8981,6 +9010,7 @@ button.wb-cli-option:hover:not(:disabled) { border-color: var(--accent-bd); back
 /* `.set-inline-note` carries its own 20px inset; the reviewer fields have to be
    given the same one or they sit flush against the card edge. */
 .set-gate-defaults > .set-field { margin: 0 20px; }
+.set-gate-defaults > .wb-gate-jev-mode { margin: 0 20px; }
 .set-reco-badge {
   margin-left: 6px;
   padding: 1px 6px;

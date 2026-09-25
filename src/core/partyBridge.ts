@@ -131,7 +131,7 @@ export interface PartyGatePatch {
   axis?: "send" | "recv";
   mode?: "inherit" | "on" | "off";
   rule?: string | null;
-  reviewer?: { model: string; effort: string; serviceTier?: string } | null;
+  reviewer?: { model: string; effort: string; serviceTier?: string; provider?: string } | null;
 }
 
 /**
@@ -144,7 +144,7 @@ export interface PartyGateGlobalPatch {
   axis?: "send" | "recv";
   enabled?: boolean;
   rule?: string;
-  reviewer?: { model: string; effort: string; serviceTier?: string } | null;
+  reviewer?: { model: string; effort: string; serviceTier?: string; provider?: string } | null;
 }
 
 // The capability surface a hosted member can drive. Every method routes through
@@ -339,8 +339,8 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "member-remove": "Remove one or more members from your party. Pass `name` as one member name or an array of names.",
   "member-permission": "Change another member's permission. Use permissionMode for Claude Code, codexPolicy for Codex, or cursorPolicy for Cursor. Call list-models to inspect each route's harness and permission contract.",
   "member-runtime": "Change one other member's model, reasoning effort, and/or Fast mode without changing its harness. Call list-models with the member's harness for valid model ids and effort options. Fast is a boolean: true selects that route's native Fast tier (for example priority on Codex or fast on Cursor), false selects Standard or clears an inapplicable stale tier. Existing conversation is preserved when a session restart is required. A busy target is refused instead of having its turn killed.",
-  "gate-set": "Set one axis of another member's Message Gate. axis: send|recv (omitted = send for compatibility). mode: inherit|on|off. rule: text to enforce (null = inherit the matching party axis). reviewer: {model, effort, serviceTier?} (null = no axis-specific reviewer). Send and receive rules are combined into one review when both apply. Any member may edit any member's gate. The result confirms ruleChars without echoing the rule; use list {name} to inspect it.",
-  "party-gate-set": "Set one PARTY-WIDE Message Gate axis. axis: send|recv (omitted = send for compatibility). enabled, rule, and reviewer patch only that axis; every matching inheriting member follows it. Send and receive rules are combined into one delivery-time review. Prefer gate-set when only one member should change. The result confirms ruleChars without echoing the rule.",
+  "gate-set": "Set one axis of another member's Message Gate. axis: send|recv (omitted = send for compatibility). mode: inherit|on|off. rule: text to enforce (null = inherit the matching party axis). reviewer: {model, effort, serviceTier?} for ordinary models, or {model:'jev', effort:'none', provider?} for Jev Decisions (null = inherit). Jev classifies allow/reject/undecidable; undecidable is delivered. Send and receive rules are combined into one review when both apply. The result confirms ruleChars without echoing the rule; use list {name} to inspect it.",
+  "party-gate-set": "Set one PARTY-WIDE Message Gate axis. axis: send|recv (omitted = send for compatibility). enabled, rule, and reviewer patch only that axis; every matching inheriting member follows it. Use reviewer {model:'jev', effort:'none', provider?} to select Jev Decisions; undecidable messages are delivered. Send and receive rules are combined into one delivery-time review. The result confirms ruleChars without echoing the rule.",
   list: "List compact member summaries and current tabGroups. Pass `name` to inspect one member's full model, permission, location, and Message Gate settings. Full detail for every member is intentionally unavailable because long inherited gate rules would be repeated once per member. Pass a chosen tabGroups[].id to member-create.tabGroup.",
   "list-locations": "List the execution hosts this app supports plus recent and default cwd suggestions. Use a returned host/cwd/distro/server tuple as member-create.location. Entries with problem are shown for diagnostics but must not be used until repaired.",
   "list-models": "Discover available harnesses, models, and reasoning options for member-create. Called with NO arguments it returns a compact index of every model — label, which harnesses run it, and the id to pass to member-create when that id differs from the label. Pass `harness`, `provider`, and/or `query` to get the FULL detail (effort/thinking options, service tier, pricing, context window) for just the matches; that is the cheap way to answer 'what settings does this one model take'. Filters narrow, they never paginate: dropping them always widens back to everything. A filter that matches nothing is an ERROR listing what does exist, never an empty result — so an empty answer never means 'this model is unavailable'. Routes that cannot currently be used are excluded from detail rows but their count is always reported and `includeUnavailable: true` brings them back with the reason.",
@@ -564,6 +564,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
           model: { type: "string", description: "Model id from list-models." },
           effort: { type: "string", description: "Model-supported effort, e.g. none | low | medium | high | xhigh | max." },
           serviceTier: { type: "string", description: "Concrete serving tier from list-models, for example standard or priority (Fast). Do not pass inherit." },
+          provider: { type: "string", description: "Jev provider id from jev-providers; only used when model is jev. Omit to use the app default." },
         },
         required: ["model", "effort"],
         additionalProperties: false,
@@ -585,6 +586,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
           model: { type: "string", description: "Model id from list-models." },
           effort: { type: "string", description: "Model-supported effort, e.g. none | low | medium | high | xhigh | max." },
           serviceTier: { type: "string", description: "Concrete serving tier from list-models, for example standard or priority (Fast). Do not pass inherit." },
+          provider: { type: "string", description: "Jev provider id from jev-providers; only used when model is jev. Omit to use the app default." },
         },
         required: ["model", "effort"],
         additionalProperties: false,
@@ -1018,7 +1020,7 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         patch.reviewer = input.reviewer === null
           ? null
           : input.reviewer && typeof input.reviewer === "object"
-            ? input.reviewer as { model: string; effort: string; serviceTier?: string }
+            ? input.reviewer as { model: string; effort: string; serviceTier?: string; provider?: string }
             : undefined;
       }
       return bridge.gateSet(memberName, patch);
@@ -1039,7 +1041,7 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
         patch.reviewer = input.reviewer === null
           ? null
           : input.reviewer && typeof input.reviewer === "object"
-            ? input.reviewer as { model: string; effort: string; serviceTier?: string }
+            ? input.reviewer as { model: string; effort: string; serviceTier?: string; provider?: string }
             : undefined;
       }
       if (!Object.keys(patch).length) {
@@ -1292,6 +1294,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
           model: z.string().describe("Model id from list-models."),
           effort: z.string().describe("Model-supported effort, e.g. none | low | medium | high | xhigh | max."),
           serviceTier: z.string().optional().describe("Concrete serving tier from list-models, e.g. standard or priority (Fast). Do not pass inherit."),
+          provider: z.string().optional().describe("Jev provider id from jev-providers; only when model is jev. Omit for app default."),
         }).nullable().optional().describe("Custom reviewer for this axis (null = no axis-specific reviewer; the other active axis may still select one)."),
       },
       async (args: { name: string } & PartyGatePatch) => envelope(await bridge.gateSet(args.name, args)),
@@ -1307,6 +1310,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
           model: z.string().describe("Model id from list-models."),
           effort: z.string().describe("Model-supported effort, e.g. none | low | medium | high | xhigh | max."),
           serviceTier: z.string().optional().describe("Concrete serving tier from list-models, e.g. standard or priority (Fast). Do not pass inherit."),
+          provider: z.string().optional().describe("Jev provider id from jev-providers; only when model is jev. Omit for app default."),
         }).nullable().optional().describe("Party-wide reviewer for this axis (null = no axis-specific reviewer). A member's matching-axis reviewer still wins."),
       },
       async (args: PartyGateGlobalPatch) => envelope(await bridge.partyGateSet(args)),

@@ -21,6 +21,7 @@ interface MessageGateModalProps {
   routes: RouteLike[];
   partyGate?: PartyGate;
   gateDefaults: GateReviewer;
+  defaultJevProvider: string;
   onApply: (patch: MemberGateUpdate) => void;
   onBack?: () => void;
   onClose: () => void;
@@ -51,7 +52,7 @@ function draftOf(axis: GateAxis, gate: MemberGateOverride | undefined, party: Pa
   };
 }
 
-export function MessageGateModal({ view, routes, partyGate, gateDefaults, onApply, onBack, onClose }: MessageGateModalProps) {
+export function MessageGateModal({ view, routes, partyGate, gateDefaults, defaultJevProvider, onApply, onBack, onClose }: MessageGateModalProps) {
   useModalEscape(onClose);
   const stored = view.member.gate;
   const [axis, setAxis] = useState<GateAxis>("send");
@@ -85,6 +86,7 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
         value.reviewer.model !== storedValue?.reviewer?.model
         || value.reviewer.effort !== storedValue?.reviewer?.effort
         || value.reviewer.serviceTier !== storedValue?.reviewer?.serviceTier
+        || value.reviewer.provider !== storedValue?.reviewer?.provider
       ));
   }
 
@@ -151,9 +153,11 @@ export function MessageGateModal({ view, routes, partyGate, gateDefaults, onAppl
           </div>
 
           <GateReviewerInlineControl
+            key={axis}
             routes={routes}
             reviewer={draft.reviewer}
             defaultReviewer={partyAxis.reviewer ?? gateDefaults}
+            defaultJevProvider={defaultJevProvider}
             inherited={!draft.reviewerSet}
             onChange={(reviewer) => patch({ reviewerSet: true, reviewer })}
             onInherit={() => patch({ reviewerSet: false, reviewer: partyAxis.reviewer ?? gateDefaults })}

@@ -2580,7 +2580,7 @@ export class PartyApplicationService {
             partyId: targetPartyId,
             member: sender.name,
             model: plan.reviewer.model,
-            provider: plan.reviewer.model.toLowerCase() === "jev" ? getSettings().jevDefaultProvider : undefined,
+            provider: plan.reviewer.model.toLowerCase() === "jev" ? (plan.reviewer.provider || getSettings().jevDefaultProvider) : undefined,
             failure: { layer: classifyGateFailure(error), detail },
           });
           this.emitGateBadge(sender, { gate: "failed", to: target.name, from: sender.name, reason: detail, errcode: "reviewer_error", scope: plan.scope, reviewer: plan.reviewer });
@@ -2647,6 +2647,12 @@ export class PartyApplicationService {
           log("info", "party", "message gate rejected", { workspace, partyId: targetPartyId, from: sender.name, to: freshTarget.name, scope: plan.scope, violation: verdict.violation ?? plan.scope, reviewer: plan.reviewer.model });
           return { ...this.result(`Message to '${freshTarget.name}' was rejected by the message gate.`, fresh, freshTarget), partyMessage: message };
         }
+        if (verdict.verdict === "undecidable") {
+          this.emitGateBadge(sender, { gate: "undecidable", to: target.name, from: sender.name, reason: verdict.reason, scope: plan.scope, reviewer: plan.reviewer });
+          log("info", "party", "message gate undecidable (delivery proceeds)", { workspace, partyId: targetPartyId, from: sender.name, to: target.name, scope: plan.scope, reviewer: plan.reviewer.model, provider: verdict.provider });
+          const delivered = this.sendMessage(to, content, from, attachments, partyId, { interrupt: options?.interrupt });
+          return { ...delivered, message: `${delivered.message} Message gate could not determine compliance; delivery proceeded.` };
+        }
         // allow → fall through to delivery.
       } else if (plan.active && options?.force) {
         this.emitGateBadge(sender, { gate: "forced", to: target.name, from: sender.name, reason: options.forceReason, scope: plan.scope });
@@ -2664,7 +2670,7 @@ export class PartyApplicationService {
   /** Surfaces a Message Gate outcome as an inline badge in the SENDER's transcript (UI-only). */
   private emitGateBadge(
     sender: PartyMember,
-    gate: { gate: "rejected" | "forced" | "failed"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: "send" | "recv" | "both"; violation?: "send" | "recv" | "both"; reviewer?: GateReviewer },
+    gate: { gate: "rejected" | "forced" | "failed" | "undecidable"; to: string; from?: string; reason?: string; rule?: string; errcode?: string; scope?: "send" | "recv" | "both"; violation?: "send" | "recv" | "both"; reviewer?: GateReviewer },
   ): void {
     if (sender.sessionId && this.deps.sessionManager.hasSession(sender.sessionId)) {
       this.deps.sessionManager.emitGateBadge(sender.sessionId, gate);

@@ -81,10 +81,12 @@ try {
   check(written.ok && written.data?.path === outputPath, "member-scoped MCP writes on the member host");
   check(typeof JSON.parse(fs.readFileSync(outputPath, "utf8")).answers?.backend?.noul === "number", "file contains complete Jev answer");
 
-  const gate = await mcp("party-gate-set", { axis: "send", enabled: true, rule: "Every outgoing message must contain the exact word APPLE.", reviewer: { model: "jev", effort: "none" } });
+  const gate = await mcp("party-gate-set", { axis: "send", enabled: true, rule: "Every outgoing message must contain the exact word APPLE.", reviewer: { model: "jev", effort: "none", provider: "openrouter" } });
   check(gate.ok, "Message Gate accepts Jev as reviewer");
   const rejected = await mcp("send", { to: "peer", content: "BANANA" });
   check(!rejected.ok && /규칙|rule|gate/i.test(rejected.error || ""), "live Jev gate rejects a clear violation");
+  const accepted = await mcp("send", { to: "peer", content: "APPLE" });
+  check(accepted.ok, "live Jev gate delivers a clear pass");
   const usage = await app.get("/api/token-usage/turns?range=5h");
   const records = Array.isArray(usage) ? usage : usage.turns || [];
   check(records.some((entry) => entry.trigger === "jev-decision" && entry.costUsd > 0), "direct Jev calls enter the cost ledger");
@@ -92,7 +94,7 @@ try {
   const aggregate = await app.get("/api/token-usage?range=5h");
   check(aggregate.totals?.costUsd >= records.filter((entry) => entry.provider === "openrouter").reduce((sum, entry) => sum + (entry.costUsd || 0), 0), "reported Jev spend enters the dashboard total");
 
-  await app.post("/api/settings", { gateDefaults: { model: "jev", effort: "none" } });
+  await app.post("/api/settings", { gateDefaults: { model: "jev", effort: "none", provider: "openrouter" } });
   await app.post("/api/navigation", { view: "agent", tab: "gate" });
   await delay(300);
   for (const bounds of [{ width: 1440, height: 900 }, { width: 1100, height: 720 }]) {
@@ -102,6 +104,8 @@ try {
     const card = await app.post("/api/measure", { selector: '[data-layout-card="agent-jev"]', limit: 1 });
     if (!card.elements?.[0]?.box?.width) console.log("Jev card measure:", JSON.stringify(card).slice(0, 800));
     check(card.elements?.[0]?.box?.width > 200 && !card.elements?.[0]?.scrollable?.horizontal, `Jev settings card fits ${bounds.width}px window`);
+    const gateCard = await app.post("/api/measure", { selector: '[data-layout-card="agent-gate"] .wb-gate-jev-provider', limit: 1 });
+    check(gateCard.elements?.[0]?.box?.width > 120, `Jev gate provider selector appears at ${bounds.width}px`);
     for (const theme of ["light", "dark"]) {
       await app.post("/api/appearance/theme", { theme: `agentparty-${theme}` });
       await delay(150);
@@ -110,14 +114,58 @@ try {
       check(capture.bytes > 1000 && fs.existsSync(shot), `Jev gate UI captured at ${bounds.width}px in ${theme} theme`);
     }
   }
+  const turnedOff = await app.post("/api/capture", { click: '[data-layout-card="agent-gate"] .wb-gate-jev-toggle input' });
+  check(turnedOff.clicked === true && (await app.get("/api/state")).settings?.gateDefaults?.model !== "jev", "Jev gate switch returns to an ordinary reviewer");
   const opened = await app.post("/api/capture", { click: '[data-layout-card="agent-gate"] .wb-model-picker-trigger' });
-  check(opened.clicked === true, "Message Gate model catalog opens from the rendered picker");
-  const jevRow = await app.post("/api/measure", { selector: '.wb-modal-catalog [data-model="jev"]', limit: 1 });
-  check(jevRow.elements?.[0]?.box?.width > 0, "Jev is selectable in the Message Gate model catalog");
-  const modalShot = path.join(runRoot, "jev-gate-catalog-1100-dark.png");
+  check(opened.clicked === true, "ordinary Message Gate model catalog opens");
+  const catalogRows = await app.post("/api/measure", { selector: ".wb-modal-catalog [data-model]", attributes: ["data-model"], limit: 500 });
+  check(catalogRows.count > 0 && catalogRows.elements?.every((item) => item.attributes?.["data-model"] !== "jev"), "Jev is absent from the ordinary model catalog");
+  const modalShot = path.join(runRoot, "ordinary-gate-catalog-1100-dark.png");
   await app.post("/api/capture", { path: modalShot });
   check(fs.existsSync(modalShot), "open Message Gate catalog captured for visual review");
   await app.post("/api/capture", { click: ".wb-modal-catalog .wb-modal-head .wb-icon-btn" });
+  const turnedOn = await app.post("/api/capture", { click: '[data-layout-card="agent-gate"] .wb-gate-jev-toggle input' });
+  check(turnedOn.clicked === true && (await app.get("/api/state")).settings?.gateDefaults?.model === "jev", "Jev gate switch persists the dedicated reviewer mode");
+  await mcp("party-gate-set", { axis: "recv", enabled: true, rule: `Require context. ${"LONG_RULE_TEXT".repeat(35)}` });
+  await app.post("/api/navigation", { view: "workbench" });
+  await delay(1000);
+  for (const kind of ["party", "member"]) {
+    await app.post("/api/qa/gate/open", kind === "party" ? { kind } : { kind, member: "judge" });
+    await delay(1000);
+    const selector = kind === "party" ? ".wb-party-gate-modal" : ".wb-gate-modal:not(.wb-party-gate-modal)";
+    const modal = await app.post("/api/measure", { selector, limit: 1 });
+    check(modal.elements?.[0]?.box?.width > 300 && !modal.elements?.[0]?.scrollable?.horizontal, `${kind} gate modal fits the window`);
+    const mode = await app.post("/api/measure", { selector: `${selector} .wb-gate-jev-provider`, limit: 1 });
+    check(mode.elements?.[0]?.box?.width > 120, `${kind} gate modal exposes its Jev provider`);
+    if (kind === "party") {
+      const flow = await app.post("/api/measure", { selector: `${selector} .wb-gate-jev-provider, ${selector} .wb-gate-list-block`, limit: 2 });
+      check(flow.elements?.[0]?.box?.bottom <= flow.elements?.[1]?.box?.top, "party gate Jev controls do not overlap the member list");
+    }
+    for (const theme of ["light", "dark"]) {
+      await app.post("/api/appearance/theme", { theme: `agentparty-${theme}` });
+      await delay(100);
+      const shot = path.join(runRoot, `jev-${kind}-gate-${theme}.png`);
+      const capture = await app.post("/api/capture", { path: shot });
+      check(capture.bytes > 1000, `${kind} gate modal captured in ${theme} theme`);
+    }
+    await app.post("/api/capture", { click: `${selector} .wb-gate-axis-tab:nth-child(2)` });
+    const receive = await app.post("/api/measure", { selector: `${selector} .wb-gate-jev-provider`, limit: 1 });
+    check(receive.elements?.[0]?.box?.width > 120, `${kind} receive gate also exposes the Jev provider`);
+    if (kind === "party") {
+      const bottom = await app.post("/api/measure", { selector: `${selector} .wb-gate-modal-body`, scroll: { selector: `${selector} .wb-gate-modal-body`, to: "bottom" }, limit: 1 });
+      check(bottom.applied?.scrollTop > 0, "long receive rule leaves the bottom of the party modal reachable");
+      const lastRow = await app.post("/api/measure", { selector: `${selector} .wb-gate-member-row:last-child`, scroll: { selector: `${selector} .wb-gate-member-list`, to: "bottom" }, containedBy: `${selector} .wb-gate-modal-body`, limit: 1 });
+      check(lastRow.elements?.[0]?.containedBy?.fully, "last party member remains visible after scrolling both regions to the bottom");
+      await app.post("/api/capture", { path: path.join(runRoot, "jev-party-gate-receive-bottom.png") });
+    }
+    await app.post("/api/qa/window/bounds", { width: 1440, height: 900 });
+    const wide = await app.post("/api/measure", { selector, limit: 1 });
+    check(wide.elements?.[0]?.box?.width > 300 && !wide.elements?.[0]?.scrollable?.horizontal, `${kind} gate modal fits a 1440px window`);
+    await app.post("/api/capture", { path: path.join(runRoot, `jev-${kind}-gate-1440-dark.png`) });
+    await app.post("/api/qa/window/bounds", { width: 1100, height: 720 });
+    await app.post("/api/capture", { click: `${selector} .wb-modal-head .wb-icon-btn:last-child` });
+  }
+  await app.post("/api/navigation", { view: "agent", tab: "gate" });
   const clicked = await app.post("/api/capture", { click: '[data-layout-card="agent-jev"] .set-toggle' });
   check(clicked.clicked === true, "Jev MCP setting toggles through the rendered UI");
   const uiState = await app.get("/api/state");

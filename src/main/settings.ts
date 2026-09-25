@@ -207,7 +207,7 @@ function mergeHarnessDefaults(stored: Partial<Record<HarnessId, HarnessDefaults>
  */
 function normalizeGateDefaults(value: unknown): GateReviewer {
   const reviewer = normalizeGateReviewer(value) || { ...DEFAULT_GATE_REVIEWER };
-  if (reviewer.model.toLowerCase() === "jev") return { model: "jev", effort: "none" };
+  if (reviewer.model.toLowerCase() === "jev") return { model: "jev", effort: "none", ...(reviewer.provider ? { provider: reviewer.provider } : {}) };
   if (!catalogModelById(reviewer.model) && !catalogModelByRuntime(reviewer.model)) {
     return { ...reviewer, model: DEFAULT_GATE_REVIEWER.model };
   }

@@ -119,7 +119,7 @@ export interface TurnUsageRecord {
    * every existing reader stays correct.
    */
   gate?: {
-    verdict?: "allow" | "reject";
+    verdict?: "allow" | "reject" | "undecidable";
     failure?: { layer: GateFailureLayer; detail?: string };
   };
 }
