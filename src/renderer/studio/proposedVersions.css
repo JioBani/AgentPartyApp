@@ -1,0 +1,286 @@
+/*
+ * 제안 — 버전 화면 + 사이드바 버전 알림.
+ *
+ * 승인되면 값 그대로 styles.css 로 옮긴다: `.nav-badge` 는 `.nav-item` 뒤,
+ * `.ver-*` 는 설정 → 버전 구역을 대체한다. 숫자를 정리하지 않는다.
+ */
+
+/* ---------- 사이드바: 버전 알림 점 ---------- */
+.nav-item { position: relative; }
+.nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg-0);
+  pointer-events: none;
+}
+.nav-item:hover .nav-badge,
+.nav-item.active .nav-badge { box-shadow: 0 0 0 2px var(--bg-2); }
+.nav-badge.is-ready { background: var(--success); }
+/* 눈에 띄게 하되 계속 움직이지 않는다: 새 버전을 처음 알 때 세 번만 퍼진다. */
+.nav-badge.is-available::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  animation: nav-badge-ping 1.6s ease-out 3;
+}
+@keyframes nav-badge-ping {
+  0% { transform: scale(.6); opacity: .7; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .nav-badge.is-available::after { animation: none; } }
+.nav-item:has(.nav-badge.is-available):not(.active) { color: var(--accent); }
+
+/* ---------- 버전 화면 ---------- */
+.ver-main { min-height: 0; }
+.ver-sub { font-size: 12px; color: var(--text-2); }
+.ver-channel { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--text-2); }
+
+.ver-screen {
+  container-type: inline-size;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px var(--space-7) 20px;
+}
+
+/* 업데이트 배너 — 화면의 첫 질문: 새 버전이 있나, 무엇을 누르면 되나. */
+.ver-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px 14px 18px;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: 12px;
+}
+.ver-banner.is-available { border-color: var(--accent-bd); }
+.ver-banner.is-ready { border-color: var(--success-bd); }
+.ver-banner-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--bg-3);
+  color: var(--text-2);
+}
+.ver-banner.is-available .ver-banner-icon { background: var(--accent-dim); color: var(--accent); }
+.ver-banner.is-ready .ver-banner-icon { background: var(--success-dim); color: var(--success); }
+.ver-banner-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ver-banner-text strong { font-size: 13.5px; font-weight: 700; color: var(--text-0); }
+.ver-banner-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-2); }
+.ver-banner-check { height: 34px; }
+.ver-btn-primary {
+  flex: none;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ver-btn-primary:hover { filter: brightness(1.08); }
+.ver-banner.is-ready .ver-btn-primary { background: var(--success); }
+
+/* 목록 | 읽기 */
+.ver-split { flex: 1; min-height: 0; display: flex; gap: 14px; }
+
+.ver-list {
+  flex: none;
+  width: 300px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.ver-list-tools { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-bottom: var(--border-width) solid var(--border-subtle); }
+.ver-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--bg-input);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-input);
+  color: var(--text-3);
+}
+.ver-search:focus-within { border-color: var(--accent-bd); }
+.ver-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-0); font: inherit; font-size: 12px; }
+.ver-list-filter { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ver-count { font-size: 11px; color: var(--text-3); }
+
+.ver-rows { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0; }
+.ver-row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 11px 14px;
+  background: none;
+  border: 0;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ver-row:hover { background: var(--bg-1); }
+.ver-row.is-selected { background: var(--accent-dim); box-shadow: inset 3px 0 0 var(--accent); }
+.ver-row-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ver-row-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.ver-row-date { margin-left: auto; font-size: 10.5px; color: var(--text-3); }
+.ver-row-title { font-size: 12px; line-height: 1.4; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ver-row.is-selected .ver-row-title { color: var(--text-0); font-weight: 600; }
+
+/* 읽기 영역 — 노트를 상자에 가두지 않는다. 스크롤은 이 영역 하나다. */
+.ver-reader {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.ver-reader-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 12px 0 18px;
+  border-bottom: var(--border-width) solid var(--border-subtle);
+}
+.ver-reader-when { font-size: 11.5px; color: var(--text-2); white-space: nowrap; }
+.ver-reader-tags { display: flex; gap: 6px; }
+.ver-reader-spacer { flex: 1; }
+.ver-reader-link { white-space: nowrap; }
+.ver-step { display: flex; gap: 4px; }
+.ver-step button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-button);
+  color: var(--text-1);
+  cursor: pointer;
+}
+.ver-step button:disabled { color: var(--text-3); cursor: default; opacity: .6; }
+
+.ver-reader-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.ver-reader-page { display: flex; justify-content: center; gap: 40px; padding: 30px 36px 56px; }
+.ver-reader-body { flex: 1 1 auto; min-width: 0; max-width: 720px; }
+.ver-reader-kicker { font-size: 11.5px; font-weight: 700; color: var(--accent); }
+.ver-reader-title { margin: 6px 0 18px; font-size: 22px; line-height: 1.35; font-weight: 700; color: var(--text-0); }
+
+/* 노트 타이포그래피 — 채팅용 .wb-md 를 읽기용 크기로 키운다. */
+.ver-notes .wb-md { font-size: 13.5px; line-height: 1.8; color: var(--text-1); }
+.ver-notes .wb-md p { margin: 0 0 14px; }
+.ver-notes .wb-md strong { color: var(--text-0); }
+.ver-notes .wb-md h2 { margin: 34px 0 12px; padding-bottom: 8px; border-bottom: var(--border-width) solid var(--border-subtle); font-size: 16px; }
+.ver-notes .wb-md h3 { margin: 28px 0 8px; font-size: 14.5px; scroll-margin-top: 16px; }
+.ver-notes .wb-md > :first-child { margin-top: 0; }
+.ver-notes .wb-md img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 18px 0 6px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px var(--shadow);
+}
+.ver-notes .wb-md li { margin: 4px 0; }
+
+.ver-toc { flex: none; width: 190px; position: sticky; top: 24px; align-self: flex-start; display: flex; flex-direction: column; }
+.ver-toc-label { margin-bottom: 8px; font-size: 11px; font-weight: 700; color: var(--text-1); }
+.ver-toc button {
+  padding: 5px 0 5px 12px;
+  background: none;
+  border: 0;
+  border-left: 2px solid var(--border-subtle);
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+.ver-toc button:hover { color: var(--text-0); }
+.ver-toc button.is-active { border-left-color: var(--accent); color: var(--text-0); font-weight: 600; }
+
+/* 버전 선택 — 넓을 때는 목록이 대신하므로 배지만, 좁을 때는 목록을 여는 버튼. */
+.ver-picker { position: relative; display: flex; }
+.ver-picker-btn {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  background: var(--bg-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-button);
+  color: var(--text-0);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ver-picker-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  height: 420px;
+  box-shadow: 0 12px 32px var(--shadow-strong);
+  border-radius: 12px;
+}
+.ver-picker-pop .ver-list { width: 320px; }
+
+/* 좁은 창: 목록은 선택 버튼으로 접히고, 목차는 빠진다. */
+@container (max-width: 1200px) {
+  .ver-toc { display: none; }
+}
+@container (max-width: 960px) {
+  .ver-split > .ver-list { display: none; }
+  .ver-picker-btn { display: inline-flex; }
+  .ver-reader-version { display: none; }
+  .ver-reader-page { padding: 24px 28px 48px; }
+  .ver-banner-when { display: none; }
+  .ver-banner-check span { display: none; }
+  .ver-banner-check { width: 34px; padding: 0; justify-content: center; }
+}
+@container (max-width: 560px) {
+  .ver-banner { flex-wrap: wrap; }
+  .ver-reader-when, .ver-reader-link { display: none; }
+}
+
+/* 스튜디오 전용: 레일 상태 나란히 보기 */
+.ver-rail-states { display: flex; gap: 36px; padding: 24px; background: var(--bg-1); }
+.ver-rail-state { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.ver-rail-frame { height: 420px; display: flex; border: var(--border-width) solid var(--border-subtle); border-radius: 10px; overflow: hidden; }
+.ver-rail-state figcaption { white-space: nowrap; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11.5px; color: var(--text-2); }
+.ver-rail-state figcaption strong { font-size: 12.5px; color: var(--text-0); }

@@ -27,6 +27,7 @@ import { PANEL, QUEUE, SUBAGENTS } from "./workbenchFixtures";
 import { CHANNEL_IN, CHANNEL_OUT, SESSION_SPAWN, USER_INPUT } from "./blockFixtures";
 import { CONVERSATION, studioActions, studioCommandUi, view } from "./fixtures";
 import { AppShellMockup } from "./AppShellMockup";
+import { RailBadgeStates, VersionsWindow, type VersionsState } from "./VersionsScreenMockup";
 import {
   approvalEvent,
   COMPACT_DONE,
@@ -382,5 +383,33 @@ export const STORIES: Story[] = [
     title: "앱 창 — 단일 패널",
     note: "패널이 하나일 때. 같은 컴포넌트가 폭을 다 받으면 밀도가 올라가고 툴바가 펼쳐진다.",
     render: () => <div className="st-screen"><AppShellMockup panels={[["impl", "luna"]]} /></div>,
+  },
+
+  // ----------------------------------------- Screens · 제안: 버전 화면
+  {
+    id: "versions-wide",
+    group: "Screens",
+    title: "제안 · 버전 화면 — 넓은 창",
+    note: "설정 탭에서 꺼내 사이드바의 한 화면으로. 위에서부터 업데이트 배너(무엇을 누르면 되나) → 목록 | 읽기 영역. 노트는 320px 상자에 갇히지 않고 본문 폭으로 펼쳐지며, 긴 노트는 옆 목차로 건너뛴다. 목록을 눌러 다른 버전을 읽을 수 있다. 상태를 바꾸면 배너·레일 점·제목줄 알약이 함께 바뀐다.",
+    width: 1440,
+    variants: ["available", "downloaded", "current"],
+    render: (_d, v) => <div className="st-screen"><VersionsWindow key={v} state={(v || "available") as VersionsState} /></div>,
+  },
+  {
+    id: "versions-narrow",
+    group: "Screens",
+    title: "제안 · 버전 화면 — 좁은 창",
+    note: "창이 좁으면 목록이 버전 선택 버튼으로 접히고(눌러서 같은 목록을 띄운다) 목차가 빠진다. 본문 폭은 유지한다.",
+    width: 1024,
+    variants: ["available", "downloaded", "current"],
+    render: (_d, v) => <div className="st-screen" style={{ height: 720 }}><VersionsWindow key={v} state={(v || "available") as VersionsState} /></div>,
+  },
+  {
+    id: "versions-rail",
+    group: "Screens",
+    title: "제안 · 사이드바 버전 알림",
+    note: "설정 바로 위의 버전 버튼. 새 버전이 있으면 파란 점(처음 알게 된 순간 세 번 퍼지고 멈춘다)과 강조색 아이콘, 받기가 끝나 다시 시작만 남으면 초록 점. 점은 설치될 때까지 남는다. 마우스를 올리면 '버전 · v0.15.0 설치 가능'.",
+    width: 600,
+    render: () => <RailBadgeStates />,
   },
 ];

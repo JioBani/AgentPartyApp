@@ -15,7 +15,7 @@
  * which is why they cannot reach for it themselves.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { BarChart3, BookOpen, KeyRound, Maximize2, Minus, Palette, Settings, SlidersHorizontal, Sparkles, X, Flag } from "lucide-react";
+import { BarChart3, BookOpen, KeyRound, Maximize2, Minus, PackageCheck, Palette, Settings, SlidersHorizontal, Sparkles, X, Flag } from "lucide-react";
 
 export interface ChromeTheme {
   id: string;
@@ -152,11 +152,27 @@ export const NAV_ICONS: Record<string, JSX.Element> = {
   usage: <BarChart3 size={18} />,
   auth: <KeyRound size={18} />,
   agent: <SlidersHorizontal size={18} />,
+  versions: <PackageCheck size={18} />,
   settings: <Settings size={18} />,
 };
 
+/**
+ * A rail item can ask to be opened. `available`: something new is waiting
+ * there. `ready`: it waits on one action from the user (restart to install).
+ */
+export type NavBadge = "available" | "ready";
+
+interface NavRailItem {
+  id: string;
+  label: string;
+  icon: JSX.Element;
+  badge?: NavBadge;
+  /** What the badge means, for the tooltip and screen readers. */
+  hint?: string;
+}
+
 interface NavRailProps {
-  items: Array<{ id: string; label: string; icon: JSX.Element }>;
+  items: NavRailItem[];
   current: string;
   onSelect: (id: string) => void;
   /** Account initials. */
@@ -174,9 +190,11 @@ export function NavRail({ items, current, onSelect, avatar, labels }: NavRailPro
             data-view={item.id}
             className={"nav-item " + (current === item.id ? "active" : "")}
             onClick={() => onSelect(item.id)}
-            title={item.label}
+            title={item.hint ? `${item.label} · ${item.hint}` : item.label}
+            aria-label={item.hint ? `${item.label} — ${item.hint}` : item.label}
           >
             {item.icon}
+            {item.badge && <span className={`nav-badge is-${item.badge}`} aria-hidden="true" />}
           </button>
         ))}
       </div>
