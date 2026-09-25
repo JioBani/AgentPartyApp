@@ -25,6 +25,7 @@ const NAV_LABELS: Record<string, string> = {
   usage: "사용량",
   auth: "인증",
   agent: "에이전트",
+  versions: "버전",
   settings: "설정",
 };
 

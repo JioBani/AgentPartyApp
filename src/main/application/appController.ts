@@ -73,7 +73,7 @@ import { getSubscriptionProxyStatus, subscriptionProxyConfig } from "../../core/
 import { cursorAgentLogout, inspectCursorAgent } from "../../core/cursorAgentCli";
 import type { DiscordBridgeService } from "../discordBridgeService";
 import type { DiscordBridgeSettings, DiscordBridgeStatus } from "../../shared/discordBridge";
-import { AGENT_TAB_IDS, LEGACY_RUNTIME_TAB_IDS, SETTINGS_TAB_IDS, isAgentTabId, isRuntimeTabId, isSettingsTabId } from "../../shared/runtimeTabs";
+import { AGENT_TAB_IDS, LEGACY_RUNTIME_TAB_IDS, MOVED_SETTINGS_TABS, SETTINGS_TAB_IDS, isAgentTabId, isRuntimeTabId, isSettingsTabId } from "../../shared/runtimeTabs";
 import { initialUpdateStatus, requireUpdateChannel, type ReleaseSummary, type UpdateChannel, type UpdateCheckOptions, type UpdateStatus } from "../../shared/appUpdate";
 import type { ApprovalIndex } from "../approvalIndex";
 import { SingleFlight } from "../singleFlight";
@@ -836,7 +836,7 @@ export class AppController {
   }
 
   /**
-   * Published release history, newest first — the 설정 → 버전 tab's list. Kept
+   * Published release history, newest first — the 버전 screen's list. Kept
    * separate from {@link getUpdateStatus}: that one is "what should I do now",
    * this one is "what has ever shipped", and the tab shows the history even
    * when self-update is unavailable.
@@ -898,7 +898,7 @@ export class AppController {
       throw new Error("jevMcpEnabled must be a boolean.");
     }
     if (Object.prototype.hasOwnProperty.call(patch || {}, "updateChannel")) {
-      throw new Error("업데이트 채널은 POST /api/update/channel 또는 버전 탭에서 변경하세요.");
+      throw new Error("업데이트 채널은 POST /api/update/channel 또는 버전 화면에서 변경하세요.");
     }
     if (Object.prototype.hasOwnProperty.call(patch || {}, "mobile")) {
       throw new Error("모바일 연동은 현재 데스크톱 릴리스에서 분리되어 설정을 변경할 수 없습니다.");
@@ -3121,8 +3121,13 @@ export class AppController {
       view = "settings";
       tab = "automation";
     }
+    // A settings tab that became its own screen: land on the screen.
+    if (view === "settings" && tab && MOVED_SETTINGS_TABS[tab]) {
+      view = MOVED_SETTINGS_TABS[tab];
+      tab = undefined;
+    }
     const tabbed = view === "agent" || view === "settings";
-    const validViews = ["workbench", "guide", "usage", "auth", "agent", "settings"];
+    const validViews = ["workbench", "guide", "usage", "auth", "agent", "versions", "settings"];
     if (!validViews.includes(view)) throw new Error(`Unknown view '${legacyView}'. Known: ${validViews.join(", ")} (legacy aliases: runtime, automation).`);
     if (tab && !tabbed) throw new Error(`The '${view}' screen has no tabs.`);
     if (view === "agent" && tab && !isAgentTabId(tab)) throw new Error(`Unknown agent tab '${tab}'. Known: ${AGENT_TAB_IDS.join(", ")}.`);

@@ -157,5 +157,11 @@
 .st-screen > * { flex: 1; min-height: 0; }
 
 /* The app window mockup gets a window: the shell is a viewport-tall flex column. */
-.st-window { height: 100%; }
+/* The app sizes its shell to the viewport (100vw/100vh); in a stage the window is the stage. */
+.st-window { height: 100%; width: 100%; }
 .st-hint { margin: var(--space-3) 0 0; font-size: 11px; color: var(--text-3); }
+
+/* Rail states side by side (the 버전 dot). Studio framing only. */
+.st-rail-states { display: flex; gap: 48px; padding: 24px 32px; background: var(--bg-1); }
+.st-rail-state { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; font-size: 12.5px; color: var(--text-0); white-space: nowrap; }
+.st-rail-frame { height: 420px; display: flex; border: var(--border-width) solid var(--border-subtle); border-radius: 10px; overflow: hidden; }

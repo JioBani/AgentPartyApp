@@ -286,7 +286,7 @@ export class UpdateService extends EventEmitter {
   }
 
   /**
-   * Every published release, newest first — what the 설정 → 버전 tab lists.
+   * Every published release, newest first — what the 버전 screen lists.
    *
    * Read straight from the public REST API with no token: the releases repo is
    * public precisely so this works anonymously. Cached for 10 minutes because
