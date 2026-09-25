@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { BrowserWindow, WebContentsView } from "electron";
-import type { BrowserActionInput, BrowserActionResult, BrowserControlPort, BrowserState } from "../shared/browserControl";
+import type { BrowserActionInput, BrowserActionResult, BrowserControlPort, BrowserOpenRequest, BrowserState } from "../shared/browserControl";
 
 interface BrowserEntry {
   partyId: string;
@@ -16,7 +16,7 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
   constructor(private readonly options: {
     resolveWindow: (windowId?: string) => BrowserWindow | undefined;
     onState: (state: BrowserState) => void;
-    onOpenRequested: (partyId: string, member: string) => void;
+    onOpenRequested: (request: BrowserOpenRequest) => void;
   }) {}
 
   async action(partyId: string, member: string, input: BrowserActionInput, windowId?: string): Promise<BrowserActionResult> {
@@ -36,7 +36,7 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
     const contents = entry.view.webContents;
     switch (input.action) {
       case "tab":
-        this.options.onOpenRequested(partyId, member);
+        this.options.onOpenRequested({ partyId, member, focusExisting: true });
         break;
       case "show": {
         const window = this.options.resolveWindow(windowId);
@@ -57,7 +57,7 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
       }
       case "open": {
         const target = this.safeUrl(input.url);
-        this.options.onOpenRequested(partyId, member);
+        this.options.onOpenRequested({ partyId, member, focusExisting: false });
         await contents.loadURL(target);
         break;
       }

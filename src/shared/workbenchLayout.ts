@@ -161,11 +161,11 @@ export function openMemberTab(layout: WorkbenchLayout, memberName: string): Work
   );
 }
 
-/** Opens the member's browser beside its chat tab, or focuses its existing tab. */
-export function openBrowserTab(layout: WorkbenchLayout, memberName: string): WorkbenchLayout {
+/** Opens the member's browser beside chat. Navigating an existing tab may preserve focus. */
+export function openBrowserTab(layout: WorkbenchLayout, memberName: string, focusExisting = true): WorkbenchLayout {
   const browser = browserTabId(memberName);
   const existing = panelOf(layout, browser);
-  if (existing) return activateIn(layout, existing.id, browser);
+  if (existing) return focusExisting ? activateIn(layout, existing.id, browser) : layout;
   const withMember = panelOf(layout, memberName) ? layout : openMemberTab(layout, memberName);
   const owner = panelOf(withMember, memberName)!;
   const tabs = [...owner.tabs];

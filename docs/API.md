@@ -3423,11 +3423,11 @@ below, which binds identity rather than accepting a member name in the body.
 
 `action` can be `state`, `tab`, `merge`, `show`, `hide`, `open`, `back`, `forward`, `reload`,
 `snapshot`, `screenshot`, `click`, `type`, `scroll`, or `close`. `open` accepts an
-HTTP(S) `url` and opens the member's browser tab. `tab` opens/focuses that tab
-without navigating, matching the member header's detail menu action. A new
-browser tab starts beside the member chat tab in the same panel; selecting the
-two tabs switches between chat and browser. If the browser has been split into
-another panel, `tab` moves focus to that existing tab without changing its
+HTTP(S) `url` and opens the member's browser tab. A new browser tab starts
+beside the member chat tab in the same panel. Later `open` calls navigate that
+tab without changing the active tab or focused panel. `tab` explicitly opens or
+focuses the browser without navigating, matching the member header's detail
+menu action; it moves focus to an existing separated tab without changing its
 placement. `merge` moves an already-open browser tab back beside its member
 chat tab, focuses it, and preserves the current page. It restores the chat tab
 first if that tab was closed; it returns an error if no browser tab is open.

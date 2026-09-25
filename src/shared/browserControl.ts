@@ -15,6 +15,13 @@ export interface BrowserActionInput {
   bounds?: { x: number; y: number; width: number; height: number };
 }
 
+/** A navigation may create a tab without taking focus from an existing chat. */
+export interface BrowserOpenRequest {
+  partyId: string;
+  member: string;
+  focusExisting: boolean;
+}
+
 export interface BrowserState {
   partyId: string;
   member: string;

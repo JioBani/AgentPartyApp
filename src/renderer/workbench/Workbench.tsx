@@ -445,9 +445,9 @@ export function Workbench(props: WorkbenchProps) {
   }, [validTabs]);
 
   // UI menu and member MCP both announce browser tabs through the same action.
-  useEffect(() => window.agentParty.onBrowserOpenRequested(({ partyId, member }) => {
+  useEffect(() => window.agentParty.onBrowserOpenRequested(({ partyId, member, focusExisting }) => {
     if (partyId === partyKey && validMembers.has(member)) {
-      setLayout((current) => openBrowserTab(current, member));
+      setLayout((current) => openBrowserTab(current, member, focusExisting));
     }
   }), [partyKey, validMembers]);
 

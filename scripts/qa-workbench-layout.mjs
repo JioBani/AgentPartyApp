@@ -59,6 +59,8 @@ const openedBrowser = openBrowserTab(EMPTY_LAYOUT, "main");
 const browser = openedBrowser.panels[0].tabs[1];
 assert(openedBrowser.panels.length === 1 && openedBrowser.panels[0].tabs[0] === "main", "a new browser starts in its member's panel");
 assert(openedBrowser.panels[0].active === browser, "opening the browser switches to its tab");
+const chatActive = composeLayout([{ ...openedBrowser.panels[0], active: "main" }], openedBrowser.focusedPanelId, openedBrowser.grid);
+assert(openBrowserTab(chatActive, "main", false) === chatActive, "navigating an existing browser preserves the active chat tab");
 const separated = composeLayout([
   { id: "chat", tabs: ["main"], active: "main", weight: 1 },
   { id: "web", tabs: [browser], active: browser, weight: 1 },
@@ -67,6 +69,9 @@ const separated = composeLayout([
   { type: "leaf", panelId: "web", weight: 1 },
 ] });
 assert(openBrowserTab(separated, "main").panels.length === 2, "reopening a separated browser focuses it without moving it");
+const chatFocused = { ...separated, focusedPanelId: "chat" };
+assert(openBrowserTab(chatFocused, "main", false) === chatFocused, "navigating a separated browser preserves chat panel focus");
+assert(openBrowserTab(chatFocused, "main").focusedPanelId === "web", "an explicit browser-tab request still focuses it");
 const merged = mergeBrowserTabIntoMember(separated, "main");
 assert(merged?.panels.length === 1 && merged.panels[0].tabs.join(",") === `main,${browser}`, "merge puts browser beside chat and removes its empty panel");
 assert(merged?.panels[0].active === browser && merged.grid?.type === "leaf", "merge focuses browser and collapses the vacant split");

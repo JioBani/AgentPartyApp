@@ -492,8 +492,8 @@ ${body}
   embeddedBrowser = new EmbeddedBrowserHost({
     resolveWindow: (windowId) => registry().resolve(windowId)?.window,
     onState: (state) => { for (const entry of registry().all()) entry.window.webContents.send("browser:state", state); },
-    onOpenRequested: (partyId, member) => {
-      for (const entry of registry().all()) entry.window.webContents.send("browser:openRequested", { partyId, member });
+    onOpenRequested: (request) => {
+      for (const entry of registry().all()) entry.window.webContents.send("browser:openRequested", request);
     },
   });
   const host = createEngineHost({

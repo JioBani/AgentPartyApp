@@ -13,7 +13,7 @@ import type { GuideHostApi } from "../shared/guideHost";
 import type { TranscriptBlock } from "../shared/transcript";
 import type { TranscriptSnapshot } from "../shared/sessionEventStream";
 import type { SshConnectAttempt, SshDeleteResult, SshFieldError, SshKeyInspection, SshRemoteDirectoryResult, SshRemotePathCheck, SshRemotePathSuggestions, SshServerDraft, SshServerView } from "../shared/sshServers";
-import type { BrowserActionInput, BrowserActionResult, BrowserState } from "../shared/browserControl";
+import type { BrowserActionInput, BrowserActionResult, BrowserOpenRequest, BrowserState } from "../shared/browserControl";
 
 const appearanceBoot = parseAppearanceBootArgs(process.argv)
   || ipcRenderer.sendSync("appearance:boot");
@@ -161,8 +161,8 @@ const api = {
     ipcRenderer.on("browser:state", listener);
     return () => { ipcRenderer.off("browser:state", listener); };
   },
-  onBrowserOpenRequested: (callback: (target: { partyId: string; member: string }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, target: { partyId: string; member: string }) => callback(target);
+  onBrowserOpenRequested: (callback: (target: BrowserOpenRequest) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, target: BrowserOpenRequest) => callback(target);
     ipcRenderer.on("browser:openRequested", listener);
     return () => { ipcRenderer.off("browser:openRequested", listener); };
   },
