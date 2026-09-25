@@ -24,7 +24,7 @@ import { Markdown } from "../workbench/Markdown";
 import { Dropdown } from "../workbench/Dropdown";
 import { useTheme } from "../theme/ThemeProvider";
 import { THEME_METADATA } from "../../shared/appTheme";
-import { UPDATE_FEED, type ReleaseSummary } from "../../shared/appUpdate";
+import type { ReleaseSummary } from "../../shared/appUpdate";
 import { RELEASES } from "./versionsFixtures";
 
 export type VersionsState = "available" | "downloaded" | "current" | "error";
@@ -112,7 +112,6 @@ function UpdateCard({ state, installed, latest }: { state: VersionsState; instal
             <span className="ver-installed">
               <span className="wb-mono set-ver-badge">v{installed}</span>
               {waiting && <><ArrowRight size={12} /><span className="wb-mono set-ver-badge is-latest">v{latest.version}</span></>}
-              <span className="set-card-sub wb-mono">{UPDATE_FEED.owner}/{UPDATE_FEED.repo}</span>
             </span>
           </div>
           {waiting && (
@@ -122,7 +121,7 @@ function UpdateCard({ state, installed, latest }: { state: VersionsState; instal
           )}
         </div>
         {/* The settings tab's own channel cards — wide enough to say what each channel means. */}
-        <div className="set-card-label ver-row-rule">업데이트 채널<span className="set-card-sub">이 PC에 저장됩니다</span></div>
+        <div className="set-card-label ver-row-rule">업데이트 채널</div>
         <div className="set-update-channel-options ver-channel" role="radiogroup" aria-label="업데이트 채널">
           <button type="button" role="radio" aria-checked={channel === "stable"} className={`set-update-channel-option${channel === "stable" ? " is-active" : ""}`} onClick={() => setChannel("stable")}>
             <span><ShieldCheck size={13} /> 안정 채널</span>
@@ -169,7 +168,6 @@ export function VersionsScreen({ state }: { state: VersionsState }) {
       <header className="screen-header">
         <div className="screen-title">
           <h1>버전</h1>
-          <p>설치된 버전과 모든 배포 버전의 변경 내역</p>
         </div>
       </header>
       <div className="program-scroll">
