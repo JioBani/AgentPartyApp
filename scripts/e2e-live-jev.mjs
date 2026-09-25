@@ -37,6 +37,9 @@ const request = {
       instructions: "Is this a backend engineering position?",
       criteria: { true: "Backend software engineering", false: "Not backend software engineering" },
     },
+    remote: { type: "noul", instructions: "Does this posting explicitly allow remote work?" },
+    family: { type: "choice", instructions: "Which job family is this posting?", criteria: { backend: "Backend engineering", frontend: "Frontend engineering", other: "Other job family" } },
+    seniority: { type: "score", instructions: "What experience level is required?", criteria: ["Entry level", "Around three years", "At least five years"] },
   },
 };
 
@@ -50,7 +53,7 @@ try {
   const defaultSet = await app.post("/api/jev/providers/default", { provider: "openrouter" });
   check(defaultSet.defaultProvider === "openrouter", "local API sets the default Jev provider");
   const direct = await app.post("/api/jev/decisions", request);
-  check(typeof direct.answers?.backend?.noul === "number" && direct.usage?.costUsd > 0, "local API receives live Jev answer and measured cost");
+  check(typeof direct.answers?.backend?.noul === "number" && typeof direct.answers?.remote?.noul === "number" && typeof direct.answers?.family?.choice === "string" && typeof direct.answers?.seniority?.score === "number" && direct.usage?.costUsd > 0, "local API receives all three Jev answer types and measured cost");
 
   const seed = await app.post("/api/qa/seed", { party: "Jev live E2E", members: [
     { name: "judge", model: "sonnet", role: "Gate sender", autoReply: false },
@@ -72,7 +75,7 @@ try {
   const selected = await mcp("jev-default-provider", { provider: "openrouter" });
   check(selected.ok && selected.data?.defaultProvider === "openrouter", "member-scoped MCP sets the default Jev provider");
   const inline = await mcp("jev-decide", { ...request, provider: "openrouter" });
-  check(inline.ok && typeof inline.data?.answers?.backend?.noul === "number", "member-scoped MCP returns a live Jev answer");
+  check(inline.ok && typeof inline.data?.answers?.remote?.noul === "number" && typeof inline.data?.answers?.family?.choice === "string" && typeof inline.data?.answers?.seniority?.score === "number", "member-scoped MCP returns all three Jev answer types");
   const outputPath = path.join(runRoot, "decision.json");
   const written = await mcp("jev-decide-file", { ...request, path: outputPath });
   check(written.ok && written.data?.path === outputPath, "member-scoped MCP writes on the member host");

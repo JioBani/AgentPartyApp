@@ -4,13 +4,14 @@ export const JEV_PROVIDER_IDS = ["openrouter"] as const;
 export type JevProviderId = (typeof JEV_PROVIDER_IDS)[number];
 export const JEV_PROVIDER_LABELS: Record<JevProviderId, string> = { openrouter: "OpenRouter" };
 
+export type JevDecisionQuestion =
+  | { type: "choice"; instructions: string; criteria: Record<string, string> }
+  | { type: "noul"; instructions: string; criteria?: { true: string; false: string } }
+  | { type: "score"; instructions: string; criteria: string[] };
+
 export interface JevDecisionRequest {
   state: string | Record<string, unknown> | unknown[];
-  questions: Record<string, {
-    type: "choice" | "noul" | "score";
-    instructions: string;
-    criteria: Record<string, string> | string[];
-  }>;
+  questions: Record<string, JevDecisionQuestion>;
   /** Omitted = the app's current default. Never falls back after a provider error. */
   provider?: JevProviderId;
 }

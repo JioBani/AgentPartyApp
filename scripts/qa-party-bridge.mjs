@@ -379,6 +379,10 @@ const defs = buildPartyToolDefs(sdk.tool, bridge, mainBinding.identity);
 const toolNames = defs.map((d) => d.name);
 assert(JSON.stringify(toolNames) === JSON.stringify(buildPartyMcpToolSpecs().map((item) => item.name)), "in-process MCP exposes the default party tools in order");
 assert(JSON.stringify(buildPartyToolDefs(sdk.tool, bridge, mainBinding.identity, true).map((item) => item.name)) === JSON.stringify(PARTY_TOOL_NAMES), "enabled Jev MCP appends every canonical party tool in order");
+const jevTool = buildPartyMcpToolSpecs(true).find((item) => item.name === "jev-decide");
+const jevVariants = jevTool?.inputSchema?.properties?.questions?.additionalProperties?.oneOf;
+assert(Array.isArray(jevVariants) && jevVariants.length === 3 && jevVariants.every((variant) => typeof variant.description === "string" && variant.description.length > 30), "Jev MCP schema explains Choice, Noul, and Score separately");
+assert(jevVariants.find((variant) => variant.properties?.type?.enum?.[0] === "noul")?.required?.includes("criteria") === false, "Jev MCP schema marks Noul criteria optional");
 // Re-create a target so the send tool delivers, then invoke the real handler.
 await bridge.createMember({ name: "buddy", role: "r", harness: "claude-code" });
 const sendTool = defs.find((d) => d.name === "send");

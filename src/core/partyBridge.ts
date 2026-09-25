@@ -332,7 +332,7 @@ export type PartyCodexCoreToolAlias = keyof typeof PARTY_CODEX_CORE_TOOL_ALIASES
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "jev-providers": "List Jev providers, configuration/availability, and the app-wide default. Jev is a Decisions model, not a member chat model.",
   "jev-default-provider": "Set the app-wide default Jev provider. This affects calls that omit provider. Use jev-providers first. A call may instead pass provider explicitly without changing this setting.",
-  "jev-decide": "Ask Jev one Decisions request. Pass state (string, object, or array of related context) and a questions object containing choice, noul, or score questions. Multiple questions about ONE state fit in one provider call. Pass provider to select it for this call; omitted uses the app default. Returns all answers and measured usage.",
+  "jev-decide": "Ask Jev one Decisions request about a state. choice selects ONE named option and returns probabilities; noul answers a yes/no proposition with the probability of YES from 0 to 1 (0.5 is uncertain, not a halfway score); score places the state on ordered levels and may return a value between them. Put multiple independent questions about the same state in one call. Pass provider to override the app default. Returns all answers and measured usage.",
   "jev-decide-file": "Ask Jev once and write the complete JSON response at an absolute path on YOUR execution host. The tool returns path and usage; an existing file is protected unless overwrite=true. Source files are read by your own script, which can call the local Jev API directly.",
   send: "Send the same message to one or more members of your party. Pass `to` as one member name or an array of names. Batch results separate delivered, queued, and failed recipients. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in, or queue=true to explicitly wait behind the current turn. Legacy interrupt=false is treated as omitted so model-generated false values cannot disable the saved setting.",
   "member-create": "Create and start one or more members. Use the existing top-level fields for one member, or pass `members` as an array of member objects for a batch. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?, server?} to choose Windows, WSL, or SSH explicitly; server is required for SSH. Omit location to inherit your own execution location.",
@@ -400,25 +400,54 @@ const partyCreateMemberDynamicProperties: Record<string, unknown> = {
   },
 };
 
+const jevQuestionSchema = {
+  oneOf: [
+    {
+      type: "object", description: "Choice: select exactly one of 2 to 255 named options. Returns choice, probabilities for every option, and confidence.",
+      properties: {
+        type: { type: "string", enum: ["choice"] },
+        instructions: { type: "string", minLength: 1, description: "What should Jev choose?" },
+        criteria: { type: "object", minProperties: 2, maxProperties: 255, additionalProperties: { type: "string", minLength: 1 }, description: "Map each stable option ID to a description. Include a none option when none may fit." },
+      }, required: ["type", "instructions", "criteria"], additionalProperties: false,
+    },
+    {
+      type: "object", description: "Noul: judge one yes/no proposition. Returns noul, the probability of YES from 0 to 1; there is no separate confidence field. It does not measure degree.",
+      properties: {
+        type: { type: "string", enum: ["noul"] },
+        instructions: { type: "string", minLength: 1, description: "One yes/no question or statement to judge; a high result means yes." },
+        criteria: { type: "object", properties: { true: { type: "string", minLength: 1 }, false: { type: "string", minLength: 1 } }, required: ["true", "false"], additionalProperties: false, description: "Optional definitions of what counts as yes and no." },
+      }, required: ["type", "instructions"], additionalProperties: false,
+    },
+    {
+      type: "object", description: "Score: rate a degree on 2 to 10 ordered levels. Returns a weighted score between level indices, probabilities, and confidence.",
+      properties: {
+        type: { type: "string", enum: ["score"] },
+        instructions: { type: "string", minLength: 1, description: "What degree should Jev rate?" },
+        criteria: { type: "array", minItems: 2, maxItems: 10, items: { type: "string", minLength: 1 }, description: "Level descriptions ordered low to high; indices start at 0." },
+      }, required: ["type", "instructions", "criteria"], additionalProperties: false,
+    },
+  ],
+};
+
+const jevDecisionProperties = {
+  state: { oneOf: [{ type: "string" }, { type: "object" }, { type: "array" }], description: "Text or structured context to evaluate. Every question sees this same state." },
+  questions: { type: "object", minProperties: 1, additionalProperties: jevQuestionSchema, description: "Question IDs map to independent Choice, Noul, or Score questions. Answers use these IDs; the IDs themselves are not shown to Jev." },
+  provider: { type: "string", description: "Optional Jev provider id. Omit to use the app default." },
+};
+
 const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = {
   "jev-providers": { type: "object", properties: {}, additionalProperties: false },
   "jev-default-provider": { type: "object", properties: { provider: { type: "string", description: "Provider id from jev-providers." } }, required: ["provider"], additionalProperties: false },
   "jev-decide": {
     type: "object",
-    properties: {
-      state: { oneOf: [{ type: "string" }, { type: "object" }, { type: "array" }], description: "Text or structured context to evaluate." },
-      questions: { type: "object", minProperties: 1, additionalProperties: { type: "object", properties: { type: { type: "string", enum: ["choice", "noul", "score"] }, instructions: { type: "string" }, criteria: { oneOf: [{ type: "object" }, { type: "array", items: { type: "string" } }] } }, required: ["type", "instructions", "criteria"] } },
-      provider: { type: "string", description: "Optional Jev provider id. Omit to use the app default." },
-    },
+    properties: jevDecisionProperties,
     required: ["state", "questions"],
     additionalProperties: false,
   },
   "jev-decide-file": {
     type: "object",
     properties: {
-      state: { oneOf: [{ type: "string" }, { type: "object" }, { type: "array" }] },
-      questions: { type: "object", minProperties: 1, additionalProperties: { type: "object", properties: { type: { type: "string", enum: ["choice", "noul", "score"] }, instructions: { type: "string" }, criteria: { oneOf: [{ type: "object" }, { type: "array", items: { type: "string" } }] } }, required: ["type", "instructions", "criteria"] } },
-      provider: { type: "string", description: "Optional provider id." },
+      ...jevDecisionProperties,
       path: { type: "string", description: "Absolute output JSON path on this member's host." },
       overwrite: { type: "boolean", description: "Allow replacing an existing file. Default false." },
     },
@@ -1118,6 +1147,29 @@ type ToolFactory = (
   handler: (args: any) => Promise<McpToolResult>,
 ) => unknown;
 
+const jevQuestionInput = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("choice"),
+    instructions: z.string().describe("What should Jev choose?"),
+    criteria: z.record(z.string(), z.string()).describe("2 to 255 named options, each with a description; include none when needed."),
+  }),
+  z.object({
+    type: z.literal("noul"),
+    instructions: z.string().describe("One yes/no proposition. The answer is the probability of YES from 0 to 1, not a degree score."),
+    criteria: z.object({ true: z.string(), false: z.string() }).optional().describe("Optional definitions of yes and no."),
+  }),
+  z.object({
+    type: z.literal("score"),
+    instructions: z.string().describe("What degree should Jev rate?"),
+    criteria: z.array(z.string()).min(2).max(10).describe("Ordered level descriptions from low to high; level indices start at 0."),
+  }),
+]);
+const jevDecisionInput = {
+  state: z.union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())]).describe("Text or structured context shared by all questions."),
+  questions: z.record(z.string(), jevQuestionInput).describe("Independent questions keyed by answer ID. Choice returns one option and probabilities; Noul returns yes probability; Score returns a position on ordered levels."),
+  provider: z.string().optional(),
+};
+
 /**
  * Builds the party tool definitions for the in-process MCP server. Pure and
  * SDK-agnostic (the `tool` factory is injected), so it is unit-testable without
@@ -1352,14 +1404,10 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
     tool("jev-providers", partyDynamicToolDescriptions["jev-providers"], {}, async () => envelope(await bridge.jevProviders())),
     tool("jev-default-provider", partyDynamicToolDescriptions["jev-default-provider"], { provider: z.string() }, async (args: { provider: string }) => envelope(await bridge.jevSetDefault(args.provider))),
     tool("jev-decide", partyDynamicToolDescriptions["jev-decide"], {
-      state: z.union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())]),
-      questions: z.record(z.string(), z.unknown()),
-      provider: z.string().optional(),
+      ...jevDecisionInput,
     }, async (args: JevDecisionRequest) => envelope(await bridge.jevDecide(args))),
     tool("jev-decide-file", partyDynamicToolDescriptions["jev-decide-file"], {
-      state: z.union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())]),
-      questions: z.record(z.string(), z.unknown()),
-      provider: z.string().optional(),
+      ...jevDecisionInput,
       path: z.string(),
       overwrite: z.boolean().optional(),
     }, async (args: JevDecisionRequest & { path: string; overwrite?: boolean }) => envelope(await invokePartyTool(bridge, identity, "jev-decide-file", args))),

@@ -1356,12 +1356,23 @@ Calls OpenRouter's model endpoint to verify the configured key.
 The app keeps the provider credential and exposes Jev as a single-call local API.
 Jev is a Decisions model, not a member chat model. Its input is `state` (a
 string, JSON object, or related-context array) and a non-empty `questions`
-object. Each question has `type` (`choice`, `noul`, or `score`), `instructions`,
-and `criteria`. Multiple questions about the same state fit in one paid call.
+object. Each question has `type` and `instructions`; `criteria` is required for
+`choice` and `score`, and optional for `noul`. Multiple questions about the same
+state fit in one paid call.
 For separate records, write a script that makes one call per record with the
 concurrency you choose. The app does not offer a batch job or source-file
 adapter. The OpenRouter Decisions request and response are documented in the
 [provider API](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request).
+
+| Question type | Ask it when | `criteria` | Answer |
+| --- | --- | --- | --- |
+| `choice` | Exactly one named option should be selected, such as a job family or one company from a candidate list. | Object mapping 2–255 option IDs to descriptions. Include `none` when the list may not contain the answer. | `choice` is the selected ID; `probabilities` covers every option; `confidence` summarizes how concentrated they are. |
+| `noul` | One proposition has a yes/no answer, such as “Can someone with three years' experience apply?” | Optional object with `true` and `false` descriptions to clarify the boundary. | `noul` is the probability of **yes** from 0 to 1. Near 0 means no, near 1 means yes, and near 0.5 is uncertain. It is not a degree or score and has no separate `confidence`. |
+| `score` | The answer lies on an ordered scale, such as required seniority or severity. | Array of 2–10 level descriptions ordered low to high. | `score` is a weighted position from level 0 to level N−1 and may fall between levels; `probabilities` and `confidence` are also returned. |
+
+The caller chooses thresholds and how to handle uncertain answers. See the
+[TypeSafe question guide](https://docs.typesafe.ai/primitives) for the provider's
+full semantics.
 
 `GET /api/jev/providers` returns `{ defaultProvider, providers }`. Each provider
 entry reports `id`, `label`, `configured`, `available`, and `model`. Currently
@@ -1386,6 +1397,11 @@ provider produces an error; no other provider is tried silently.
       "type": "noul",
       "instructions": "Can a candidate with three years of experience apply?",
       "criteria": { "true": "Eligible with three years", "false": "Not eligible with three years" }
+    },
+    "seniority": {
+      "type": "score",
+      "instructions": "What is the required experience level?",
+      "criteria": ["Entry level", "Around three years", "Senior, five years or more"]
     }
   }
 }

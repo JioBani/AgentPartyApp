@@ -57,22 +57,26 @@ function validateRequest(value: unknown): JevDecisionRequest {
     if (!["choice", "noul", "score"].includes(String(question.type)) || typeof question.instructions !== "string" || !question.instructions.trim()) {
       throw new Error(`Jev question '${id}' needs type (choice, noul, score) and non-empty instructions.`);
     }
-    if (!question.criteria || typeof question.criteria !== "object" || !Object.keys(question.criteria).length) {
-      throw new Error(`Jev question '${id}' needs non-empty criteria.`);
-    }
     const criteria = question.criteria;
     if (question.type === "score") {
-      if (!Array.isArray(criteria) || criteria.length < 2 || criteria.some((item) => typeof item !== "string" || !item.trim())) {
-        throw new Error(`Jev score question '${id}' needs at least two string criteria in order.`);
+      if (!Array.isArray(criteria) || criteria.length < 2 || criteria.length > 10 || criteria.some((item) => typeof item !== "string" || !item.trim())) {
+        throw new Error(`Jev score question '${id}' needs 2 to 10 ordered, non-empty level descriptions.`);
       }
-    } else {
-      if (Array.isArray(criteria) || Object.values(criteria as Record<string, unknown>).some((item) => typeof item !== "string" || !item.trim())) {
-        throw new Error(`Jev ${question.type} question '${id}' needs string criteria in an object.`);
+    } else if (question.type === "choice") {
+      if (!criteria || typeof criteria !== "object" || Array.isArray(criteria)) {
+        throw new Error(`Jev choice question '${id}' needs an object of answer options.`);
       }
-      const keys = Object.keys(criteria);
-      if (question.type === "choice" && keys.length < 2) throw new Error(`Jev choice question '${id}' needs at least two options.`);
-      if (question.type === "noul" && (keys.length !== 2 || !keys.includes("true") || !keys.includes("false"))) {
-        throw new Error(`Jev noul question '${id}' needs true and false criteria.`);
+      const entries = Object.entries(criteria);
+      if (entries.length < 2 || entries.length > 255 || entries.some(([key, value]) => !key.trim() || typeof value !== "string" || !value.trim())) {
+        throw new Error(`Jev choice question '${id}' needs 2 to 255 named options with non-empty descriptions.`);
+      }
+    } else if (criteria !== undefined) {
+      if (!criteria || typeof criteria !== "object" || Array.isArray(criteria)) {
+        throw new Error(`Jev noul question '${id}' needs true and false descriptions when criteria is provided.`);
+      }
+      const entries = Object.entries(criteria);
+      if (entries.length !== 2 || !Object.hasOwn(criteria, "true") || !Object.hasOwn(criteria, "false") || entries.some(([, value]) => typeof value !== "string" || !value.trim())) {
+        throw new Error(`Jev noul question '${id}' needs non-empty true and false descriptions when criteria is provided.`);
       }
     }
   }
