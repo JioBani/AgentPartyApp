@@ -656,7 +656,7 @@ const AGENT_TABS: Array<{ id: AgentTabId; label: MessageKey; icon: ReactNode }> 
   { id: "discord", label: "runtime.tab.discord", icon: <DiscordGlyph size={14} /> },
 ];
 
-export function AgentSettingsView({ routes, settings, codexModels, museModels, discord, onRefreshCodexModels, onRefreshMuseModels, onSaveHarnessDefaults, onSetDefaultHarness, onSaveCompactDefault, onSaveIdleSleep, onSaveGateDefault, onSaveJevSettings, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, tabRequest }: {
+export function AgentSettingsView({ routes, settings, codexModels, museModels, discord, onRefreshCodexModels, onRefreshMuseModels, onSaveHarnessDefaults, onSetDefaultHarness, onSaveCompactDefault, onSaveModelAutoCompact, onSaveIdleSleep, onSaveGateDefault, onSaveJevSettings, onSavePartyPrimer, onTranslatePartyPrimer, onSaveComposer, onSaveMemberMessaging, onSaveDiscord, tabRequest }: {
   routes: RouteLike[];
   settings: InitialAppState["settings"];
   codexModels?: CodexModelDiscoveryState;
