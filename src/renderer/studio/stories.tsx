@@ -385,12 +385,12 @@ export const STORIES: Story[] = [
     render: () => <div className="st-screen"><AppShellMockup panels={[["impl", "luna"]]} /></div>,
   },
 
-  // ----------------------------------------- Screens · 제안: 버전 화면
+  // ----------------------------------------- Screens · 제안: 새로운 기능
   {
     id: "versions-wide",
     group: "Screens",
-    title: "제안 · 버전 화면 — 넓은 창",
-    note: "설정 탭에서 꺼내 사이드바의 한 화면으로. 위에서부터 업데이트 배너(무엇을 누르면 되나) → 목록 | 읽기 영역. 노트는 320px 상자에 갇히지 않고 본문 폭으로 펼쳐지며, 긴 노트는 옆 목차로 건너뛴다. 목록을 눌러 다른 버전을 읽을 수 있다. 상태를 바꾸면 배너·레일 점·제목줄 알약이 함께 바뀐다.",
+    title: "제안 · 새로운 기능 — 넓은 창",
+    note: "설정의 버전 탭을 사이드바의 읽는 페이지로. 편집 폭 한 컬럼에 최신 릴리스부터 흐르고, 릴리스마다 한 문장 제목 · 큰 이미지 · 짧은 글. 업데이트는 맨 위 한 줄과 버튼 하나. 목록·검색·필터·목차는 두지 않는다(Linear·Notion·Cursor 체인지로그의 문법).",
     width: 1440,
     variants: ["available", "downloaded", "current"],
     render: (_d, v) => <div className="st-screen"><VersionsWindow key={v} state={(v || "available") as VersionsState} /></div>,
@@ -398,8 +398,8 @@ export const STORIES: Story[] = [
   {
     id: "versions-narrow",
     group: "Screens",
-    title: "제안 · 버전 화면 — 좁은 창",
-    note: "창이 좁으면 목록이 버전 선택 버튼으로 접히고(눌러서 같은 목록을 띄운다) 목차가 빠진다. 본문 폭은 유지한다.",
+    title: "제안 · 새로운 기능 — 좁은 창",
+    note: "한 컬럼이라 좁아져도 바뀌는 것이 없다. 컬럼이 창에 맞춰 줄어들 뿐이다.",
     width: 1024,
     variants: ["available", "downloaded", "current"],
     render: (_d, v) => <div className="st-screen" style={{ height: 720 }}><VersionsWindow key={v} state={(v || "available") as VersionsState} /></div>,
@@ -407,9 +407,9 @@ export const STORIES: Story[] = [
   {
     id: "versions-rail",
     group: "Screens",
-    title: "제안 · 사이드바 버전 알림",
-    note: "설정 바로 위의 버전 버튼. 새 버전이 있으면 파란 점(처음 알게 된 순간 세 번 퍼지고 멈춘다)과 강조색 아이콘, 받기가 끝나 다시 시작만 남으면 초록 점. 점은 설치될 때까지 남는다. 마우스를 올리면 '버전 · v0.15.0 설치 가능'.",
-    width: 600,
+    title: "제안 · 사이드바 업데이트 점",
+    note: "업데이트가 있으면 새로운 기능 아이콘에 작은 점 하나. 움직이지 않고 색도 바꾸지 않는다. 마우스를 올리면 '새로운 기능 · v0.15.0 업데이트'.",
+    width: 360,
     render: () => <RailBadgeStates />,
   },
 ];
