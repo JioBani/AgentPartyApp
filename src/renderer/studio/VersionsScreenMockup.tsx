@@ -12,7 +12,8 @@
  *      모양으로 읽힌다.
  *
  * 모양은 설정 화면의 디자인 시스템 그대로다 — `screen-header`, `set-page`,
- * `set-section`, `set-card`, `set-row`, `set-btn-*`, `set-ver-*`, `Segmented`.
+ * `set-section`, `set-card`, `set-row`, `set-btn-*`, `set-ver-*`, 채널 카드(`set-update-channel-*`).
+ * 최신 릴리스만 카드 밖에서 읽는 글로 펼친다(제목 한 문장 · 넓은 줄간격 · 큰 이미지).
  * 새 CSS 는 `proposedVersions.css` 의 몇 줄뿐이다.
  */
 import { useState } from "react";
@@ -20,7 +21,6 @@ import { AlertTriangle, ArrowDownToLine, ArrowRight, ChevronDown, FlaskConical, 
 import { NAV_ICONS, NavRail, TitleBar, type NavBadge } from "../app/AppChrome";
 import { UpdatePill } from "../workbench/UpdatePill";
 import { Markdown } from "../workbench/Markdown";
-import { Segmented } from "../workbench/Segmented";
 import { useTheme } from "../theme/ThemeProvider";
 import { THEME_METADATA } from "../../shared/appTheme";
 import { UPDATE_FEED, type ReleaseSummary } from "../../shared/appUpdate";
@@ -120,20 +120,17 @@ function UpdateCard({ state, installed, latest }: { state: VersionsState; instal
             </button>
           )}
         </div>
-        <div className="set-row set-row-flush ver-row-rule">
-          <div className="set-row-body">
-            <span className="set-row-name">업데이트 채널</span>
-            <span className="set-row-desc">
-              {channel === "beta"
-                ? <><FlaskConical size={12} /> 시험 기능이 포함된 prerelease와 이후 정식 릴리스를 받습니다.</>
-                : <><ShieldCheck size={12} /> 검증을 마친 정식 릴리스만 받습니다. 이 PC에 저장됩니다.</>}
-            </span>
-          </div>
-          <Segmented<"stable" | "beta">
-            value={channel}
-            onChange={setChannel}
-            options={[{ id: "stable", label: "안정" }, { id: "beta", label: "베타" }]}
-          />
+        {/* The settings tab's own channel cards — wide enough to say what each channel means. */}
+        <div className="set-card-label ver-row-rule">업데이트 채널<span className="set-card-sub">이 PC에 저장됩니다</span></div>
+        <div className="set-update-channel-options ver-channel" role="radiogroup" aria-label="업데이트 채널">
+          <button type="button" role="radio" aria-checked={channel === "stable"} className={`set-update-channel-option${channel === "stable" ? " is-active" : ""}`} onClick={() => setChannel("stable")}>
+            <span><ShieldCheck size={13} /> 안정 채널</span>
+            <small>검증을 마친 정식 릴리스만 받습니다.</small>
+          </button>
+          <button type="button" role="radio" aria-checked={channel === "beta"} className={`set-update-channel-option${channel === "beta" ? " is-active" : ""}`} onClick={() => setChannel("beta")}>
+            <span><FlaskConical size={13} /> 베타 채널</span>
+            <small>시험 기능이 포함된 prerelease와 이후 정식 릴리스를 받습니다.</small>
+          </button>
         </div>
         <div className="set-diag-actions">
           <button type="button" className="set-btn-soft"><RefreshCw size={14} /> 업데이트 확인</button>
@@ -180,14 +177,15 @@ export function VersionsScreen({ state }: { state: VersionsState }) {
 
           <section className="set-section">
             <div className="set-section-head"><span className="set-section-label">최신 버전</span><span className="set-section-rule" /></div>
-            <article className="set-card ver-release">
-              <div className="set-ver-head">
+            {/* Read, not operated: meta line, one headline, prose and full-width images — no box. */}
+            <article className="ver-release">
+              <div className="ver-release-meta">
                 <span className="wb-mono set-ver-badge is-latest">v{latest.version}</span>
-                {releaseTitle(latest) && <span className="set-ver-name">{releaseTitle(latest)}</span>}
+                {latest.version !== installed && <span className="set-ver-tag is-new">새 버전</span>}
                 {latest.version === installed && <span className="set-ver-tag is-ok">설치됨</span>}
                 {latest.prerelease && <span className="set-ver-tag">베타</span>}
-                <span className="set-ver-date wb-mono">{date(latest.publishedAt)}</span>
-                <button type="button" className="set-link-btn"><ArrowRight size={12} /> 릴리스 페이지</button>
+                <span className="ver-release-date">{date(latest.publishedAt)}</span>
+                <button type="button" className="set-link-btn ver-release-link"><ArrowRight size={12} /> 릴리스 페이지</button>
               </div>
               <ReleaseNotes release={latest} />
             </article>
