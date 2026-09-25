@@ -138,9 +138,40 @@ async function idleSnapshotDuringActiveTurn(cdp) {
   await post("/api/qa/members/transient/emit", { events: [{ type: "status", status: "responding" }] });
   await delay(300);
   const started = (await get("/api/party/status")).members.find((member) => member.name === "transient");
-  const working = await cdp.eval(`Boolean(document.querySelector(".wb-status-pill.is-working"))`);
-  assert(started?.status === "responding" && started.turnActive === true && working,
-    `the responding session is visibly working after sending (${JSON.stringify({ status: started?.status, turnActive: started?.turnActive, working })})`);
+  const indicator = await cdp.eval(`(() => {
+    const chip = document.querySelector(".wb-status-pill.is-working");
+    const label = chip?.querySelector(".wb-working-dots > span");
+    const chipBox = chip?.getBoundingClientRect();
+    const labelBox = label?.getBoundingClientRect();
+    return {
+      text: label?.textContent?.trim(),
+      visible: Boolean(labelBox && labelBox.width > 0 && labelBox.right <= chipBox.right + 1),
+    };
+  })()`);
+  assert(started?.status === "responding" && started.turnActive === true && indicator.visible && indicator.text === "작업 중",
+    `the responding session shows a visible working label after sending (${JSON.stringify({ status: started?.status, turnActive: started?.turnActive, indicator })})`);
+  for (const theme of ["light", "dark"]) {
+    await post("/api/appearance/theme", { theme: `agentparty-${theme}` });
+    await post("/api/capture", { path: path.join(shotDir, `responding-${theme}.png`) });
+    const themed = await cdp.eval(`(() => {
+      const chip = document.querySelector(".wb-status-pill.is-working");
+      const label = chip?.querySelector(".wb-working-dots > span");
+      return { text: label?.textContent?.trim(), theme: document.documentElement.dataset.theme };
+    })()`);
+    assert(themed.text === "작업 중" && themed.theme === `agentparty-${theme}`, `${theme} theme keeps the working label visible`);
+  }
+  // The desktop window has a 1100px minimum width; smaller CDP overrides
+  // create an impossible 12px panel and are not a representative layout.
+  await cdp.viewport(1100, 700);
+  const narrow = await cdp.eval(`(() => {
+    const panel = document.querySelector(".wb-panel");
+    const label = panel?.querySelector(".wb-status-pill.is-working .wb-working-dots > span");
+    const p = panel?.getBoundingClientRect();
+    const l = label?.getBoundingClientRect();
+    return { text: label?.textContent?.trim(), panel: p && { left: p.left, right: p.right }, label: l && { left: l.left, right: l.right, width: l.width }, inside: Boolean(p && l && l.width > 0 && l.right <= p.right + 1) };
+  })()`);
+  assert(narrow.text === "작업 중" && narrow.inside, `narrow window keeps the working label inside its panel (${JSON.stringify(narrow)})`);
+  await cdp.viewport();
   await post("/api/qa/members/transient/emit", { events: [{ type: "status", status: "idle" }] });
   await delay(300);
 
@@ -906,6 +937,13 @@ async function attachRenderer() {
     socket.send(JSON.stringify({ id, method, params }));
   });
   return {
+    async viewport(width, height) {
+      if (width && height) {
+        await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+      } else {
+        await send("Emulation.clearDeviceMetricsOverride", {});
+      }
+    },
     async eval(expression) {
       const result = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
       if (result.exceptionDetails) {
