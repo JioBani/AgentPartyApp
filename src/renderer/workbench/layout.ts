@@ -1,6 +1,5 @@
 import type { PanelState } from "./types";
 import type { WorkbenchLayout } from "../../shared/workbenchLayout";
-import { browserTabId } from "../../shared/browserTab";
 import {
   insertPanelAtRoot,
   insertPanelBeside,
@@ -47,25 +46,9 @@ export function layoutFromPanels(spec: string[][]): LayoutState {
  * sidebar click and `POST /api/party/members/:name/open`, so the two must run
  * the same code rather than two implementations that drift.
  */
-export { openMemberTab as openMember, openMemberInNewPanel, openMemberInTabGroup } from "../../shared/workbenchLayout";
+export { openMemberTab as openMember, openMemberInNewPanel, openMemberInTabGroup, openBrowserTab } from "../../shared/workbenchLayout";
 export { panelOf } from "../../shared/workbenchLayout";
-import { composeLayout, nextPanelId, openMemberTab, panelOf } from "../../shared/workbenchLayout";
-
-/** Open the member's browser as a real, movable tab without replacing chat. */
-export function openBrowserTab(state: LayoutState, member: string): LayoutState {
-  const browser = browserTabId(member);
-  const existing = panelOf(state, browser);
-  if (existing) return setActiveTab(state, existing.id, browser);
-  const withMember = panelOf(state, member) ? state : openMemberTab(state, member);
-  const owner = panelOf(withMember, member)!;
-  const tabs = [...owner.tabs];
-  tabs.splice(tabs.indexOf(member) + 1, 0, browser);
-  return composeLayout(
-    withMember.panels.map((panel) => panel.id === owner.id ? { ...panel, tabs, active: browser } : panel),
-    owner.id,
-    withMember.grid,
-  );
-}
+import { composeLayout, nextPanelId, panelOf } from "../../shared/workbenchLayout";
 
 export function focusPanel(state: LayoutState, panelId: string): LayoutState {
   return { ...state, focusedPanelId: panelId };

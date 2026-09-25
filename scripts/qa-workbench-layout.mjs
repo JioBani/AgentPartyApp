@@ -21,7 +21,7 @@ const built = await build({
 });
 const bundlePath = path.join(qaTempDir(), "workbench-layout.mjs");
 writeFileSync(bundlePath, built.outputFiles[0].text);
-const { EMPTY_LAYOUT, layoutsEqual, openMemberTab, panelOf, sanitizeLayout } = await import(pathToFileURL(bundlePath).href);
+const { EMPTY_LAYOUT, composeLayout, layoutsEqual, mergeBrowserTabIntoMember, openBrowserTab, openMemberTab, panelOf, sanitizeLayout } = await import(pathToFileURL(bundlePath).href);
 
 let failures = 0;
 const assert = (condition, label, detail) => {
@@ -53,6 +53,33 @@ assert(refocused.focusedPanelId === "pa", "and its panel takes focus", refocused
 const first = openMemberTab(EMPTY_LAYOUT, "main");
 assert(first.panels.length === 1 && first.panels[0].tabs[0] === "main", "opening into an empty layout creates a panel");
 assert(first.focusedPanelId === first.panels[0].id, "which is focused");
+
+console.log("\nBrowser placement:");
+const openedBrowser = openBrowserTab(EMPTY_LAYOUT, "main");
+const browser = openedBrowser.panels[0].tabs[1];
+assert(openedBrowser.panels.length === 1 && openedBrowser.panels[0].tabs[0] === "main", "a new browser starts in its member's panel");
+assert(openedBrowser.panels[0].active === browser, "opening the browser switches to its tab");
+const separated = composeLayout([
+  { id: "chat", tabs: ["main"], active: "main", weight: 1 },
+  { id: "web", tabs: [browser], active: browser, weight: 1 },
+], "web", { type: "split", id: "row", dir: "row", weight: 1, children: [
+  { type: "leaf", panelId: "chat", weight: 1 },
+  { type: "leaf", panelId: "web", weight: 1 },
+] });
+assert(openBrowserTab(separated, "main").panels.length === 2, "reopening a separated browser focuses it without moving it");
+const merged = mergeBrowserTabIntoMember(separated, "main");
+assert(merged?.panels.length === 1 && merged.panels[0].tabs.join(",") === `main,${browser}`, "merge puts browser beside chat and removes its empty panel");
+assert(merged?.panels[0].active === browser && merged.grid?.type === "leaf", "merge focuses browser and collapses the vacant split");
+assert(mergeBrowserTabIntoMember(merged, "main") === merged, "merging an already joined browser is a no-op");
+assert(mergeBrowserTabIntoMember(first, "main") === undefined, "merge reports a missing browser tab");
+const sharedBrowserPanel = composeLayout([
+  { id: "chat", tabs: ["main"], active: "main", weight: 1 },
+  { id: "web", tabs: [browser, "other"], active: browser, weight: 1 },
+], "web", separated.grid);
+const sharedMerge = mergeBrowserTabIntoMember(sharedBrowserPanel, "main");
+assert(sharedMerge?.panels.length === 2 && sharedMerge.panels.find((panel) => panel.id === "web")?.tabs.join(",") === "other", "merge preserves other tabs in the browser panel");
+const browserOnly = composeLayout([{ id: "web", tabs: [browser], active: browser, weight: 1 }], "web", undefined);
+assert(mergeBrowserTabIntoMember(browserOnly, "main")?.panels[0].tabs.join(",") === `main,${browser}`, "merge restores a closed chat tab");
 
 console.log("\nSanitising what gets stored:");
 assert(sanitizeLayout(undefined) === undefined, "no layout at all is undefined, not an empty one");

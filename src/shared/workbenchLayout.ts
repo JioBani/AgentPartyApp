@@ -14,7 +14,8 @@
  * renderer would then have to defend against — hence {@link sanitizeLayout}.
  */
 
-import { reconcileGrid, sanitizeGrid, syncPanelWeights, type GridNode } from "./workbenchGrid";
+import { browserTabId } from "./browserTab";
+import { reconcileGrid, removePanelFromGrid, sanitizeGrid, syncPanelWeights, type GridNode } from "./workbenchGrid";
 
 export interface WorkbenchPanel {
   id: string;
@@ -158,6 +159,54 @@ export function openMemberTab(layout: WorkbenchLayout, memberName: string): Work
     target.id,
     layout.grid,
   );
+}
+
+/** Opens the member's browser beside its chat tab, or focuses its existing tab. */
+export function openBrowserTab(layout: WorkbenchLayout, memberName: string): WorkbenchLayout {
+  const browser = browserTabId(memberName);
+  const existing = panelOf(layout, browser);
+  if (existing) return activateIn(layout, existing.id, browser);
+  const withMember = panelOf(layout, memberName) ? layout : openMemberTab(layout, memberName);
+  const owner = panelOf(withMember, memberName)!;
+  const tabs = [...owner.tabs];
+  tabs.splice(tabs.indexOf(memberName) + 1, 0, browser);
+  return composeLayout(
+    withMember.panels.map((panel) => panel.id === owner.id ? { ...panel, tabs, active: browser } : panel),
+    owner.id,
+    withMember.grid,
+  );
+}
+
+/** Moves an already-open browser tab back beside its member, preserving the page. */
+export function mergeBrowserTabIntoMember(layout: WorkbenchLayout, memberName: string): WorkbenchLayout | undefined {
+  const browser = browserTabId(memberName);
+  const browserPanel = panelOf(layout, browser);
+  if (!browserPanel) return undefined;
+  const memberPanel = panelOf(layout, memberName);
+  if (!memberPanel) {
+    // Closing the chat tab does not close its browser. Restore that tab in the
+    // browser's panel so the merge button still does what it promises.
+    const tabs = [...browserPanel.tabs];
+    tabs.splice(tabs.indexOf(browser), 0, memberName);
+    return composeLayout(
+      layout.panels.map((panel) => panel.id === browserPanel.id ? { ...panel, tabs, active: browser } : panel),
+      browserPanel.id,
+      layout.grid,
+    );
+  }
+  if (memberPanel.id === browserPanel.id) return layout;
+  const sourceTabs = browserPanel.tabs.filter((tab) => tab !== browser);
+  const targetTabs = [...memberPanel.tabs];
+  targetTabs.splice(targetTabs.indexOf(memberName) + 1, 0, browser);
+  const panels = layout.panels
+    .map((panel) => panel.id === memberPanel.id
+      ? { ...panel, tabs: targetTabs, active: browser }
+      : panel.id === browserPanel.id
+        ? { ...panel, tabs: sourceTabs, active: panel.active === browser ? sourceTabs[0] || "" : panel.active }
+        : panel)
+    .filter((panel) => panel.tabs.length > 0);
+  const grid = sourceTabs.length ? layout.grid : removePanelFromGrid(layout.grid, browserPanel.id);
+  return composeLayout(panels, memberPanel.id, grid);
 }
 
 /** Brings a member's existing tab to the front of its panel and focuses it. */

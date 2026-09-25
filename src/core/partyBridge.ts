@@ -3,7 +3,7 @@ import type { CodexPolicy } from "../shared/codexPolicy";
 import type { CursorPolicy } from "../shared/cursorPolicy";
 import { MEMBER_EXECUTION_HOSTS, type MemberExecutionLocationRequest } from "../shared/memberLocation";
 import { readImageFile } from "./imageFile";
-import type { BrowserActionInput } from "../shared/browserControl";
+import { BROWSER_MEMBER_ACTIONS, type BrowserActionInput } from "../shared/browserControl";
 
 // Boundary 2 of the party-communication design (the party-communication design):
 // the seam through which an app-hosted member session reaches the app's party
@@ -318,7 +318,7 @@ const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "discord-send": "Post one message from you into YOUR Discord channel. Plain text only — Discord's limit is 2000 characters and longer content is REJECTED, not truncated, so split long reports into several sends. If Discord rate limits you the tool returns an error containing retry_after_ms: wait that long, then send again yourself (nothing is queued or retried for you). Write for a person reading on a phone: summarize, do not paste raw logs or diffs.",
   "discord-send-image": "Upload an image FILE from this machine into your Discord thread, so the user can see a screenshot, chart or diagram instead of reading a description of it. `path` is a path on the machine you are running on. Optional `caption` is posted with it (same 2000-character rule). Over-size images are REJECTED with the limit stated, not silently dropped. Images only — this is not a general file transfer.",
   "attach-image": "Show the user an image in THIS conversation — a screenshot you took, a chart you produced, or a picture on the web. Give `path` (a file on the machine you are running on) or `url` (http/https), not both. The picture is displayed to the USER ONLY: it is not added to your context and you will not see it, so describe in your reply whatever you need the conversation to remember about it. Prefer this over pasting a file path into your text when the point is for a human to LOOK at something.",
-  browser: "Control YOUR separate in-app browser tab only; this tool does not move the OS pointer. Use tab to open/focus it without navigating, or open with an HTTP(S) URL. Inspect a text/controls snapshot or screenshot, click viewport coordinates, type into the focused field, scroll, navigate history, reload, or close. The Browser tab must be visible for clicks, typing, scrolling, and screenshots. Coordinates are relative to its viewport. Login and CAPTCHA are for the user to complete; never claim a blocked page succeeded.",
+  browser: "Control YOUR in-app browser tab only; this tool does not move the OS pointer. Use tab to open/focus it beside your chat, open with an HTTP(S) URL, or merge to return a separated browser tab to your chat panel. Inspect a text/controls snapshot or screenshot, click viewport coordinates, type into the focused field, scroll, navigate history, reload, or close. The Browser tab must be visible for clicks, typing, scrolling, and screenshots. Coordinates are relative to its viewport. Login and CAPTCHA are for the user to complete; never claim a blocked page succeeded.",
   "discord-disconnect": "Stop bridging yourself to Discord. The channel and its history stay in Discord; you simply stop sending and receiving there.",
   broadcast: "Send a message to every other member of your party at once. Pass `exclude` with member names that must not receive it. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in or queue=true to explicitly wait behind busy recipients.",
 };
@@ -578,7 +578,7 @@ const partyDynamicToolSchemas: Record<PartyToolName, Record<string, unknown>> = 
   browser: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["state", "tab", "open", "back", "forward", "reload", "snapshot", "screenshot", "click", "type", "scroll", "close"] },
+      action: { type: "string", enum: [...BROWSER_MEMBER_ACTIONS] },
       url: { type: "string", description: "HTTP(S) URL for open." },
       x: { type: "number", description: "Viewport-relative x for click or scroll." },
       y: { type: "number", description: "Viewport-relative y for click or scroll." },
@@ -1037,7 +1037,7 @@ export async function invokePartyTool(bridge: PartyBridge, identity: PartyIdenti
     }
     case "browser": {
       const action = input.action;
-      if (typeof action !== "string" || !["state", "tab", "open", "back", "forward", "reload", "snapshot", "screenshot", "click", "type", "scroll", "close"].includes(action)) {
+      if (typeof action !== "string" || !(BROWSER_MEMBER_ACTIONS as readonly string[]).includes(action)) {
         return { ok: false, error: "browser requires a supported action." };
       }
       return bridge.browser({
@@ -1314,7 +1314,7 @@ export function buildPartyToolDefs(tool: ToolFactory, bridge: PartyBridge, ident
       "browser",
       partyDynamicToolDescriptions.browser,
       {
-        action: z.enum(["state", "tab", "open", "back", "forward", "reload", "snapshot", "screenshot", "click", "type", "scroll", "close"]),
+        action: z.enum(BROWSER_MEMBER_ACTIONS),
         url: z.string().optional(),
         x: z.number().optional(), y: z.number().optional(),
         text: z.string().optional(), deltaY: z.number().optional(),

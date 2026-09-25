@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, RotateCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Combine, RotateCw } from "lucide-react";
 import type { BrowserActionInput, BrowserState } from "../../shared/browserControl";
 
 // WebContentsView always paints above the renderer. Detach it whenever an
@@ -23,7 +23,7 @@ function overlayCrosses(viewport: DOMRect): boolean {
 }
 
 /** DOM chrome around the isolated native WebContentsView owned by this member. */
-export function BrowserPane({ partyId, member }: { partyId: string; member: string }) {
+export function BrowserPane({ partyId, member, canMerge }: { partyId: string; member: string; canMerge: boolean }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<BrowserState | null>(null);
   const [address, setAddress] = useState("");
@@ -132,6 +132,9 @@ export function BrowserPane({ partyId, member }: { partyId: string; member: stri
         <form onSubmit={navigate}>
           <input data-browser-address="true" aria-label="브라우저 주소" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="https://example.com" spellCheck={false} />
         </form>
+        <button type="button" className="wb-browser-merge" aria-label="멤버 탭과 합치기" title={canMerge ? "멤버 탭과 합치기" : "이미 멤버 탭과 같은 패널입니다"} disabled={!canMerge} onClick={() => void act({ action: "merge" })}>
+          <Combine size={14} /><span className="wb-browser-merge-label">멤버 탭과 합치기</span>
+        </button>
       </div>
       {error && <div className="wb-browser-error" role="alert">{error}</div>}
       <div className="wb-browser-viewport" ref={viewport} aria-label={`${member} 브라우저 화면`} />

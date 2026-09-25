@@ -21,6 +21,7 @@ export class EmbeddedBrowserHost implements BrowserControlPort {
 
   async action(partyId: string, member: string, input: BrowserActionInput, windowId?: string): Promise<BrowserActionResult> {
     if (input.action === "state") return { ok: true, state: this.state(partyId, member) };
+    if (input.action === "merge") throw new Error("Browser tab merge must be handled by the app controller.");
     if (input.action === "close") {
       this.close(partyId, member);
       return { ok: true, state: this.state(partyId, member) };

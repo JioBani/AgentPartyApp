@@ -1,7 +1,9 @@
 /** One browser belongs to one party member. The browser profile is ephemeral in the MVP. */
-export type BrowserActionName =
-  | "state" | "tab" | "show" | "hide" | "open" | "back" | "forward" | "reload"
-  | "snapshot" | "screenshot" | "click" | "type" | "scroll" | "close";
+export const BROWSER_MEMBER_ACTIONS = [
+  "state", "tab", "open", "merge", "back", "forward", "reload",
+  "snapshot", "screenshot", "click", "type", "scroll", "close",
+] as const;
+export type BrowserActionName = typeof BROWSER_MEMBER_ACTIONS[number] | "show" | "hide";
 
 export interface BrowserActionInput {
   action: BrowserActionName;

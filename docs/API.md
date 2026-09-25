@@ -3421,11 +3421,20 @@ this route call the same `AppController.browserAction` method. A member should
 normally use its own `browser` MCP tool through the member-scoped transport
 below, which binds identity rather than accepting a member name in the body.
 
-`action` can be `state`, `tab`, `show`, `hide`, `open`, `back`, `forward`, `reload`,
+`action` can be `state`, `tab`, `merge`, `show`, `hide`, `open`, `back`, `forward`, `reload`,
 `snapshot`, `screenshot`, `click`, `type`, `scroll`, or `close`. `open` accepts an
-HTTP(S) `url` and opens the member's separate browser tab. `tab` opens/focuses
-that tab without navigating, matching the member header's detail menu action;
-the tab can be dragged to another panel to view chat and browser side by side.
+HTTP(S) `url` and opens the member's browser tab. `tab` opens/focuses that tab
+without navigating, matching the member header's detail menu action. A new
+browser tab starts beside the member chat tab in the same panel; selecting the
+two tabs switches between chat and browser. If the browser has been split into
+another panel, `tab` moves focus to that existing tab without changing its
+placement. `merge` moves an already-open browser tab back beside its member
+chat tab, focuses it, and preserves the current page. It restores the chat tab
+first if that tab was closed; it returns an error if no browser tab is open.
+The browser toolbar's “멤버 탭과 합치기” button uses this same action. Read
+`GET /api/party/layout` to inspect whether the two tabs share a panel, or use
+`POST /api/party/layout` to split them for side-by-side viewing. The member's
+`browser` MCP tool exposes `tab`, `open`, and `merge` through its real transport.
 `show` accepts viewport `bounds` in window CSS pixels; `click`
 accepts viewport-relative `x` and `y`; `type` inserts `text` into the focused
 field; `scroll` accepts `deltaY` and optional `x`/`y`, and returns requested

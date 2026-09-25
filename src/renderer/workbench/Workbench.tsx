@@ -785,6 +785,7 @@ export function Workbench(props: WorkbenchProps) {
         panel={panel}
         views={viewMap}
         focused={panel.id === layout.focusedPanelId}
+        browserTabOpen={layout.panels.some((item) => item.tabs.includes(browserTabId(panel.active)))}
         draggingMember={drag?.member ?? null}
         // The middle of the panel means "join this group"; an edge means "split
         // here", and the two must not light up at once.
