@@ -131,7 +131,16 @@ async function idleSnapshotDuringActiveTurn(cdp) {
   console.log("\nA transient idle snapshot does not finish the turn:");
   await post("/api/qa/members", { name: "transient", role: "turn state regression", autoReply: false });
   await post("/api/qa/open", { panels: [["transient"]] });
+  // This is a human composer action, so the shared HTTP send path is the
+  // product contract. The QA mock emits the later responding phase explicitly.
+  const first = await post("/api/party/members/transient/message", { text: "show that my message is being handled" });
+  assert(first.queued !== true, "the first message is handed to the member");
   await post("/api/qa/members/transient/emit", { events: [{ type: "status", status: "responding" }] });
+  await delay(300);
+  const started = (await get("/api/party/status")).members.find((member) => member.name === "transient");
+  const working = await cdp.eval(`Boolean(document.querySelector(".wb-status-pill.is-working"))`);
+  assert(started?.status === "responding" && started.turnActive === true && working,
+    `the responding session is visibly working after sending (${JSON.stringify({ status: started?.status, turnActive: started?.turnActive, working })})`);
   await post("/api/qa/members/transient/emit", { events: [{ type: "status", status: "idle" }] });
   await delay(300);
 

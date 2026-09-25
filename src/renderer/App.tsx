@@ -848,7 +848,7 @@ export function App() {
     });
     const offSnapshot = window.agentParty.onSnapshot((payload: any) => {
       setState((current) => {
-        const sessions = updateRendererSessionSnapshot(current.sessions, payload.sessionId, payload.snapshot);
+        const sessions = updateRendererSessionSnapshot(current.sessions, payload.sessionId, payload.snapshot, payload.turnActive);
         return sessions === current.sessions ? current : { ...current, sessions };
       });
     });

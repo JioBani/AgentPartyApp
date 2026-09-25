@@ -1869,7 +1869,11 @@ export class SessionManager extends EventEmitter {
       if (session.closed || !this.sessions.has(session.id) || !session.lastSnapshot) {
         return;
       }
-      this.emit("snapshot", { sessionId: session.id, workspace: session.workspace, snapshot: session.lastSnapshot });
+      // Keep the app-owned turn boundary with the adapter snapshot. A status
+      // such as `responding` reaches the renderer through this channel before
+      // (or without) the coalesced session list; the UI must not pair it with
+      // an older turnActive value and appear idle after accepting a message.
+      this.emit("snapshot", { sessionId: session.id, workspace: session.workspace, snapshot: session.lastSnapshot, turnActive: session.turnActive });
     }, 33);
   }
 
