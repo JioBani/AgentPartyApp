@@ -10,7 +10,7 @@ Windows `.exe` 배포와 앱 내 자동 업데이트를 어떻게 내보내고, 
 | 패키징/퍼블리시 설정 | `package.json` 의 `build.publish` (위 값과 반드시 일치) |
 | 업데이트 상태 머신 | `src/main/updateService.ts` |
 | 앱 API | `GET /api/update`, `POST /api/update/{check,download,install}` (docs/API.md) |
-| UI | 타이틀바 `src/renderer/workbench/UpdatePill.tsx` + `UpdateModal.tsx`, 설정 → 버전 탭(`VersionsCard`) |
+| UI | 타이틀바 `src/renderer/workbench/UpdatePill.tsx` + `UpdateModal.tsx`, 사이드바 버전 화면(`src/renderer/app/VersionsView.tsx`) + 레일의 버전 알림 점 |
 | QA 주입 | `POST /api/qa/update` |
 
 소스 저장소(`JioBani/AgentPartyApp`)는 비공개로 두고, **릴리스만** 공개 저장소
@@ -65,7 +65,7 @@ major 1, minor 4, patch 2다.
    URL을 별도 명령으로 재검사하지 않는다. 누락된 결정론적 조건은 수동 확인이 아니라
    린트나 게시 스크립트에 추가한다.
 
-   버전 탭은 과거 릴리스 본문도 보여주므로, 공개 후 본문을 고치면 앱에도 반영된다.
+   버전 화면은 과거 릴리스 본문도 보여주므로, 공개 후 본문을 고치면 앱에도 반영된다.
 
    Windows PowerShell 5.1에서 GitHub API로 한글 본문을 직접 올릴 때 JSON 문자열을
    `Invoke-RestMethod -Body`에 그대로 넘기면 한글이 `?`로 손실될 수 있다. 반드시

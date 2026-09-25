@@ -12,7 +12,7 @@ import { DEFAULT_SIDEBAR_DRAWERS } from "../../shared/sidebarDrawers";
 import { DEFAULT_FAVORITE_PARTIES } from "../../shared/favoriteParties";
 import { DEFAULT_SIDEBAR_GROUP_FOLDS } from "../../shared/sidebarGroupFolds";
 
-export type ViewId = "workbench" | "guide" | "usage" | "auth" | "agent" | "settings";
+export type ViewId = "workbench" | "guide" | "usage" | "auth" | "agent" | "versions" | "settings";
 
 /** Staged per-member runtime values applied when a member's session starts. */
 export interface MemberRuntimeDraft {
@@ -83,6 +83,7 @@ export function viewTitle(view: ViewId, t: (key: MessageKey) => string): string 
     usage: "view.usage.title",
     auth: "view.auth.title",
     agent: "view.runtime.title",
+    versions: "view.versions.title",
     settings: "view.automation.title",
   };
   return t(titles[view]);
@@ -91,15 +92,18 @@ export function viewTitle(view: ViewId, t: (key: MessageKey) => string): string 
 export function viewSubtitle(view: ViewId, t: (key: MessageKey) => string): string {
   // Description only — the workspace path is surfaced as its own chip in the
   // screen header (matching the runtime design mockup), not crammed inline here.
-  const subtitles: Record<ViewId, MessageKey> = {
+  // `null`: the screen says what it is by itself, so no line under the title.
+  const subtitles: Record<ViewId, MessageKey | null> = {
     workbench: "view.workbench.subtitle",
     guide: "view.guide.subtitle",
     usage: "view.usage.subtitle",
     auth: "view.auth.subtitle",
     agent: "view.runtime.subtitle",
+    versions: null,
     settings: "view.automation.subtitle",
   };
-  return t(subtitles[view]);
+  const key = subtitles[view];
+  return key ? t(key) : "";
 }
 
 export function displayPath(value: string | undefined): string {
@@ -107,5 +111,5 @@ export function displayPath(value: string | undefined): string {
 }
 
 export function isViewId(value: string): value is ViewId {
-  return ["workbench", "guide", "usage", "auth", "agent", "settings"].includes(value);
+  return ["workbench", "guide", "usage", "auth", "agent", "versions", "settings"].includes(value);
 }

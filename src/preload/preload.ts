@@ -115,7 +115,7 @@ const api = {
   getUpdateChannel: (): Promise<{ ok: true; channel: UpdateChannel }> => ipcRenderer.invoke("update:channel:get"),
   setUpdateChannel: (channel: UpdateChannel): Promise<{ ok: true; channel: UpdateChannel; update: UpdateStatus }> =>
     ipcRenderer.invoke("update:channel:set", channel),
-  /** Published release history, newest first — the 설정 → 버전 tab's list. */
+  /** Published release history, newest first — the 버전 screen's list. */
   listUpdateVersions: (options?: { refresh?: boolean }): Promise<{ ok: true; releases: ReleaseSummary[] }> =>
     ipcRenderer.invoke("update:versions", options || {}),
   /** Re-asks the release feed. Failures come back inside the status, not as a rejection. */

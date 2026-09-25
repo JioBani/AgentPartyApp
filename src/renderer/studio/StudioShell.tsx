@@ -31,8 +31,6 @@ import "./studio.css";
 // LAST on purpose: proposals win over the shipping rules they are proposing to
 // replace. Empty file = the mockup is the app.
 import "./proposed.css";
-// 제안: 버전 화면을 사이드바로 — 승인 전까지 스튜디오에서만 싣는다.
-import "./proposedVersions.css";
 
 /** Screens are the mockup surface; everything else documents the system. */
 const MOCKUP_GROUP = "Screens";

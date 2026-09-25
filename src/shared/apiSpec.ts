@@ -21,7 +21,7 @@ export interface AutomationApiSpec {
   navigation: {
     views: readonly string[];
     tabs: { agent: typeof AGENT_TAB_IDS; settings: typeof SETTINGS_TAB_IDS };
-    deprecatedAliases: { runtime: string; automation: string };
+    deprecatedAliases: { runtime: string; automation: string; "settings/versions": string };
   };
 }
 
@@ -36,11 +36,12 @@ export function automationApiSpec(
     endpoints,
     methods,
     navigation: {
-      views: ["workbench", "guide", "usage", "auth", "agent", "settings"],
+      views: ["workbench", "guide", "usage", "auth", "agent", "versions", "settings"],
       tabs: { agent: AGENT_TAB_IDS, settings: SETTINGS_TAB_IDS },
       deprecatedAliases: {
         runtime: "Maps each legacy Runtime tab to its Agent or Settings destination.",
         automation: "Maps to settings/automation.",
+        "settings/versions": "The versions tab became its own screen; maps to the 'versions' view.",
       },
     },
   };

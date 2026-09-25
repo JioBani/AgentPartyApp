@@ -1,6 +1,12 @@
 /** Tabs exposed by the Agent and Settings screens. Shared with the automation API. */
 export const AGENT_TAB_IDS = ["general", "defaults", "primer", "gate", "discord"] as const;
-export const SETTINGS_TAB_IDS = ["general", "environment", "workspace", "ssh", "versions", "diagnostics", "automation"] as const;
+export const SETTINGS_TAB_IDS = ["general", "environment", "workspace", "ssh", "diagnostics", "automation"] as const;
+/**
+ * Settings tabs that moved to a screen of their own. Navigating to one still
+ * works — it lands on that screen — so automation written against the old tab
+ * keeps its meaning instead of failing.
+ */
+export const MOVED_SETTINGS_TABS: Readonly<Record<string, "versions">> = { versions: "versions" };
 
 export type AgentTabId = (typeof AGENT_TAB_IDS)[number];
 export type SettingsTabId = (typeof SETTINGS_TAB_IDS)[number];

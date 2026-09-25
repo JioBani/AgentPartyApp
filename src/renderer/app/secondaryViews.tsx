@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FileText, FlaskConical, FolderOpen, FoldVertical, HardDrive, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, PackageCheck, RefreshCw, Server, Settings2, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, ClipboardList, Copy, FileText, FlaskConical, FolderOpen, FoldVertical, HardDrive, Info as InfoIcon, KeyRound, LogOut, MonitorSmartphone, Moon, RefreshCw, Server, Settings2, ShieldCheck, SlidersHorizontal, SquareTerminal, Trash2, X } from "lucide-react";
 import { formatDiagnosticsReport, type DiagnosticsReport } from "../../shared/diagnostics";
 import type { EnvironmentCheck, EnvironmentReport, EnvironmentStatus } from "../../shared/environment";
 import { EnvironmentProbeSteps, EnvironmentRawDetail, EnvironmentRemedyButtons, EnvironmentRepairNote } from "../workbench/EnvironmentRemedies";
 import { ipcErrorMessage } from "./ipcError";
-import { openUpdateDialog } from "./updateDialog";
-import { UPDATE_FEED, type ReleaseSummary, type UpdateChannel, type UpdateStatus } from "../../shared/appUpdate";
 import type { AuthProviderState, HarnessDefaults, HarnessId, InitialAppState, NativeCliAuthHost, NativeCliAuthProvider, NativeCliAuthTestResult, PermissionModeSetting } from "../../shared/types";
 import {
   cursorPolicyOf,
@@ -20,7 +18,6 @@ import type { AgentTabId, SettingsTabId } from "../../shared/runtimeTabs";
 import { HARNESS_IDS, normalizeServiceTierSelection } from "../../shared/types";
 import { MessageGateIcon } from "../workbench/MessageGateIcon";
 import { HarnessIcon } from "../workbench/HarnessIcon";
-import { Markdown } from "../workbench/Markdown";
 import { HarnessPermissionControl } from "../workbench/HarnessPermissionControl";
 import { GateReviewerControl } from "../workbench/GateReviewerControl";
 import { PartyPrimerSettings, type PartyPrimerSectionPatch } from "../workbench/PartyPrimerSettings";
@@ -1231,261 +1228,6 @@ function DiagnosticsCard({ active }: { active: boolean }) {
   );
 }
 
-/**
- * 설정 → 버전 탭.
- *
- * Three questions, in the order a user asks them: what am I running, what is
- * the newest release and what changed in it, and — folded away until asked —
- * what shipped before that.
- *
- * The history comes from the public releases API (updateService.listReleases),
- * so it renders even on a build where self-update is unavailable: knowing what
- * exists is useful precisely when the app cannot fetch it for you.
- */
-/** The release title, unless it just repeats the tag (`v0.2.0` for 0.2.0). */
-function releaseTitle(release: ReleaseSummary): string {
-  const name = release.name.trim();
-  return name === release.version || name === `v${release.version}` ? "" : name;
-}
-
-function VersionsCard({ active }: { active: boolean }) {
-  const [status, setStatus] = useState<UpdateStatus | undefined>();
-  const [releases, setReleases] = useState<ReleaseSummary[] | undefined>();
-  const [listError, setListError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [changingChannel, setChangingChannel] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  /** Versions whose notes are expanded, by version string. */
-  const [openNotes, setOpenNotes] = useState<Set<string>>(new Set());
-
-  const loadReleases = useCallback(async (refresh: boolean) => {
-    setLoading(true);
-    setListError("");
-    try {
-      const res = await window.agentParty.listUpdateVersions({ refresh });
-      setReleases(res.releases);
-    } catch (error) {
-      setReleases(undefined);
-      setListError(ipcErrorMessage(error));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!active) {
-      return;
-    }
-    void window.agentParty.getUpdateStatus?.().then((res) => setStatus(res?.update)).catch(() => undefined);
-    void loadReleases(false);
-    // Same push the titlebar listens to, so this tab cannot go stale while open.
-    const off = window.agentParty.onUpdateStatus?.((payload) => setStatus(payload));
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await window.agentParty.checkForUpdate?.({ quiet: true });
-        if (cancelled) {
-          return;
-        }
-        if (res?.update) {
-          setStatus(res.update);
-        }
-        await loadReleases(true);
-      } catch (error) {
-        if (!cancelled) {
-          setListError(ipcErrorMessage(error));
-        }
-      }
-    })();
-    return () => { cancelled = true; off?.(); };
-  }, [active, loadReleases]);
-
-  async function check() {
-    setChecking(true);
-    try {
-      const res = await window.agentParty.checkForUpdate();
-      setStatus(res.update);
-      // A check that found something new means the list is stale too.
-      await loadReleases(true);
-    } catch (error) {
-      setListError(ipcErrorMessage(error));
-    } finally {
-      setChecking(false);
-    }
-  }
-
-  async function changeChannel(channel: UpdateChannel) {
-    if (channel === (status?.channel || "stable")) {
-      return;
-    }
-    setChangingChannel(true);
-    setListError("");
-    try {
-      const res = await window.agentParty.setUpdateChannel(channel);
-      setStatus(res.update);
-      await loadReleases(true);
-    } catch (error) {
-      setListError(ipcErrorMessage(error));
-    } finally {
-      setChangingChannel(false);
-    }
-  }
-
-  function toggleNotes(version: string) {
-    setOpenNotes((current) => {
-      const next = new Set(current);
-      if (next.has(version)) {
-        next.delete(version);
-      } else {
-        next.add(version);
-      }
-      return next;
-    });
-  }
-
-  const current = status?.currentVersion || "";
-  const channel = status?.channel || "stable";
-  // "설치됨" is derived from the version this window reports, not only from the
-  // flag the list carries — the two cards must never disagree on screen.
-  const isCurrent = (release: ReleaseSummary) => (current ? release.version === current : Boolean(release.current));
-  const latest = releases?.[0];
-  const history = (releases || []).slice(1);
-  const upToDate = Boolean(latest && current && latest.version === current);
-
-  return (
-    <>
-      <div className="set-tab-note">
-        <InfoIcon size={14} />
-        <span><LocalizedText id="STR-1150" /> <b><LocalizedText id="STR-1149" /></b><LocalizedText id="STR-1151" /></span>
-      </div>
-
-      <section className="set-card set-update-channel-card" data-ver="channel-card" data-layout-card="settings-versions-channel">
-        <div className="set-card-label"><LocalizedText id="STR-3204" /><span className="set-card-sub"><LocalizedText id="STR-3205" /></span></div>
-        <div className="set-update-channel-options" role="radiogroup" aria-label={localized("STR-3206")}>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={channel === "stable"}
-            className={`set-update-channel-option${channel === "stable" ? " is-active" : ""}`}
-            data-ver="channel-stable"
-            disabled={changingChannel}
-            onClick={() => void changeChannel("stable")}
-          >
-            <span><LocalizedText id="STR-3207" /></span>
-            <small><LocalizedText id="STR-3208" /></small>
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={channel === "beta"}
-            className={`set-update-channel-option${channel === "beta" ? " is-active" : ""}`}
-            data-ver="channel-beta"
-            disabled={changingChannel}
-            onClick={() => void changeChannel("beta")}
-          >
-            <span><FlaskConical size={13} /> <LocalizedText id="STR-3209" /></span>
-            <small><LocalizedText id="STR-3210" /></small>
-          </button>
-        </div>
-        <div className="set-update-channel-note">
-          {changingChannel ? <><RefreshCw size={12} className="wb-spin" /> <LocalizedText id="STR-3211" /></> :
-            channel === "beta" ? <><FlaskConical size={12} /> <LocalizedText id="STR-3212" /></> :
-              <><ShieldCheck size={12} /> <LocalizedText id="STR-3213" /></>}
-        </div>
-      </section>
-
-      <section className="set-card" data-layout-card="settings-versions-installed">
-        <div className="set-card-label"><LocalizedText id="STR-1152" /><span className="set-card-sub wb-mono">{UPDATE_FEED.owner}/{UPDATE_FEED.repo}</span></div>
-        <div className="set-ver-current">
-          <span className="wb-mono set-ver-badge">v{current || "?"}</span>
-          {upToDate && <span className="set-ver-tag is-ok"><LocalizedText id="STR-1153" /></span>}
-          {status?.state === "available" && (
-            <span className={status.downgrade ? "set-ver-tag is-warn" : "set-ver-tag is-new"}>
-              v{status.latestVersion} {status.downgrade ? "로 되돌리기 가능" : "사용 가능"}
-            </span>
-          )}
-          {status?.state === "downloaded" && <span className="set-ver-tag is-new">v{status.latestVersion}  <LocalizedText id="STR-1156" /></span>}
-          {status?.state === "disabled" && <span className="set-ver-note">{status.disabledReason}</span>}
-          {status?.state === "error" && <span className="set-ver-note is-error">{status.error}</span>}
-        </div>
-        <div className="set-diag-actions">
-          <button type="button" className="set-btn-soft" data-ver="check" disabled={checking || status?.state === "downloading" || status?.state === "downloaded"} onClick={() => void check()}>
-            <RefreshCw size={14} className={checking ? "wb-spin" : undefined} />  <LocalizedText id="STR-1157" />
-          </button>
-          <button type="button" className="set-btn-soft" data-ver="open-dialog" onClick={openUpdateDialog}><LocalizedText id="STR-1158" /></button>
-        </div>
-      </section>
-
-      {listError && (
-        <div className="set-inline-note is-error">
-          <AlertTriangle size={14} />
-          <span>{listError}</span>
-          <button type="button" className="set-link-btn" onClick={() => void loadReleases(true)}><RefreshCw size={12} />  <LocalizedText id="STR-1159" /></button>
-        </div>
-      )}
-
-      <section className="set-card" data-layout-card="settings-versions-latest">
-        <div className="set-card-label"><LocalizedText id="STR-1160" /><span className="set-card-sub wb-mono">{latest?.publishedAt ? new Date(latest.publishedAt).toLocaleDateString() : ""}</span></div>
-        {!latest ? (
-          <div className="set-ver-empty">{loading ? "불러오는 중…" : listError ? "목록을 불러오지 못했습니다." : "게시된 릴리스가 없습니다."}</div>
-        ) : (
-          <div className="set-ver-latest">
-            <div className="set-ver-head">
-              <span className="wb-mono set-ver-badge is-latest">v{latest.version}</span>
-              {releaseTitle(latest) && <span className="set-ver-name">{releaseTitle(latest)}</span>}
-              {latest.prerelease && <span className="set-ver-tag"><LocalizedText id="STR-1164" /></span>}
-              {isCurrent(latest) && <span className="set-ver-tag is-ok"><LocalizedText id="STR-1165" /></span>}
-              <button type="button" className="set-link-btn set-ver-link" onClick={() => void window.agentParty.openExternal(latest.url)}>
-                <ArrowRight size={12} />  <LocalizedText id="STR-1166" />
-              </button>
-            </div>
-            <div className="set-ver-notes">
-              {latest.notes ? <Markdown text={latest.notes} /> : <span className="set-ver-empty"><LocalizedText id="STR-1167" /></span>}
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="set-card" data-layout-card="settings-versions-history">
-        <button type="button" className="set-ver-toggle" data-ver="history-toggle" onClick={() => setShowHistory((v) => !v)}>
-          <ChevronDown size={14} className={showHistory ? "set-ver-chev is-open" : "set-ver-chev"} />
-          <span><LocalizedText id="STR-1168" /></span>
-          <span className="set-card-sub wb-mono">{history.length}개</span>
-        </button>
-        {showHistory && (
-          history.length === 0 ? (
-            <div className="set-ver-empty"><LocalizedText id="STR-1169" /></div>
-          ) : (
-            <ul className="set-ver-list">
-              {history.map((release) => (
-                <li key={release.version} className="set-ver-item">
-                  <button type="button" className="set-ver-item-head" data-ver={`item-${release.version}`} onClick={() => toggleNotes(release.version)}>
-                    <ChevronDown size={13} className={openNotes.has(release.version) ? "set-ver-chev is-open" : "set-ver-chev"} />
-                    <span className="wb-mono set-ver-badge">v{release.version}</span>
-                    {releaseTitle(release) && <span className="set-ver-name">{releaseTitle(release)}</span>}
-                    {release.prerelease && <span className="set-ver-tag"><LocalizedText id="STR-1170" /></span>}
-                    {isCurrent(release) && <span className="set-ver-tag is-ok"><LocalizedText id="STR-1171" /></span>}
-                    <span className="set-ver-date wb-mono">{release.publishedAt ? new Date(release.publishedAt).toLocaleDateString() : ""}</span>
-                  </button>
-                  {openNotes.has(release.version) && (
-                    <div className="set-ver-notes">
-                      {release.notes ? <Markdown text={release.notes} /> : <span className="set-ver-empty"><LocalizedText id="STR-1172" /></span>}
-                      <button type="button" className="set-link-btn set-ver-link" onClick={() => void window.agentParty.openExternal(release.url)}>
-                        <ArrowRight size={12} />  <LocalizedText id="STR-1173" />
-                      </button>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )
-        )}
-      </section>
-    </>
-  );
-}
-
 /** One `label — value [copy]` line. Wraps rather than truncating: a log path is
  *  the value most likely to be long AND the one most likely to be read by eye. */
 function DiagnosticsRow({ label, value, loading, copyId, copiedId, onCopy }: {
@@ -1829,7 +1571,6 @@ const SETTINGS_TABS: Array<{ id: SettingsTabId; label: MessageKey; icon: ReactNo
   { id: "environment", label: "runtime.tab.environment", icon: <ShieldCheck size={14} /> },
   { id: "workspace", label: "runtime.tab.workspace", icon: <HardDrive size={14} /> },
   { id: "ssh", label: "runtime.tab.ssh", icon: <Server size={14} /> },
-  { id: "versions", label: "runtime.tab.versions", icon: <PackageCheck size={14} /> },
   { id: "diagnostics", label: "runtime.tab.diagnostics", icon: <ClipboardList size={14} /> },
   { id: "automation", label: "settings.tab.automation", icon: <FlaskConical size={14} /> },
 ];
@@ -1934,7 +1675,6 @@ export function SettingsView({ automationApi, logs, router, settings, onToggleDe
           <SshServersTab now={now} />
         </SubtreeVisibility></div>
 
-        <div className="set-tab-panel" hidden={tab !== "versions"}><SubtreeVisibility visible={tab === "versions"}><VersionsCard active={tab === "versions"} /></SubtreeVisibility></div>
         <div className="set-tab-panel" hidden={tab !== "diagnostics"}><SubtreeVisibility visible={tab === "diagnostics"}><DiagnosticsCard active={tab === "diagnostics"} /></SubtreeVisibility></div>
 
         <div className="set-tab-panel" hidden={tab !== "automation"}><SubtreeVisibility visible={tab === "automation"}>

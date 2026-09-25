@@ -3668,8 +3668,13 @@ Switches the visible app screen.
 Valid views:
 
 ```text
-workbench, guide, usage, auth, agent, settings
+workbench, guide, usage, auth, agent, versions, settings
 ```
+
+`versions` is the rail's **버전** screen (installed version, update actions,
+channel, and every release's notes paged sideways). It replaced the former
+`settings/versions` tab; navigating to `{ "view": "settings", "tab": "versions" }`
+(or the legacy `runtime/versions`) still works and lands on `versions`.
 
 The **에이전트** and **설정** screens are tabbed. An optional `tab` lands on a
 specific tab instead of leaving the caller to click the strip:
@@ -3680,7 +3685,7 @@ specific tab instead of leaving the caller to click the strip:
 
 ```text
 agent: general, defaults, primer, gate, discord
-settings: general, environment, workspace, ssh, versions, diagnostics, automation
+settings: general, environment, workspace, ssh, diagnostics, automation
 ```
 
 The **에이전트 기본값** tab shows one harness at a time, picked by its own sub-tab
@@ -4238,7 +4243,7 @@ the background timer stop, so nothing overwrites what the test is looking at.
 ```
 
 A `releases` array in the same body stands a fixed **release history** in for
-the GitHub fetch, so the 버전 tab's list and its folded "이전 버전" section can be
+the GitHub fetch, so the 버전 screen's release pages (and its 이전 ‹ › 다음 paging) can be
 reviewed without publishing throwaway releases to a public repo. Entries take
 the `GET /api/update/versions` shape.
 

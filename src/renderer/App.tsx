@@ -39,6 +39,7 @@ import { UsageLimitPill } from "./workbench/UsageLimitPill";
 import type { UpdateStatus } from "../shared/appUpdate";
 import { UpdatePill } from "./workbench/UpdatePill";
 import { UpdateModal } from "./workbench/UpdateModal";
+import { VersionsView } from "./app/VersionsView";
 import { useTheme } from "./theme/ThemeProvider";
 import { cachedRendererTheme } from "./theme/firstPaint";
 import { Workbench } from "./workbench/Workbench";
@@ -587,7 +588,7 @@ export function App() {
         // A recalled release is not an upgrade, and saying "새 버전" about a
         // rollback would have the user install it expecting the opposite.
         ? `배포자가 최신 릴리스를 회수했습니다. 이전 버전 ${version} 으로 되돌릴 수 있습니다 — 제목 표시줄의 배지에서 진행하세요.`
-        : `새 버전 ${version} 이(가) 있습니다. 제목 표시줄의 업데이트 배지에서 받을 수 있습니다.`);
+        : `새 버전 ${version} 이(가) 있습니다. 사이드바의 버전 화면에서 바뀐 점을 보고 설치할 수 있습니다.`);
     }
   }, [updateStatus?.state, updateStatus?.latestVersion, updateStatus?.downgrade]);
 
@@ -2247,9 +2248,23 @@ export function App() {
 
   // doctor will add "문제 해결" on the same rail; keep this list a flat append,
   // no new abstraction.
-  const navItems: Array<{ id: ViewId; label: string; icon: JSX.Element }> = (
-    ["workbench", "guide", "usage", "auth", "agent", "settings"] as ViewId[]
-  ).map((id) => ({ id, label: viewTitle(id, t), icon: NAV_ICONS[id] }));
+  // The versions item carries a quiet dot while a NEWER version waits (a
+  // rollback is not news — the titlebar pill says that one in caution colour).
+  const versionsBadge = updateStatus && !updateStatus.downgrade
+    ? updateStatus.state === "downloaded" ? "ready" as const
+      : updateStatus.state === "available" || updateStatus.state === "downloading" ? "available" as const
+        : undefined
+    : undefined;
+  const navItems = (
+    ["workbench", "guide", "usage", "auth", "agent", "versions", "settings"] as ViewId[]
+  ).map((id) => ({
+    id,
+    label: viewTitle(id, t),
+    icon: NAV_ICONS[id],
+    ...(id === "versions" && versionsBadge
+      ? { badge: versionsBadge, hint: t("versions.railHint", { version: updateStatus?.latestVersion || "" }) }
+      : {}),
+  }));
 
   // Party members driving each harness subscription/account indicator. Models
   // routed through OpenRouter do not replace the selected harness process.
@@ -2395,7 +2410,7 @@ export function App() {
               <header className="screen-header">
                 <div className="screen-title">
                   <h1>{viewTitle(currentView, t)}</h1>
-                  <p>{viewSubtitle(currentView, t)}</p>
+                  {viewSubtitle(currentView, t) && <p>{viewSubtitle(currentView, t)}</p>}
                 </div>
                 <div className="screen-actions">
                   {usagePill}
@@ -2448,6 +2463,7 @@ export function App() {
                   }}
                 />
               )}
+              {currentView === "versions" && <VersionsView status={updateStatus} onStatus={setUpdateStatus} />}
               {currentView === "settings" && (
                 <SettingsView
                   automationApi={state.automationApi}

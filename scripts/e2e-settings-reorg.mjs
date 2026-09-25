@@ -49,7 +49,7 @@ try {
   assert(Number.isInteger(appPid) && appPid > 0, "real Electron API listener PID is discoverable");
   const spec = await request("GET", "/api/spec");
   assert(spec.payload?.navigation?.tabs?.agent?.join(",") === "general,defaults,primer,gate,discord", "API spec declares the exact five Agent tabs");
-  assert(spec.payload?.navigation?.tabs?.settings?.join(",") === "general,environment,workspace,ssh,versions,diagnostics,automation", "API spec declares every Settings tab");
+  assert(spec.payload?.navigation?.tabs?.settings?.join(",") === "general,environment,workspace,ssh,diagnostics,automation", "API spec declares every Settings tab");
   assert(!spec.payload?.endpoints?.some((endpoint) => String(endpoint).includes("/api/mobile")), "API spec publishes no Mobile Link endpoints");
   assert(!Object.prototype.hasOwnProperty.call(initialState.payload?.settings || {}, "mobile"), "public settings expose no detached Mobile Link configuration");
   const dismissShot = path.join(shots, "dismiss-guide-offer.png");
@@ -66,7 +66,7 @@ try {
   await navigate("settings", "general");
   const settingsTabs = await request("POST", "/api/measure", { selector: ".set-tab", limit: 20 });
   assert(settingsTabs.payload?.count === 7, "Settings shows exactly the shipped tabs");
-  for (const tab of ["general", "environment", "workspace", "ssh", "versions", "diagnostics", "automation"]) { await navigate("settings", tab); await capture(`1440-settings-${tab}`, "light"); }
+  for (const tab of ["general", "environment", "workspace", "ssh", "diagnostics", "automation"]) { await navigate("settings", tab); await capture(`1440-settings-${tab}`, "light"); }
   const unavailableMobile = await request("POST", "/api/navigation", { view: "settings", tab: "mobile" });
   assert(unavailableMobile.status >= 400 && /unknown settings tab/i.test(unavailableMobile.payload?.error || ""), "detached Mobile Link navigation fails as an unknown tab");
   const unavailableMobileSetting = await request("POST", "/api/settings", { mobile: { enabled: true } });

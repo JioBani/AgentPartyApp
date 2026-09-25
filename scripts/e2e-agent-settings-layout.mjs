@@ -45,7 +45,7 @@ function killTree(pid) {
 async function navigate(view, tab, harness) {
   const response = await request("POST", "/api/navigation", { view, tab, ...(harness ? { harness } : {}) });
   assert(response.status === 200 && response.payload?.view === view && response.payload?.tab === tab, `${view}/${tab} opened`);
-  await delay(tab === "environment" || tab === "versions" || tab === "diagnostics" ? 900 : 220);
+  await delay(tab === "environment" || tab === "diagnostics" ? 900 : 220);
 }
 async function measure(selector, extra = {}) {
   const response = await request("POST", "/api/measure", { selector, limit: 400, ...extra });
@@ -83,14 +83,8 @@ const contentSelectors = {
   "settings-workspace-recent-wsl": "> .set-card-body > *",
   "settings-workspace-members": "> .set-card-body > *",
   "settings-diagnostics-system": "> .set-card-body > *",
-  "settings-versions-channel": "> .set-update-channel-options > *, > .set-update-channel-note > *",
-  "settings-versions-installed": "> .set-ver-current > *, > .set-diag-actions > *",
-  "settings-versions-latest": "> .set-ver-latest > *, > .set-ver-empty",
   "settings-automation-router": "> .set-automation-content > *",
   "settings-automation-api": "> .set-automation-content > *",
-  // The disclosure button deliberately owns the full card row; its children
-  // remain on the 20px content line and are what geometry QA measures.
-  "settings-versions-history": "> .set-ver-toggle > *, > .set-ver-list > *",
 };
 
 async function auditActiveTab(view, tab, harness, viewportRecord, state = "default") {
@@ -101,14 +95,11 @@ async function auditActiveTab(view, tab, harness, viewportRecord, state = "defau
     const id = entry.attributes["data-layout-card"];
     const cardSelector = `[data-layout-card="${id}"]`;
     assert(!entry.scrollable.horizontal, `${id} has no horizontal overflow`);
-    // Font search is an intentional overlay, and release-note bodies are
-    // intentional scrollports. Audit their bounding surface, not offscreen
-    // children which are clipped by that declared surface.
+    // Font search is an intentional overlay. Audit its bounding surface, not
+    // offscreen children which are clipped by that declared surface.
     const descendantSelector = id === "settings-fonts"
       ? `${cardSelector} *:not(.set-font-pop):not(.set-font-pop *)`
-      : id.startsWith("settings-versions-")
-        ? `${cardSelector} *:not(.set-ver-notes *)`
-        : `${cardSelector} *`;
+      : `${cardSelector} *`;
     const descendants = await measure(descendantSelector, { containedBy: cardSelector });
     const visibleDescendants = descendants.elements.filter((item) => item.box.width > 0 && item.box.height > 0);
     const outside = visibleDescendants.filter((item) => !item.containedBy?.fully);
@@ -293,7 +284,7 @@ try {
   });
   const tabs = [
     ...["general", "defaults", "primer", "gate", "discord"].map((tab) => ({ view: "agent", tab, harness: tab === "defaults" ? "codex" : undefined })),
-    ...["general", "environment", "workspace", "ssh", "versions", "diagnostics", "automation"].map((tab) => ({ view: "settings", tab })),
+    ...["general", "environment", "workspace", "ssh", "diagnostics", "automation"].map((tab) => ({ view: "settings", tab })),
   ];
 
   const viewportRequests = quickMode
@@ -348,11 +339,6 @@ try {
       await auditActiveTab("settings", "environment", undefined, viewport, "expanded");
       await captureStateSet(`${viewport.label}-settings-environment-expanded`);
 
-      await navigate("settings", "versions");
-      interaction = await request("POST", "/api/capture", { click: '[data-ver="history-toggle"]' });
-      assert(interaction.payload?.clicked === true, "version history expanded");
-      await auditActiveTab("settings", "versions", undefined, viewport, "history-expanded");
-      await captureStateSet(`${viewport.label}-settings-versions-history`);
     }
   }
   const widthClamp = viewportRequests.map((requested, index) => ({ requested, actual: viewports[index]?.actual }));
