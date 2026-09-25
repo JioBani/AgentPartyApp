@@ -132,8 +132,7 @@ try {
       && threadStart.params.developerInstructions.includes("team-qa")
       && threadStart.params.developerInstructions.includes("main")
       && threadStart.params.developerInstructions.includes("tools.party_send")
-      && threadStart.params.developerInstructions.includes("tools.mcp__agentparty_app__browser")
-      && threadStart.params.developerInstructions.includes("Do not use desktop Computer Use")
+      && !threadStart.params.developerInstructions.includes("an unrelated browser backend")
       && threadStart.params.developerInstructions.includes("`collaboration.*` tools control separate Codex sub-agents")
       && threadStart.params.developerInstructions.includes("never scan `ALL_TOOLS`"),
     "Codex installs the eager Party Core calling convention and distinguishes it from collaboration sub-agents",

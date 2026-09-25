@@ -718,7 +718,6 @@ export function buildCodexPartyCoreInstructions(options: { legacyResumeFallback?
       ? "The host's `collaboration.*` tools control separate Codex sub-agents and are never a substitute for AgentParty. Prefer `party_send` when present; the exact AgentParty compatibility tools below cover legacy resumed threads."
       : "The host's `collaboration.*` tools control separate Codex sub-agents and are never a substitute for AgentParty. Do not infer that party messaging is unavailable because the duplicate `mcp__agentparty-app__send` name is absent; use `party_send`.",
     "For a less-common canonical tool named below, its code-mode property is `tools.mcp__agentparty_app__<tool_name_with_hyphens_changed_to_underscores>`; inspect only that exact tool if its schema is needed.",
-    "For web browsing, use `tools.mcp__agentparty_app__browser` to control your own visible AgentParty Browser tab. Do not use desktop Computer Use, OS mouse/keyboard automation, or an unrelated browser backend for this task; those can affect the user's whole desktop.",
   ];
   if (options.legacyResumeFallback) {
     lines.push(

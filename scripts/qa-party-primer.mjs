@@ -59,6 +59,7 @@ for (const phrase of [
 }
 assert(primer.includes("party-contract") && primer.includes("new-worker") && primer.includes(identity.role), "a new member receives the same defaults with its own identity rendered");
 assert(primer.includes("mcp__agentparty-app__member-runtime") && primer.includes("model") && primer.includes("effort") && primer.includes("fast"), "the primer teaches members the model / effort / Fast runtime tool");
+assert(!primer.includes("another browser backend"), "the canonical primer does not forbid other browser connections");
 
 assert.deepEqual(
   primerModule.PARTY_PRIMER_DELIVERY.map(({ harness, channel, delivered }) => ({ harness, channel, delivered })),
@@ -100,6 +101,7 @@ const codex = new CodexAdapter({
 const codexInstructions = codex.partyDeveloperInstructions();
 assert(codexInstructions.startsWith("## Codex Party Core — already loaded"), "Codex puts its eager Party Core calling convention first");
 assert(codexInstructions.includes("tools.party_send") && codexInstructions.includes("never scan `ALL_TOOLS`"), "Codex names the native-style core alias without catalog search");
+assert(!codexInstructions.includes("For web browsing, use `tools.mcp__agentparty_app__browser`"), "Codex Party Core no longer forces one browser backend");
 const adaptedPrimer = adaptPartyPrimerForCodex(primer);
 assert(!adaptedPrimer.includes("mcp__agentparty-app__send") && adaptedPrimer.includes("mcp__agentparty-app__member-create"), "Codex rewrites only core references and keeps long-tail canonical names");
 assert(codexInstructions.endsWith(adaptedPrimer), "Codex keeps the adapted cross-harness primer after its calling convention");
