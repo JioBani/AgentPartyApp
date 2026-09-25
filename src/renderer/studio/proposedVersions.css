@@ -1,8 +1,9 @@
 /*
- * 제안 — "새로운 기능" 화면 + 사이드바 업데이트 점.
+ * 제안 — 사이드바의 버전 화면 + 업데이트 점.
  *
- * 승인되면 값 그대로 styles.css 로 옮긴다: `.nav-badge` 는 `.nav-item` 뒤,
- * `.wn-*` 는 설정 → 버전 구역을 대체한다. 숫자를 정리하지 않는다.
+ * 화면은 설정의 디자인 시스템(set-card · set-row · set-btn-* · set-ver-*)을 그대로 쓴다.
+ * 여기 있는 것은 그것으로 안 되는 몇 줄뿐이다. 승인되면 값 그대로 styles.css 로 옮긴다:
+ * `.nav-badge` 는 `.nav-item` 뒤, `.ver-*` 는 설정 → 버전 구역 끝.
  */
 
 /* ---------- 사이드바: 업데이트 점 — 작게, 움직이지 않게 ---------- */
@@ -21,122 +22,41 @@
 .nav-item:hover .nav-badge,
 .nav-item.active .nav-badge { box-shadow: 0 0 0 2px var(--bg-2); }
 
-/* ---------- 새로운 기능: 읽는 페이지 ---------- */
-.wn-main { min-height: 0; background: var(--bg-2); }
-.wn-scroll { flex: 1; min-height: 0; overflow-y: auto; }
-.wn-column {
-  width: 100%;
-  max-width: 680px;
-  margin: 0 auto;
-  padding: 56px 32px 96px;
-  box-sizing: border-box;
-}
+/* ---------- 버전 화면 ---------- */
+.ver-installed { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 3px; color: var(--text-3); }
+.ver-installed .set-card-sub { margin-left: 4px; }
+.ver-row-rule { border-top: var(--border-width) solid var(--border-subtle); }
+.set-row-desc svg { vertical-align: -2px; }
+.ver-error { margin: 0; align-items: center; }
+.ver-error .set-link-btn { margin-left: auto; }
 
-.wn-head { margin-bottom: 56px; }
-.wn-head h1 {
-  margin: 0 0 20px;
-  font-size: 30px;
-  line-height: 1.2;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text-0);
-}
-
-/* 업데이트: 한 줄과 버튼 하나. */
-.wn-update {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 48px;
-  padding: 8px 8px 8px 16px;
-  border-radius: 12px;
-  background: var(--bg-1);
-  font-size: 13.5px;
-  color: var(--text-1);
-}
-.wn-update b { font-weight: 700; color: var(--text-0); }
-.wn-update > span:nth-last-child(2) { flex: 1; min-width: 0; }
-.wn-update-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-.wn-update-from { margin-left: 8px; color: var(--text-3); font-size: 12.5px; }
-.wn-update-btn {
-  flex: none;
-  height: 32px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--text-0);
-  color: var(--bg-2);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.wn-update-btn:hover { opacity: .88; }
-.wn-update.is-current { background: none; padding: 0; min-height: 0; color: var(--text-2); }
-.wn-update.is-current > span { flex: none; }
-.wn-text-btn {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text-2);
-  font: inherit;
-  font-size: 13px;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-color: var(--border-strong);
-  cursor: pointer;
-}
-.wn-text-btn:hover { color: var(--text-0); }
-
-/* 릴리스 하나 = 메타 한 줄 · 제목 한 문장 · 글과 이미지. */
-.wn-entry + .wn-entry { margin-top: 72px; padding-top: 56px; border-top: var(--border-width) solid var(--border-subtle); }
-.wn-meta { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-3); }
-.wn-meta-sep { width: 3px; height: 3px; border-radius: 50%; background: var(--text-3); }
-.wn-chip { margin-left: 4px; padding: 2px 8px; border-radius: 999px; background: var(--bg-3); color: var(--text-1); font-size: 11.5px; font-weight: 600; }
-.wn-chip.is-new { background: var(--accent-dim); color: var(--accent); }
-.wn-headline {
-  margin: 10px 0 20px;
-  font-size: 24px;
-  line-height: 1.35;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text-0);
-}
-
-.wn-body .wb-md { font-size: 14.5px; line-height: 1.85; color: var(--text-1); }
-.wn-body .wb-md p { margin: 0 0 16px; }
-.wn-body .wb-md strong { color: var(--text-0); font-weight: 600; }
-.wn-body .wb-md h2 { margin: 40px 0 12px; font-size: 13px; font-weight: 700; color: var(--text-2); }
-.wn-body .wb-md h3 { margin: 40px 0 10px; font-size: 17px; font-weight: 700; color: var(--text-0); }
-.wn-body .wb-md > :first-child { margin-top: 0; }
-.wn-body .wb-md ul { padding-left: 1.2em; }
-.wn-body .wb-md li { margin: 6px 0; }
-.wn-body .wb-md img {
+/* 릴리스 노트: 상자에 가두지 않고 카드 폭 그대로 읽는다. */
+.ver-release { padding: 18px 20px 22px; }
+.ver-release .set-ver-head { margin-bottom: 16px; }
+.ver-release .set-ver-head .set-link-btn { margin-left: 4px; }
+.ver-notes-title { margin: 0 0 12px; font-size: 17px; line-height: 1.4; font-weight: 700; color: var(--text-0); }
+.ver-notes .wb-md { font-size: 13px; line-height: 1.75; color: var(--text-1); }
+.ver-notes .wb-md p { margin: 0 0 12px; }
+.ver-notes .wb-md strong { color: var(--text-0); }
+.ver-notes .wb-md h2 { margin: 26px 0 8px; padding-top: 16px; border-top: var(--border-width) solid var(--border-subtle); font-size: 13.5px; }
+.ver-notes .wb-md h3 { margin: 24px 0 6px; font-size: 14px; }
+.ver-notes .wb-md > :first-child { margin-top: 0; }
+.ver-notes .wb-md img {
   display: block;
   width: 100%;
   height: auto;
-  margin: 24px 0 8px;
-  border-radius: 12px;
-  box-shadow: 0 0 0 var(--border-width) var(--border-subtle), 0 12px 32px var(--shadow);
+  margin: 14px 0 6px;
+  border: var(--border-width) solid var(--border-subtle);
+  border-radius: var(--radius-card);
 }
-.wn-body .wb-md em { display: block; margin-bottom: 16px; font-style: normal; font-size: 12.5px; color: var(--text-3); text-align: center; }
+.ver-notes .wb-md em { display: block; font-style: normal; font-size: 11.5px; color: var(--text-3); text-align: center; }
 
-.wn-more {
-  display: block;
-  margin: 72px auto 0;
-  padding: 10px 20px;
-  border: var(--border-width) solid var(--border);
-  border-radius: 999px;
-  background: none;
-  color: var(--text-1);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.wn-more:hover { color: var(--text-0); border-color: var(--border-strong); }
+.ver-item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--text-1); }
+.ver-item-body { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 6px 14px 16px 34px; }
 
 /* 스튜디오 전용: 레일 상태 나란히 보기 */
 .ver-rail-states { display: flex; gap: 48px; padding: 24px 32px; background: var(--bg-1); }
 .ver-rail-state { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .ver-rail-frame { height: 420px; display: flex; border: var(--border-width) solid var(--border-subtle); border-radius: 10px; overflow: hidden; }
 .ver-rail-state figcaption { white-space: nowrap; font-size: 12.5px; color: var(--text-0); }
+
