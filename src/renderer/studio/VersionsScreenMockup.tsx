@@ -189,12 +189,11 @@ export function VersionsScreen({ state }: { state: VersionsState }) {
             <div className="set-section-head">
               <span className="set-section-label">{index === 0 ? "최신 버전" : "이전 버전"}</span>
               <span className="set-section-rule" />
-              {/* Pager: newer ‹ [jump to any version] › older. Pages turn sideways, never stack below. */}
-              <div className="ver-pager">
-                <button type="button" className="ver-pager-btn" aria-label="더 새 버전" disabled={!newer} onClick={() => go(index - 1)}><ChevronLeft size={15} /></button>
+              {/* One joined control, read left → right like a timeline: older ‹ [this version ▾] › newer. */}
+              <div className="ver-pager" role="group" aria-label="버전 넘기기">
+                <button type="button" className="ver-pager-btn" disabled={!older} onClick={() => go(index + 1)}><ChevronLeft size={14} /> 이전</button>
                 <Dropdown value={release.version} options={options} onChange={(v) => go(RELEASES.findIndex((r) => r.version === v))} title="버전으로 이동" align="right" />
-                <span className="ver-pager-count wb-mono">{index + 1} / {RELEASES.length}</span>
-                <button type="button" className="ver-pager-btn" aria-label="이전 버전" disabled={!older} onClick={() => go(index + 1)}><ChevronRight size={15} /></button>
+                <button type="button" className="ver-pager-btn" disabled={!newer} onClick={() => go(index - 1)}>다음 <ChevronRight size={14} /></button>
               </div>
             </div>
             {/* Read, not operated: meta line, one headline, prose and full-width images — no box. */}
@@ -211,16 +210,16 @@ export function VersionsScreen({ state }: { state: VersionsState }) {
             </article>
             {/* The end of a note is where the reader decides to keep going: offer both neighbours by name. */}
             <nav className="ver-turn" aria-label="버전 넘기기">
-              {newer ? (
-                <button type="button" className="ver-turn-card" onClick={() => go(index - 1)}>
-                  <span className="ver-turn-dir"><ChevronLeft size={13} /> 더 새 버전 · v{newer.version}</span>
-                  <span className="ver-turn-title">{headline(newer) || firstLine(newer)}</span>
+              {older ? (
+                <button type="button" className="ver-turn-card" onClick={() => go(index + 1)}>
+                  <span className="ver-turn-dir"><ChevronLeft size={13} /> 이전 버전 · v{older.version}</span>
+                  <span className="ver-turn-title">{headline(older) || firstLine(older)}</span>
                 </button>
               ) : <span />}
-              {older ? (
-                <button type="button" className="ver-turn-card is-older" onClick={() => go(index + 1)}>
-                  <span className="ver-turn-dir">이전 버전 · v{older.version} <ChevronRight size={13} /></span>
-                  <span className="ver-turn-title">{headline(older) || firstLine(older)}</span>
+              {newer ? (
+                <button type="button" className="ver-turn-card is-newer" onClick={() => go(index - 1)}>
+                  <span className="ver-turn-dir">다음 버전 · v{newer.version} <ChevronRight size={13} /></span>
+                  <span className="ver-turn-title">{headline(newer) || firstLine(newer)}</span>
                 </button>
               ) : <span />}
             </nav>
