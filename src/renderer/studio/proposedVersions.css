@@ -70,3 +70,6 @@
 .ver-rail-frame { height: 420px; display: flex; border: var(--border-width) solid var(--border-subtle); border-radius: 10px; overflow: hidden; }
 .ver-rail-state figcaption { white-space: nowrap; font-size: 12.5px; color: var(--text-0); }
 
+
+/* 읽는 페이지라서 가운데 둔다(설정 탭들은 왼쪽 정렬 그대로). */
+.ver-page { margin-inline: auto; }

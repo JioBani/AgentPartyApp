@@ -163,7 +163,7 @@ export function VersionsScreen({ state }: { state: VersionsState }) {
         </div>
       </header>
       <div className="program-scroll">
-        <div className="set-page">
+        <div className="set-page ver-page">
           {/* The list failing says nothing about the update itself — the card keeps its own state. */}
           <UpdateCard state={state === "error" ? "available" : state} installed={installed} latest={latest} />
 
