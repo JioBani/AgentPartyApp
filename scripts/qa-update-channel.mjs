@@ -90,13 +90,14 @@ class CountingUpdater extends EventEmitter {
   checks = 0;
   pending = undefined;
   outcome = "available";
+  availableVersion = "0.9.0";
   checkForUpdates() {
     this.checks += 1;
     this.emit("checking-for-update");
     return new Promise((resolve) => {
       this.pending = () => {
         if (this.outcome === "available") {
-          this.emit("update-available", { version: "0.9.0" });
+          this.emit("update-available", { version: this.availableVersion });
         } else {
           this.emit("update-not-available", { version: "0.2.3" });
         }
@@ -111,6 +112,26 @@ class CountingUpdater extends EventEmitter {
   quitAndInstall() {}
   setFeedURL(feed) { this.feeds.push(feed); }
 }
+
+const rollbackUpdater = new CountingUpdater();
+rollbackUpdater.availableVersion = "0.14.0";
+const rollbackService = new UpdateService({
+  getVersion: () => "1.0.0",
+  isPackaged: () => true,
+  getChannel: () => "stable",
+  updaterFactory: () => rollbackUpdater,
+  checkIntervalHours: 0,
+});
+const rollbackCheck = rollbackService.check();
+rollbackUpdater.pending();
+await rollbackCheck;
+assert(
+  rollbackService.getStatus().state === "available"
+    && rollbackService.getStatus().latestVersion === "0.14.0"
+    && rollbackService.getStatus().downgrade === true
+    && rollbackUpdater.allowDowngrade === true,
+  "installed 1.0.0 recognizes stable 0.14.0 as an available rollback",
+);
 
 function makeService(factory) {
   return new UpdateService({

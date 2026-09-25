@@ -201,6 +201,10 @@ let published = await api("PATCH", `${API}/releases/${draft.id}`, {
   body: notes,
   draft: false,
   prerelease,
+  // A recalled higher SemVer release can coexist while its replacement is
+  // verified. Explicitly point GitHub's latest endpoint (and updater) at the
+  // newly published stable release, even if its version number is lower.
+  make_latest: prerelease ? "false" : "true",
 });
 
 // GitHub can occasionally detach a newly published release onto an
@@ -215,6 +219,7 @@ if (published.tag_name !== tag) {
     body: notes,
     draft: false,
     prerelease,
+    make_latest: prerelease ? "false" : "true",
   });
 }
 if (published.tag_name !== tag) {
