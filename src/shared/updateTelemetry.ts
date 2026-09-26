@@ -10,7 +10,7 @@
  */
 
 /** The deployed collector. `AGENTPARTY_TELEMETRY_URL` overrides it (QA, dev). */
-export const TELEMETRY_ENDPOINT = "https://asia-northeast3-agentparty-telemetry.cloudfunctions.net/collect";
+export const TELEMETRY_ENDPOINT = "https://asia-northeast3-agentparty-telemetry-db942.cloudfunctions.net/collect";
 
 export const TELEMETRY_SCHEMA_VERSION = 1;
 
