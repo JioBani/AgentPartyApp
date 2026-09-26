@@ -20,13 +20,14 @@
 import { existsSync, lstatSync, realpathSync, rmSync, rmdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { installPath } from "./lib/installRoot.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** The package the pipe needs. Missing it is expected, not an error. */
 export const MOBILE_PIPE_PACKAGE = "@agentparty/protocol";
 
-const pipeLink = () => path.join(projectRoot, "node_modules", "@agentparty", "protocol");
+const pipeLink = () => installPath(projectRoot, "@agentparty", "protocol");
 
 /**
  * `existsSync` follows symlinks, and npm installs a local-path dependency AS a

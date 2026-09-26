@@ -44,9 +44,9 @@ major 1, minor 4, patch 2다.
    성능 개선, 내부 리팩터링처럼 기존 동작과 호환되는 변경은 세 번째 자리인 patch를
    올린다(`0.2.5` → `0.2.6`). 호환되는 새 기능은 minor, 호환성을 깨는 변경은
    major를 올린다. 이 값이 곧 릴리스 태그(`v0.2.6`)가 된다.
-3. 릴리스 전용 worktree에서 의존성을 설치하고 준비 파이프라인을 실행한다.
+3. 릴리스 전용 worktree(`.worktrees/release-v<version>`)에서 준비 파이프라인을 실행한다.
+   의존성은 메인 체크아웃의 설치본을 그대로 쓴다(워크트리에서 설치하지 않는다).
    ```powershell
-   npm ci
    npm run release:prepare
    ```
    이 명령은 전체 빌드와 Windows 패키징을 각각 한 번만 실행하고, 실제 패키지 E2E와

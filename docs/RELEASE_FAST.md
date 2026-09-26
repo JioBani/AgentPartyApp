@@ -33,17 +33,21 @@ producer, `release-lint.mjs`, 패키지 E2E, 또는 게시 스크립트에 조�
 
 ## 권장 절차
 
-릴리스 전용 worktree에서 버전을 올리고 의존성을 한 번 설치한다.
+릴리스 전용 worktree(`.worktrees/release-v<version>`)에서 버전을 올린다.
 
 ```powershell
 git -C C:\Project\AgentPartyApp worktree add `
-  C:\Project\AgentPartyApp-wt-release-v<version> `
+  .worktrees/release-v<version> `
   -b release/v<version> master
 
-Set-Location C:\Project\AgentPartyApp-wt-release-v<version>
+Set-Location C:\Project\AgentPartyApp\.worktrees\release-v<version>
 npm version <version> --no-git-tag-version
-npm ci
 ```
+
+의존성은 따로 설치하지 않는다. `.worktrees/` 아래 워크트리는 메인 체크아웃의
+`node_modules` 를 그대로 쓰고, 패키징 동안에만 `package-win.mjs` 가 링크를 걸었다가
+지운다. `package-lock.json` 이 바뀐 릴리스라면 메인 체크아웃에서 `npm install` 을 먼저
+실행한다(워크트리에서 `npm ci`/`npm install` 을 실행하지 않는다).
 
 빌드, Windows 패키징, 실제 패키지 E2E, 산출물 린트를 한 번에 실행한다.
 
@@ -124,7 +128,7 @@ GITHUB=<JioBani/AgentParty-releases 릴리스 권한 토큰>
 
 ## 시간 해석
 
-깨끗한 worktree의 첫 `npm ci`와 electron-builder 도구 다운로드 시간은 네트워크와
+electron-builder 도구의 첫 다운로드 시간은 네트워크와
 캐시에 따라 달라진다. 그 뒤의 정상 경로에서 오래 걸리는 단계는 한 번의 프로덕션
 빌드, 한 번의 Windows 패키징, 약 200MB 자산 업로드뿐이다. 같은 빌드나 패키징이 두
 번 보이면 권장 경로를 벗어난 것이다.
