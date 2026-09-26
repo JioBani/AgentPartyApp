@@ -21,7 +21,18 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { findInstallRoot } from "./lib/installRoot.mjs";
 
-const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// The MAIN checkout, wherever this copy of the script runs from (a worktree's
+// own copy included): the parent of the repository's shared .git directory.
+const commonDir = spawnSync(
+  "git",
+  ["-C", path.dirname(fileURLToPath(import.meta.url)), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+  { encoding: "utf8" },
+).stdout.trim();
+if (!commonDir) {
+  console.error("STOP: this script must live inside the AgentPartyApp repository");
+  process.exit(1);
+}
+const repo = path.dirname(path.resolve(commonDir));
 const shared = path.join(findInstallRoot(repo), "node_modules");
 const entries = (dir) => fs.readdirSync(dir).length;
 
