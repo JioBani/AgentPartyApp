@@ -70,8 +70,9 @@ user/assistant messages, metadata and supported auxiliary state. Where Codex's
 paginated history is stale, the worker may perform a model-free resume and
 unsubscribe after checking for an active goal. It never starts a model turn,
 overrides an unavailable provider, or unarchives a conversation to force success.
-An empty native store can therefore fail verification for archived paginated
-threads or sub-agents that Codex cannot resume independently. Preserve legacy
+An existing native store missing a particular thread can also fail verification
+for archived paginated threads or sub-agents that Codex cannot resume independently.
+This limitation is not restricted to completely empty native stores. Preserve legacy
 mode and review the reported thread; do not bypass the check.
 Unknown/conflicting state fails visibly and leaves the mode unchanged. A failed
 attempt may already have added indexes or refreshed history through Codex;
