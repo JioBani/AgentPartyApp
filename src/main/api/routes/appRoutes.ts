@@ -77,6 +77,12 @@ export const appRoutes: MethodRoute[] = [
     handler: (p, ctx) => ctx.controller.listReleaseVersions({ refresh: flag(p.refresh) }),
   },
   {
+    // Update telemetry: install id, endpoint, and the last events' delivery.
+    name: "telemetry.get",
+    http: "GET /api/telemetry",
+    handler: (_p, ctx) => ctx.controller.getTelemetryStatus(),
+  },
+  {
     name: "update.check",
     http: "POST /api/update/check",
     handler: (p, ctx) => ctx.controller.checkForUpdate({ quiet: flag(p.quiet) }),
