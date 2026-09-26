@@ -15,6 +15,7 @@
  *    when the caller asks for it.
  */
 import * as path from "node:path";
+import { CODEX_INITIALIZE_TIMEOUT_MS, withAgentPartyCodexStartup } from "../core/codexStartup";
 import * as fs from "node:fs";
 import * as crypto from "node:crypto";
 import { getSettings } from "./settings";
@@ -24,7 +25,7 @@ import { claudeAgentSdkSpec, claudeSdkVersion } from "./claudeSdkVersion";
 import { firstLine, isFile, probeCommand, resolveOnPath, type CommandProbeResult } from "../core/commandProbe";
 import { resolveClaudeCli, resolveSdkClaudeCli } from "../core/claudeCli";
 import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "../core/codexExec";
-import { agentPartyCodexSqliteHome } from "../core/codexSqliteHome";
+import { codexSqliteHomeForScope } from "../core/codexStoragePolicy";
 import {
   claudeLoggedIn,
   codexRuntimeFailureReason,
@@ -670,12 +671,16 @@ async function codexCheck(workspacePath: string, observer?: NativeCliStepObserve
         failureKind: "authentication",
       });
 
-  const sqliteHome = agentPartyCodexSqliteHome(getUserDataDir(), `environment:${workspaceKey(workspacePath)}`);
+  const sqliteHome = codexSqliteHomeForScope(getUserDataDir(), `environment:${workspaceKey(workspacePath)}`);
   const storageStartedAt = Date.now();
   try {
-    fs.mkdirSync(sqliteHome, { recursive: true });
-    codexEnv.CODEX_SQLITE_HOME = sqliteHome;
-    steps.push(successfulStep("state", "상태 저장소", `멤버와 분리된 진단용 SQLite 경로를 준비했습니다: ${sqliteHome}`, storageStartedAt, {
+    if (sqliteHome) {
+      fs.mkdirSync(sqliteHome, { recursive: true });
+      codexEnv.CODEX_SQLITE_HOME = sqliteHome;
+    }
+    steps.push(successfulStep("state", "상태 저장소", sqliteHome
+      ? `기존 AgentParty 저장소를 사용합니다: ${sqliteHome}`
+      : "Codex 자체 설정의 저장소를 사용합니다.", storageStartedAt, {
       path: sqliteHome,
     }));
   } catch (error) {
@@ -706,14 +711,15 @@ async function codexCheck(workspacePath: string, observer?: NativeCliStepObserve
   }
 
   const runtimeStartedAt = Date.now();
+  const runtimeCwd = workspace.cwd;
   const runtimeArgs = [...resolved.argsPrefix, ...codexExtraArgs(), "-c", 'cli_auth_credentials_store="file"', "app-server"];
-  const runtimeProbe = await probeCodexAppServer(
+  const runtimeProbe = await withAgentPartyCodexStartup(() => probeCodexAppServer(
     resolved,
     [...codexExtraArgs(), "-c", 'cli_auth_credentials_store="file"'],
-    workspace.cwd,
+    runtimeCwd,
     codexEnv,
-    60_000,
-  );
+    CODEX_INITIALIZE_TIMEOUT_MS,
+  ));
   steps.push(runtimeProbe.ok
     ? successfulStep("runtime", "app-server 초기화", runtimeProbe.detail, runtimeStartedAt, {
         command: displayCommand(resolved.command, runtimeArgs),

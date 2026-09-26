@@ -25,6 +25,66 @@ If the port is already in use, the app binds to a free local port. The current U
   `{ "ok": false, "error": "<reason>" }`; an unhandled failure answers `500` in
   the same shape.
 
+## Codex storage administration (Windows, desktop-local)
+
+### `GET /api/codex/storage`
+
+Returns `supported`, `version`, `mode` (`native` or `legacy`), optional
+`verifiedAt`, `backupPath`, `reportPath`, and the latest `job`. Jobs report
+`state` (`running`, `complete`, `failed`), `target`, `phase`, progress counts,
+and an actionable `error` on failure. Only a completed verification changes
+`mode`; an interrupted job does not imply that migration completed.
+
+Fresh Windows profiles use native Codex storage. Existing profiles with a
+`codex-sqlite` directory retain legacy storage until explicitly transitioned.
+Native mode removes AgentParty's per-member SQLite override and respects the
+user's Codex home, SQLite environment and configuration. WSL/SSH keep their
+existing policy. A corrupt storage-mode record produces an error.
+
+### `POST /api/codex/storage/transition`
+
+```json
+{ "mode": "native", "externalCodexStopped": true, "acceptGoalReset": true }
+```
+
+Use `mode: "legacy"` for the verified fallback. This administration capability
+has no member MCP equivalent; invoke its local HTTP route directly.
+
+Before calling, close all local Codex members (their saved conversations remain)
+and stop external Codex CLI/IDE writers. The two acknowledgements are required:
+AgentParty cannot prove external writers have stopped, and goal IDs/accumulated
+goal usage are not merged. Active goals are never silently reactivated during
+history repair or rollback. Maintenance blocks new local Codex starts and
+temporarily stops background Codex usage polling.
+
+The asynchronous operation requires Python 3.11+ on PATH and Codex 0.155.1;
+other versions are rejected until validated. Normal sessions do not need Python.
+It backs up SQLite through the consistent backup API (including committed WAL),
+rollouts, app mappings and configuration under
+`userData/codex-storage-backups/<timestamp>`. Allow enough free disk space for
+all rollouts/databases plus temporary history comparison copies. `auth.json`
+is not copied. Treat retained backups, including configuration, as private data.
+
+Only official Codex APIs write operational state. Verification compares IDs,
+user/assistant messages, metadata and supported auxiliary state. Where Codex's
+paginated history is stale, the worker may perform a model-free resume and
+unsubscribe after checking for an active goal. It never starts a model turn,
+overrides an unavailable provider, or unarchives a conversation to force success.
+An empty native store can therefore fail verification for archived paginated
+threads or sub-agents that Codex cannot resume independently. Preserve legacy
+mode and review the reported thread; do not bypass the check.
+Unknown/conflicting state fails visibly and leaves the mode unchanged. A failed
+attempt may already have added indexes or refreshed history through Codex;
+the old stores and backups remain intact.
+
+Poll the GET endpoint for completion. Rerunning after interruption creates a
+new backup and repeats verification; it does not trust a partial journal.
+Rollback verifies current saved member conversations in their legacy homes,
+including conversations created after switching to native. It does not restore
+stale backup files over current data. No automatic storage fallback or deletion
+is performed. Explicit profile/CLI SQLite overrides and conflicting user
+`sqlite_home` settings require a separate path review.
+
 ## Discovery
 
 ### `GET /api/health`
@@ -3210,6 +3270,9 @@ harness and all values are checked against the model catalog before anything is
 changed. The response is the normal party mutation result containing the updated
 member and party state. Changes requiring a process respawn preserve the native
 conversation and fail while the member is busy instead of killing its turn.
+Codex Fast/Standard changes apply to subsequent turns without replacing the
+app-server, including while its first initialization is pending. A canceled
+first message is not sent after initialization later finishes.
 
 ### `POST /api/party/members/:name/gate`
 

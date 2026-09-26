@@ -7,9 +7,10 @@ import {
   CODEX_SQLITE_STARTUP_RETRY_DELAYS_MS,
   isSqliteStateRuntimeStartupError,
   isStalledSqliteBackfillError,
-  nextAgentPartyCodexSqliteHome,
   withAgentPartyCodexStartup,
 } from "./codexSqliteHome";
+import { CODEX_INITIALIZE_TIMEOUT_MS } from "./codexStartup";
+import { terminateProcessTree } from "./processTree";
 
 /**
  * Live Codex account-catalog discovery: spawns a short-lived `codex app-server`,
@@ -33,21 +34,17 @@ export interface CodexModelDiscoveryOptions {
 // state database before it answers initialize/model-list. Keep discovery
 // bounded, but allow that first-run migration to complete instead of killing
 // it at 20 seconds and leaving every retry with another incomplete database.
-const DEFAULT_TIMEOUT_MS = 90000;
+const DEFAULT_TIMEOUT_MS = CODEX_INITIALIZE_TIMEOUT_MS;
 
 export async function discoverCodexModels(options: CodexModelDiscoveryOptions): Promise<CodexModelInfo[]> {
   return withAgentPartyCodexStartup(async () => {
-    let sqliteHome = options.sqliteHome;
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await discoverCodexModelsWithStartupLease({ ...options, sqliteHome });
+        return await discoverCodexModelsWithStartupLease(options);
       } catch (error) {
         const delayMs = CODEX_SQLITE_STARTUP_RETRY_DELAYS_MS[attempt];
-        if (delayMs === undefined || !sqliteHome || !isSqliteStateRuntimeStartupError(error)) {
+        if (delayMs === undefined || !isSqliteStateRuntimeStartupError(error) || isStalledSqliteBackfillError(error)) {
           throw error;
-        }
-        if (isStalledSqliteBackfillError(error)) {
-          sqliteHome = nextAgentPartyCodexSqliteHome(sqliteHome);
         }
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
@@ -145,17 +142,19 @@ async function discoverCodexModelsWithStartupLease(options: CodexModelDiscoveryO
   }
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Codex model discovery timed out after ${timeoutMs}ms.`)), timeoutMs);
+    timer = setTimeout(() => reject(new Error(`Codex model discovery timed out after ${timeoutMs}ms.`)), timeoutMs);
     timer.unref?.();
   });
 
   try {
     return await Promise.race([timeout, listModels(request, () => child.stdin.writable && child.stdin.write(`${JSON.stringify({ method: "initialized", params: {} })}\n`))]);
   } finally {
+    if (timer) clearTimeout(timer);
     lineReader.close();
     child.removeAllListeners("exit");
-    child.kill();
+    if (child.pid) terminateProcessTree(child.pid);
   }
 }
 

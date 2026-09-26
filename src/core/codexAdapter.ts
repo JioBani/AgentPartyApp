@@ -43,11 +43,11 @@ import { emptyMcpSnapshot } from "../shared/mcp";
 import type { McpAuthResult, McpServerInfo, McpServerSnapshot, McpServerState } from "../shared/mcp";
 import { currentSpawnHost, shortCwd, spawnFailureSummary } from "../shared/sessionSpawn";
 import { normalizeServiceTierSelection } from "../shared/types";
+import { waitForCodexInitialization } from "./codexStartup";
 import {
   CODEX_SQLITE_STARTUP_RETRY_DELAYS_MS,
   isSqliteStateRuntimeStartupError,
   isStalledSqliteBackfillError,
-  nextAgentPartyCodexSqliteHome,
   withAgentPartyCodexStartup,
 } from "./codexSqliteHome";
 
@@ -135,12 +135,19 @@ export class CodexAdapter extends EventEmitter {
   private started = false;
   private disposed = false;
   private initializing: Promise<void> | undefined;
+  private startupPending = false;
+  /** Process handshake owns SQLite initialization, independently of UI/turn status. */
+  private processInitializing: Promise<void> | undefined;
+  private processProvider: string | undefined;
+  private turnGeneration = 0;
   /** Invalidates an older async startup when a runtime change restarts it. */
   private startupGeneration = 0;
   private status = "created";
   private turnState: string | undefined;
   private sessionId = "";
   private activeTurnId: string | undefined;
+  private turnStartPending = false;
+  private interruptAfterStart = false;
   private turnCount = 0;
   private queuedTurns: QueuedCodexTurn[] = [];
   /** Temp dir holding images written for `localImage` inputs; removed on dispose. */
@@ -243,11 +250,18 @@ export class CodexAdapter extends EventEmitter {
       at: now(),
     });
     const generation = ++this.startupGeneration;
+    this.startupPending = true;
     const initializing = this.ensureThreadWithSqliteRetry(generation);
     this.initializing = initializing;
-    initializing.catch((error) => {
+    void initializing.then(() => {
+      if (generation === this.startupGeneration) {
+        this.startupPending = false;
+        this.emit("snapshot", this.getSnapshot());
+      }
+    }, (error) => {
       if (!this.disposed && generation === this.startupGeneration && this.initializing === initializing) {
-        this.finishWithError(error);
+        this.startupPending = false;
+        if (!this.activeTurn) this.finishWithError(error);
       }
     });
     this.emit("snapshot", this.getSnapshot());
@@ -293,6 +307,13 @@ export class CodexAdapter extends EventEmitter {
    * that is already gone. {@link forceStop} is the user's escape hatch for that.
    */
   interrupt(): void {
+    if (this.turnStartPending && !this.activeTurnId) {
+      this.interruptAfterStart = true;
+      this.status = "interrupting";
+      this.turnState = "interrupting";
+      this.emitEvent({ type: "status", status: "interrupt", detail: "waiting for Codex turn id", at: now() });
+      return;
+    }
     if (!this.sessionId || !this.activeTurnId) {
       // No turn in flight — safe to release anything a past interrupt stranded.
       this.forceStop();
@@ -315,14 +336,39 @@ export class CodexAdapter extends EventEmitter {
       return;
     }
     this.log("force_stop", { status: this.status, turnState: this.turnState });
+    this.turnGeneration += 1;
+    this.turnStartPending = false;
+    this.interruptAfterStart = false;
     this.status = "idle";
     this.turnState = undefined;
     this.activeTurnId = undefined;
     this.clearStreamedItemText();
+    this.activeTurn = false;
+    // The app's queue also owns turn liveness. A snapshot alone cannot close
+    // a submitted turn that was canceled before Codex assigned a turn id.
+    this.emitEvent({ type: "status", status: "interrupted", detail: "pending Codex turn released", at: now() });
     this.drainQueuedTurn();
   }
 
   restart(): void {
+    if (this.processInitializing) {
+      // Keep initialize alive before honoring the explicit hard restart.
+      const ready = this.processInitializing;
+      const deferred = ready.then(() => this.restartWhenReady(), () => this.restartWhenReady());
+      this.initializing = deferred;
+      void deferred.catch((error) => {
+        if (this.initializing === deferred && !this.activeTurn) this.finishWithError(error);
+      });
+      return;
+    }
+    void this.restartWhenReady();
+  }
+
+  private restartWhenReady(): Promise<void> {
+    if (this.disposed) return Promise.resolve();
+    this.turnGeneration += 1;
+    this.turnStartPending = false;
+    this.interruptAfterStart = false;
     this.shutdownProcess();
     this.sessionId = "";
     this.activeTurnId = undefined;
@@ -338,6 +384,7 @@ export class CodexAdapter extends EventEmitter {
     this.contextWindow = undefined;
     this.clearStreamedItemText();
     this.start();
+    return this.initializing!;
   }
 
   /**
@@ -365,7 +412,7 @@ export class CodexAdapter extends EventEmitter {
       this.pendingAuthenticationGeneration = generation;
       return "deferred";
     }
-    if (this.status === "starting" && this.initializing) {
+    if (this.processInitializing && this.initializing) {
       const initializing = this.initializing;
       this.pendingAuthenticationGeneration = generation;
       const scheduleReload = () => {
@@ -444,7 +491,14 @@ export class CodexAdapter extends EventEmitter {
     this.stopUsagePolling();
     this.logger?.close();
     this.logger = undefined;
-    this.shutdownProcess();
+    const ready = this.processInitializing;
+    if (ready) {
+      // A member may be closed/replaced while backfill is running. The app's
+      // shutdown coordinator keeps the host alive until this handshake settles.
+      void ready.then(() => this.shutdownProcess(), () => this.shutdownProcess());
+    } else {
+      this.shutdownProcess();
+    }
     this.clearStreamedItemText();
     if (this.imageTempDir) {
       try { fs.rmSync(this.imageTempDir, { recursive: true, force: true }); } catch { /* best-effort */ }
@@ -461,7 +515,7 @@ export class CodexAdapter extends EventEmitter {
       // we have started, holding no process IS death — including the exit-while
       // -idle case, which deliberately changes no status (see handleExit) and so
       // was invisible to anything reading `status` alone.
-      harnessAlive: !this.disposed && (!this.started || Boolean(this.process)),
+      harnessAlive: !this.disposed && (!this.started || this.startupPending || Boolean(this.process)),
       cwd: this.options.cwd,
       sessionId: this.sessionId || undefined,
       model: this.options.model,
@@ -503,7 +557,7 @@ export class CodexAdapter extends EventEmitter {
     (this.options as { model: string; modelProvider?: string }).model = model;
     (this.options as { model: string; modelProvider?: string }).modelProvider = modelProvider;
     const nextProvider = this.currentProvider()?.id;
-    if (previousProvider !== nextProvider && this.started) {
+    if (previousProvider !== nextProvider && this.started && !this.processInitializing) {
       this.emitEvent({
         type: "status",
         status: "model-provider",
@@ -519,6 +573,11 @@ export class CodexAdapter extends EventEmitter {
   setEffort(effort: string): void {
     (this.options as { effort: ClaudeEffort }).effort = effort as ClaudeEffort;
     this.emitEvent({ type: "status", status: "effort", detail: effort, at: now() });
+  }
+
+  setServiceTier(tier: string | undefined): void {
+    this.options.serviceTier = tier;
+    this.emitEvent({ type: "status", status: "service-tier", detail: tier || "inherit", at: now() });
   }
 
   setThinking(_mode: string, _budget?: number): void {
@@ -672,11 +731,22 @@ export class CodexAdapter extends EventEmitter {
       await withAgentPartyCodexStartup(async () => {
         this.reportStartupStage("startup-lock", Date.now() - lockStarted);
         this.assertCurrentStartup(generation);
-        const spawnStarted = Date.now();
-        this.ensureProcess();
-        this.reportStartupStage("process-spawn", Date.now() - spawnStarted);
-        await this.measureStartupStage("initialize", () => this.initializeServer());
-        this.assertCurrentStartup(generation);
+        do {
+          const spawnStarted = Date.now();
+          this.ensureProcess();
+          this.reportStartupStage("process-spawn", Date.now() - spawnStarted);
+          const ready = waitForCodexInitialization(this.measureStartupStage("initialize", () => this.initializeServer()));
+          this.processInitializing = ready;
+          try {
+            await ready;
+          } finally {
+            if (this.processInitializing === ready) this.processInitializing = undefined;
+          }
+          this.assertCurrentStartup(generation);
+          // A provider changed while initialize was pending. Rebuild only after
+          // that process has finished its storage work, using the latest choice.
+          if (this.processProvider !== this.currentProvider()?.id) this.shutdownProcess();
+        } while (!this.process);
       });
       this.assertCurrentStartup(generation);
       if (this.sessionId) {
@@ -685,6 +755,7 @@ export class CodexAdapter extends EventEmitter {
         await this.measureStartupStage("thread-start", () => this.startThread());
       }
       this.assertCurrentStartup(generation);
+      this.emitSessionSpawn("running");
     } finally {
       this.reportStartupStage("total", Date.now() - totalStarted);
     }
@@ -704,15 +775,14 @@ export class CodexAdapter extends EventEmitter {
         return;
       } catch (error) {
         const delayMs = CODEX_SQLITE_STARTUP_RETRY_DELAYS_MS[attempt];
-        if (delayMs === undefined || this.disposed || generation !== this.startupGeneration || !isSqliteStateRuntimeStartupError(error)) {
+        if (delayMs === undefined || this.disposed || generation !== this.startupGeneration || !isSqliteStateRuntimeStartupError(error) || isStalledSqliteBackfillError(error)) {
+          if (!this.disposed && generation === this.startupGeneration) this.shutdownProcess();
           throw error;
         }
-        if (this.options.sqliteHome && isStalledSqliteBackfillError(error)) {
-          const stalledHome = this.options.sqliteHome;
-          this.options.sqliteHome = nextAgentPartyCodexSqliteHome(stalledHome);
-          this.log("sqlite_backfill_recovery", { stalledHome, recoveryHome: this.options.sqliteHome });
-        }
         this.log("sqlite_startup_retry", { attempt: attempt + 1, delayMs, sqliteHome: this.options.sqliteHome });
+        this.emitEvent({ type: "diagnostic", severity: "warning", category: "startup",
+          title: "Codex 저장소 초기화를 다시 시도합니다",
+          detail: `같은 저장소에서 ${delayMs}ms 뒤 재시도합니다 (${attempt + 1}/${CODEX_SQLITE_STARTUP_RETRY_DELAYS_MS.length}).`, at: now() });
         this.shutdownProcess();
         this.status = "starting";
         this.turnState = "sqlite-retry";
@@ -796,6 +866,7 @@ export class CodexAdapter extends EventEmitter {
       // or fall back to shell resolution. Without this, spawn fails ENOENT.
       shell: resolved.shell,
     });
+    this.processProvider = provider?.id;
     this.lineReader = readline.createInterface({ input: this.process.stdout });
     this.lineReader.on("line", (line) => this.readMessage(line));
     this.process.stderr.on("data", (chunk) => this.readStderr(String(chunk)));
@@ -805,7 +876,6 @@ export class CodexAdapter extends EventEmitter {
     // its automation URL and port, the party/member ids, the auth-store setting
     // — is written to this session's debug log by `ensureLogger`, and goes
     // nowhere near the conversation. The card states that the session is up.
-    this.emitSessionSpawn("running");
   }
 
   private partyMcpConfigArgs(): string[] {
@@ -975,8 +1045,10 @@ export class CodexAdapter extends EventEmitter {
     // tracker dependent on that notification makes every child thread look like
     // parent activity, so the subagent dock stays empty on those valid orders.
     this.subagentTracker.setRoot(this.sessionId);
-    this.status = "initialized";
-    this.turnState = undefined;
+    if (!this.activeTurn) {
+      this.status = "initialized";
+      this.turnState = undefined;
+    }
     this.emitEvent({
       type: "session",
       sessionId: this.sessionId,
@@ -1088,6 +1160,7 @@ export class CodexAdapter extends EventEmitter {
   }
 
   private async runTurn(text: string, attachments?: ImageAttachment[]): Promise<void> {
+    const generation = this.turnGeneration;
     this.clearStreamedItemText();
     this.activeTurn = true;
     this.turnState = "submitted";
@@ -1099,6 +1172,7 @@ export class CodexAdapter extends EventEmitter {
 
     try {
       await this.awaitCurrentInitialization();
+      if (this.disposed || generation !== this.turnGeneration) return;
       if (!this.sessionId) {
         throw new Error("Codex app-server did not provide a thread id.");
       }
@@ -1109,6 +1183,7 @@ export class CodexAdapter extends EventEmitter {
       for (const image of attachments || []) {
         input.push({ type: "localImage", path: this.writeTempImage(image) });
       }
+      this.turnStartPending = true;
       const result = await this.request("turn/start", {
         threadId: this.sessionId,
         input,
@@ -1123,9 +1198,16 @@ export class CodexAdapter extends EventEmitter {
         // turn scope and a resumed thread may have a different prior value.
         serviceTier: this.serviceTierParam(),
       });
+      if (this.disposed || generation !== this.turnGeneration) return;
       this.activeTurnId = String(result?.turn?.id || this.activeTurnId || "");
+      if (this.interruptAfterStart) {
+        this.interruptAfterStart = false;
+        this.interrupt();
+      }
     } catch (error) {
-      this.finishWithError(error);
+      if (!this.disposed && generation === this.turnGeneration) this.finishWithError(error);
+    } finally {
+      if (generation === this.turnGeneration) this.turnStartPending = false;
     }
   }
 
@@ -1367,6 +1449,11 @@ export class CodexAdapter extends EventEmitter {
         return;
       }
       this.activeTurnId = String(params.turn?.id || this.activeTurnId || "");
+      if (this.interruptAfterStart) {
+        this.interruptAfterStart = false;
+        this.interrupt();
+        return;
+      }
       this.turnState = "responding";
       this.emitStatusIfChanged("responding");
       return;
@@ -1867,6 +1954,9 @@ export class CodexAdapter extends EventEmitter {
   }
 
   private finishWithError(error: unknown): void {
+    if (this.disposed) return;
+    this.turnStartPending = false;
+    this.interruptAfterStart = false;
     // A spawn that cannot find `codex` is a setup problem, not a session
     // failure: reported as an environment blocker so the transcript offers the
     // install once instead of repeating ENOENT on every turn.
@@ -1911,6 +2001,7 @@ export class CodexAdapter extends EventEmitter {
     this.status = "starting";
     this.turnState = "auth-reconnect";
     const generation = ++this.startupGeneration;
+    this.startupPending = true;
     const initializing = this.ensureThreadWithSqliteRetry(generation);
     this.initializing = initializing;
     try {
@@ -1921,6 +2012,11 @@ export class CodexAdapter extends EventEmitter {
     } catch (error) {
       if (generation === this.startupGeneration && this.initializing === initializing) {
         this.finishWithError(error);
+      }
+    } finally {
+      if (generation === this.startupGeneration) {
+        this.startupPending = false;
+        this.emit("snapshot", this.getSnapshot());
       }
     }
   }
@@ -1952,7 +2048,7 @@ export class CodexAdapter extends EventEmitter {
     // During startup the initialize request owns this failure. It may retry a
     // transient SQLite handoff; emitting here as well used to show the same
     // error twice before the retry path had a chance to recover.
-    const sqliteStartupFailure = this.status === "starting" && isSqliteStateRuntimeStartupError(message);
+    const sqliteStartupFailure = Boolean(this.processInitializing);
     if (!this.disposed && this.status !== "idle" && this.status !== "initialized" && !sqliteStartupFailure) {
       this.finishWithError(new Error(message));
     }

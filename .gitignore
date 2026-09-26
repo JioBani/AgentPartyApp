@@ -32,6 +32,7 @@ release-out/
 
 # Local scratch / e2e run artifacts
 .tmp/
+__pycache__/
 # Bundles the QA scripts build so they can import their own TypeScript. Kept
 # per-worktree on purpose — see scripts/lib/qaTemp.mjs.
 .qa/

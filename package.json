@@ -276,6 +276,10 @@
     ],
     "extraResources": [
       {
+        "from": "scripts/codex-storage-transition.py",
+        "to": "bin/codex-storage-transition.py"
+      },
+      {
         "from": "scripts/agent-party",
         "to": "bin/agent-party"
       },

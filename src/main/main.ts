@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, IpcMainInvokeEvent, Menu, safeStorage, screen, shell, type WebContents } from "electron";
 import { EmbeddedHarnessRouter } from "../core/routerShim";
+import { finishCodexStartupBeforeQuit } from "../core/codexStartup";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
 import { installCrashHandlers } from "./crashHandler";
@@ -1516,7 +1517,24 @@ app.on("activate", () => {
   }
 });
 
-app.on("before-quit", () => {
+let codexShutdownReady = false;
+let codexShutdownPending = false;
+app.on("before-quit", (event) => {
+  if (!codexShutdownReady) {
+    event.preventDefault();
+    if (!codexShutdownPending) {
+      codexShutdownPending = true;
+      log("info", "app", "waiting for Codex initialization before quit");
+      // Dispose stops new member work; Codex defers process termination only
+      // while its initialize handshake is still writing the state index.
+      sessionManager?.dispose();
+      void finishCodexStartupBeforeQuit().then(() => {
+        codexShutdownReady = true;
+        app.quit();
+      });
+    }
+    return;
+  }
   log("info", "app", "before quit");
   appController?.dispose();
   embeddedBrowser?.dispose();

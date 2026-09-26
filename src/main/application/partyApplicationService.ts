@@ -885,10 +885,9 @@ export class PartyApplicationService {
    * adapter or persisted state is touched, so invalid input cannot leave a
    * half-applied profile behind.
    *
-   * Model and mutable effort changes are applied live. Provider serving tiers
-   * (and any non-mutable effort) are process-start settings, so those changes
-   * respawn the harness while resuming its existing conversation. A busy turn
-   * is never killed implicitly; the caller must wait or interrupt it first.
+   * Model, mutable effort and supported serving-tier changes apply live.
+   * Adapters without a live setter resume the conversation in a new process.
+   * A busy turn is never killed implicitly; wait or interrupt it first.
    */
   setMemberRuntime(name: string, input: MemberRuntimeInput, partyId?: string): PartyCommandResult {
     if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -963,8 +962,9 @@ export class PartyApplicationService {
     const modelChanged = route.model !== member.model;
     const effortChanged = resolvedEffort !== currentEffort;
     const tierChanged = normalizeServiceTierSelection(nextTier) !== currentTier;
+    const liveTier = Boolean(liveSessionId && this.deps.sessionManager.supportsLiveServiceTier(liveSessionId));
     const restartRequired = Boolean(liveSessionId && (
-      tierChanged || (effortChanged && route.capabilities.effort.mutableDuringSession === false)
+      (tierChanged && !liveTier) || (effortChanged && route.capabilities.effort.mutableDuringSession === false)
     ));
     if (restartRequired && this.isSessionBusy(liveSessionId)) {
       throw new Error(`Member '${member.name}' is busy. Wait for the turn to finish or interrupt it before changing settings that restart its session.`);
@@ -980,6 +980,9 @@ export class PartyApplicationService {
     }
 
     if (liveSessionId) {
+      if (tierChanged && liveTier) {
+        this.deps.sessionManager.setServiceTier(liveSessionId, nextTier);
+      }
       if (modelChanged) {
         this.deps.sessionManager.setModel(liveSessionId, route.model, route.providerId, route.runtimeModel);
       }

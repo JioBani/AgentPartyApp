@@ -50,6 +50,7 @@ import { translatePrimerSection } from "../../core/primerTranslator";
 import { matchesFontQuery, normalizeFontSettings, RECOMMENDED_FONTS, type FontSettings, type LocalFontFamily, type LocalFontListing, type RecommendedFont } from "../../shared/appFonts";
 import { isE2E } from "../runtimeMode";
 import type { SessionManager } from "../sessionManager";
+import { CodexStorageService } from "../codexStorageService";
 import type { EngineConnection, QaInteractionInput, QaMemberSpec } from "../engine/engineConnection";
 import type { EngineRegistry } from "../engine/engineRegistry";
 import type { WindowEntry, WindowInfo, WindowRegistry } from "../windowRegistry";
@@ -267,6 +268,16 @@ function publicModelDiscovery(codexModels: CodexModelDiscoveryState, museModels:
  */
 export class AppController {
   constructor(private readonly deps: AppControllerDeps) {}
+
+  private codexStorage?: CodexStorageService;
+
+  getCodexStorage() {
+    return (this.codexStorage ??= new CodexStorageService(this.deps.sessionManager)).status();
+  }
+
+  transitionCodexStorage(input: { mode?: unknown; externalCodexStopped?: unknown; acceptGoalReset?: unknown }) {
+    return (this.codexStorage ??= new CodexStorageService(this.deps.sessionManager)).start(input);
+  }
 
   dispose(): void {}
 

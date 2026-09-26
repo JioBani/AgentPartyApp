@@ -2,8 +2,6 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-let startupTail: Promise<void> = Promise.resolve();
-
 /** Brief backoff while Codex releases or finishes backfilling its state DB. */
 export const CODEX_SQLITE_STARTUP_RETRY_DELAYS_MS = [250, 750, 2_000, 5_000] as const;
 
@@ -24,30 +22,12 @@ export function isStalledSqliteBackfillError(error: unknown): boolean {
  * each other as still running and time out. Keep only the short initialize
  * phase serialized; turns and already-running members remain fully parallel.
  */
-export async function withAgentPartyCodexStartup<T>(start: () => Promise<T>): Promise<T> {
-  const previous = startupTail;
-  let release!: () => void;
-  startupTail = new Promise<void>((resolve) => { release = resolve; });
-  await previous;
-  try {
-    return await start();
-  } finally {
-    release();
-  }
-}
+export { withAgentPartyCodexStartup } from "./codexStartup";
 
 /**
- * Returns a stable, process-role-specific SQLite home for a Codex app-server.
- *
- * Codex keeps auth, config, skills, and rollout JSONL under CODEX_HOME, but its
- * state runtime can place the SQLite databases elsewhere via
- * CODEX_SQLITE_HOME. That separation matters because multiple long-lived
- * app-servers sharing logs_2.sqlite can make a newly spawned server fail during
- * startup with "failed to initialize sqlite state runtime".
- *
- * AgentParty deliberately runs one app-server per member, so each member (plus
- * discovery/usage helpers) gets its own stable database directory while still
- * sharing the user's normal Codex account and conversation files.
+ * Compatibility path for existing isolated storage and unconverted hosts.
+ * New Windows profiles use Codex's own storage policy. Existing recovery
+ * directories remain discoverable so an upgrade never strands their state.
  */
 export function agentPartyCodexSqliteHome(userDataDir: string, scope: string): string {
   const digest = crypto.createHash("sha256").update(scope).digest("hex").slice(0, 16);
@@ -68,13 +48,4 @@ export function agentPartyCodexSqliteHome(userDataDir: string, scope: string): s
     selected = recovery;
   }
   return selected;
-}
-
-/** Returns a fresh, deterministic sibling while preserving the stalled DB. */
-export function nextAgentPartyCodexSqliteHome(current: string): string {
-  let candidate = `${current}-recovery`;
-  for (let depth = 0; depth < 8 && fs.existsSync(candidate); depth += 1) {
-    candidate = `${candidate}-recovery`;
-  }
-  return candidate;
 }
