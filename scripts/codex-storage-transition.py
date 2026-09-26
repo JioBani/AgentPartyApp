@@ -1,8 +1,9 @@
 """One-time Windows storage transition. Runtime sessions do not depend on Python.
 
-Only the Codex app-server writes operational state. sqlite3 is used read-only
-and for consistent backups, including committed WAL data. No source DB is
-merged, replaced, deleted, or marked backfill-complete by this worker.
+Codex owns the state index. The one-time worker also imports backed-up history
+projections into an identical-version destination, in one SQLite transaction.
+Original isolated DBs, rollout files and archive flags are retained. Normal
+runtime never reads or writes Codex database schemas.
 """
 import collections
 import datetime
@@ -28,6 +29,7 @@ SUPPORTED_VERSION = "codex-cli 0.155.1"
 PROTECTED_THREAD_FIELDS = ("archived", "memory_mode", "thread_section_id", "section_position", "section_entered_at_ms")
 AUXILIARY_TABLES = ("thread_dynamic_tools", "thread_attachments", "projects", "project_roots",
                     "project_idempotency_keys", "remote_control_enrollments", "external_agent_config_imports")
+HISTORY_TABLES = ("thread_turns", "thread_items", "thread_realtime_items", "thread_history_projection_state")
 
 
 def emit(**message):
@@ -68,6 +70,13 @@ def thread_messages(thread):
             if text:
                 result[role][fingerprint(text)] += 1
     return result
+
+
+def thread_history(thread):
+    # Preserve ordering, tool calls/results, images and other non-text items,
+    # not just a multiset of user/assistant strings.
+    return [{key: turn.get(key) for key in ("id", "status", "error", "items")}
+            for turn in thread.get("turns", [])]
 
 
 def require_inactive_goal(directory, tid):
@@ -135,11 +144,11 @@ class Server:
             raise RuntimeError("Codex resolved a rollout outside the selected home: " + tid)
         return thread
 
-    def refresh(self, tid):
+    def refresh(self, tid, staging_overrides=None):
         # Paginated threads can have a stale/absent history DB after changing
-        # storage. Codex's own resume rebuilds it from the rollout. Never start
-        # a model turn or alter provider/archive settings to make this succeed.
-        thread = self.call("thread/resume", {"threadId": tid})["thread"]
+        # storage. Codex's own resume rebuilds it from the rollout without a
+        # model turn. Overrides are used only by the private baseline replay.
+        thread = self.call("thread/resume", {"threadId": tid, **(staging_overrides or {})})["thread"]
         self.call("thread/unsubscribe", {"threadId": tid})
         if thread["id"] != tid:
             raise RuntimeError("Codex resumed a different thread: " + tid)
@@ -275,7 +284,97 @@ def prepare_backup(request, home, native, states, records):
     return backup, databases, copied, messages, signatures
 
 
-def legacy_messages(request, backup, databases, copied, source_files, tid):
+def history_schema(db):
+    # Never guess how to merge a future Codex schema. Indexes, triggers, table
+    # definitions and migration checksums must all match the installed CLI.
+    names = tables(db)
+    if names != {*HISTORY_TABLES, "_sqlx_migrations"}:
+        raise RuntimeError("Unvalidated Codex history tables: " + repr(sorted(names)))
+    return (set(db.execute("select type,name,tbl_name,sql from sqlite_master where name not like 'sqlite_%'")),
+            set(db.execute("select version,description,success,checksum from _sqlx_migrations")))
+
+
+def history_rows(db, tid):
+    return {table: set(db.execute('select * from "' + table + '" where thread_id=?', (tid,)))
+            for table in HISTORY_TABLES}
+
+
+def restore_history_cache(directory, tids, databases, sources, records):
+    """Import complete per-thread projections, never archive/unarchive a rollout.
+
+    All app-servers are closed by the caller. Inputs are consistent backups;
+    only the selected destination history DB is writable. SQLite rolls back
+    the entire import on failure or process termination. This is deliberately
+    outside the adapter and is gated by the exact CLI version in run().
+    """
+    destination = directory / "thread_history_1.sqlite"
+    if not destination.exists():
+        raise RuntimeError("Codex did not initialize its history database: " + str(destination))
+    imported = []
+    with sqlite3.connect(destination.as_uri() + "?mode=rw", uri=True, timeout=10) as target:
+        target.execute("pragma foreign_keys=on")
+        target.execute("begin immediate")
+        schema = history_schema(target)
+        for tid in tids:
+            cursor, selected = -1, None
+            for state in sources[tid]:
+                file = databases.get(str(state.parent / destination.name))
+                if not file:
+                    continue
+                with connect(pathlib.Path(file)) as source:
+                    if history_schema(source) != schema:
+                        raise RuntimeError("Codex history schema differs: " + str(state.parent))
+                    row = source.execute("select next_rollout_byte_offset from thread_history_projection_state where thread_id=?", (tid,)).fetchone()
+                    if not row:
+                        # Realtime history without a projection cursor cannot
+                        # be ordered safely against another store.
+                        if any(history_rows(source, tid).values()):
+                            raise RuntimeError("History has no projection cursor: " + tid)
+                        continue
+                    if row[0] < 0 or row[0] > records[tid].stat().st_size:
+                        raise RuntimeError("History cursor is outside its rollout: " + tid)
+                    if row[0] < cursor:
+                        continue
+                    rows = history_rows(source, tid)
+                    if row[0] == cursor and selected != rows:
+                        raise RuntimeError("Conflicting history at the same rollout position: " + tid)
+                    cursor, selected = row[0], rows
+            if selected is None:
+                continue
+            current = history_rows(target, tid)
+            if current == selected:
+                continue
+            existing = target.execute("select next_rollout_byte_offset from thread_history_projection_state where thread_id=?", (tid,)).fetchone()
+            if existing and existing[0] >= cursor:
+                raise RuntimeError("Destination history changed after backup: " + tid)
+            # A later projection can update an item, but must not lose IDs
+            # already visible in the destination (including tool/image items).
+            for table in ("thread_turns", "thread_items", "thread_realtime_items"):
+                columns = list(target.execute('pragma table_info("' + table + '")'))
+                keys = [i for i, column in enumerate(columns) if column[5]]
+                if not keys:
+                    raise RuntimeError("History table has no primary key: " + table)
+                identities = lambda rows: {tuple(row[i] for i in keys) for row in rows}
+                if not identities(current[table]).issubset(identities(selected[table])):
+                    raise RuntimeError("Source history would remove existing items: " + tid)
+            for table in reversed(HISTORY_TABLES):
+                target.execute('delete from "' + table + '" where thread_id=?', (tid,))
+            for table in HISTORY_TABLES:
+                rows = selected[table]
+                if rows:
+                    marks = ','.join('?' for _ in next(iter(rows)))
+                    target.executemany('insert into "' + table + '" values (' + marks + ')', rows)
+            if history_rows(target, tid) != selected:
+                raise RuntimeError("History import verification failed: " + tid)
+            imported.append(tid)
+        if target.execute("pragma quick_check").fetchone()[0] != "ok" or target.execute("pragma foreign_key_check").fetchone():
+            raise RuntimeError("History database integrity verification failed")
+    if imported:
+        emit(phase="history-imported", count=len(imported))
+    return imported
+
+
+def baseline_thread(request, backup, databases, copied, source_files, tid):
     source = None
     latest_projection = -2
     for candidate in source_files:
@@ -321,17 +420,99 @@ def legacy_messages(request, backup, databases, copied, source_files, tid):
     try:
         with connect(dest) as db:
             paginated = db.execute("select history_mode from threads where id=?", (tid,)).fetchone()[0] == "paginated"
-        # Paginated history is itself persisted state, including sub-agents
-        # that Codex refuses to resume independently. Read its backed-up cache
-        # when present; never omit it from the reference being preserved.
+        # Existing cache is authoritative. Rebuild absent cache only on this
+        # private copy; operational archive flags and rollouts never change.
         cached = bool(history) and latest_projection >= 0
-        return thread_messages(server.refresh(tid) if paginated and not cached else server.read(tid))
+        rebuild = paginated and not cached
+        if rebuild:
+            with connect(dest) as db:
+                archived = bool(db.execute("select archived from threads where id=?", (tid,)).fetchone()[0])
+            if archived:
+                server.call("thread/unarchive", {"threadId": tid})
+            try:
+                # Replay never starts a model turn. A private baseline need
+                # not recreate retired/custom provider credentials just to
+                # parse history. This override changes only the copied index
+                # and appended settings, never the user's provider/config.
+                emit(phase="staged-history-rebuild", threadId=tid, provider="openai", modelTurns=False)
+                thread = server.refresh(tid, {"modelProvider": "openai", "approvalPolicy": "never", "sandbox": "read-only"})
+            finally:
+                if archived:
+                    server.call("thread/archive", {"threadId": tid})
+        else:
+            thread = server.read(tid)
     finally:
         server.close()
+    if rebuild:
+        trim_staging_projection(baseline, rollout, copied[tid], tid)
+    return thread, baseline
+
+
+def trim_staging_projection(baseline, rollout, original, tid):
+    # Resume appends settings metadata to the private rollout. Imported cache
+    # must stop at the ORIGINAL byte/ordinal boundary, otherwise a later live
+    # turn could be skipped. Permit only metadata and prove no projected item
+    # refers to those extra bytes before resetting the private cursor.
+    lines, appended = 0, 0
+    with original.open("rb") as before, rollout.open("rb") as after:
+        for line in before:
+            lines += 1
+            if after.read(len(line)) != line:
+                raise RuntimeError("Staged history rebuild changed original bytes: " + tid)
+        for line in after:
+            appended += 1
+            if not line.strip():
+                continue
+            event = json.loads(line)
+            settings = event.get("type") == "event_msg" and event.get("payload", {}).get("type") == "thread_settings_applied"
+            if event.get("type") not in ("session_meta", "turn_context") and not settings:
+                raise RuntimeError("Staged history rebuild added conversation activity: " + tid)
+    size = original.stat().st_size
+    with sqlite3.connect(baseline / "thread_history_1.sqlite") as db:
+        projection = db.execute("select next_rollout_byte_offset,next_rollout_ordinal from thread_history_projection_state where thread_id=?", (tid,)).fetchone()
+        if projection != (rollout.stat().st_size, lines + appended):
+            raise RuntimeError("Staged rebuild did not project the complete rollout with the expected ordinal boundary: " + tid)
+        for table in HISTORY_TABLES[:-1]:
+            columns = [r[1] for r in db.execute('pragma table_info("' + table + '")')]
+            for column in columns:
+                limit = size if column.endswith("byte_offset") else lines if column.endswith("ordinal") else None
+                if limit is not None and db.execute('select 1 from "' + table + '" where thread_id=? and "' + column + '">? limit 1', (tid, limit)).fetchone():
+                    raise RuntimeError("Staged projected history extends past original rollout: " + tid)
+        changed = db.execute("update thread_history_projection_state set next_rollout_byte_offset=?,next_rollout_ordinal=? where thread_id=?", (size, lines, tid))
+        if changed.rowcount != 1:
+            raise RuntimeError("Staged rebuild did not create a history projection: " + tid)
+
+
+def legacy_thread(request, backup, databases, copied, source_files, tid):
+    return baseline_thread(request, backup, databases, copied, source_files, tid)[0]
+
+
+def rebuild_missing_history(request, backup, databases, copied, sources):
+    rebuilt = []
+    for tid, candidates in sources.items():
+        paginated, cached = False, False
+        for state in candidates:
+            with connect(pathlib.Path(databases[str(state)])) as db:
+                paginated |= db.execute("select history_mode from threads where id=?", (tid,)).fetchone()[0] == "paginated"
+            history = databases.get(str(state.parent / "thread_history_1.sqlite"))
+            if history:
+                with connect(pathlib.Path(history)) as db:
+                    cached |= db.execute("select 1 from thread_history_projection_state where thread_id=?", (tid,)).fetchone() is not None
+        if paginated and not cached:
+            _, baseline = baseline_thread(request, backup, databases, copied, candidates, tid)
+            state = baseline / "state_5.sqlite"
+            databases[str(state)] = str(state)
+            history = baseline / "thread_history_1.sqlite"
+            databases[str(history)] = str(history)
+            candidates.append(state)
+            rebuilt.append(tid)
+            emit(phase="staged-history-rebuilt", threadId=tid)
+    return rebuilt
 
 
 def verify_conversation(server, directory, tid, expected, request, backup, databases, copied, sources):
-    actual = thread_messages(server.read(tid))
+    actual_thread = server.read(tid)
+    actual = thread_messages(actual_thread)
     paginated = False
     for source in sources:
         with connect(pathlib.Path(databases[str(source)])) as db:
@@ -341,18 +522,31 @@ def verify_conversation(server, directory, tid, expected, request, backup, datab
                 break
     if actual == expected and not paginated:
         return actual, False, False
-    reference = legacy_messages(request, backup, databases, copied, sources, tid)
-    if actual == reference:
+    reference_thread = legacy_thread(request, backup, databases, copied, sources, tid)
+    reference = thread_messages(reference_thread)
+    if actual == reference and thread_history(actual_thread) == thread_history(reference_thread):
         return actual, True, False
     require_inactive_goal(directory, tid)
-    refreshed = thread_messages(server.refresh(tid))
-    if refreshed != reference:
+    refreshed_thread = server.refresh(tid)
+    refreshed = thread_messages(refreshed_thread)
+    if refreshed != reference or thread_history(refreshed_thread) != thread_history(reference_thread):
         (backup / ("history-mismatch-" + tid + ".json")).write_text(json.dumps({
             "threadId": tid, "read": actual, "reference": reference, "refreshed": refreshed,
         }), encoding="utf-8")
         raise RuntimeError("Conversation content differs from the legacy API for thread " + tid)
     emit(phase="history-refreshed", threadId=tid)
     return refreshed, True, True
+
+
+def prepare_destination(request, backup, home, directory, tids, databases, sources, records):
+    server = Server(request, backup / "codex.stderr", home, directory)
+    try:
+        # Official API locates and indexes rollouts, including archived ones.
+        for tid in tids:
+            server.read(tid)
+    finally:
+        server.close()
+    return restore_history_cache(directory, tids, databases, sources, records)
 
 
 def verify_metadata(states, databases, native, metadata):
@@ -436,10 +630,13 @@ def run(request):
         if tid not in records:
             raise RuntimeError("A saved member has no indexed rollout: " + tid)
     backup, databases, copied, expected, signatures = prepare_backup(request, home, native, states, records)
+    staged = rebuild_missing_history(request, backup, databases, copied, sources)
     differences = []
     refreshed = set()
+    imported = []
     verified = 0
     if request["mode"] == "native":
+        imported.extend(prepare_destination(request, backup, home, native, records, databases, sources, records))
         server = Server(request, backup / "codex.stderr", home, native)
         try:
             with (backup / "verified.jsonl").open("w", encoding="utf-8") as journal:
@@ -467,6 +664,7 @@ def run(request):
                     if any(row[0] not in ("complete", "blocked", "paused", "usage_limited") for row in db.execute("select status from thread_goals")):
                         raise RuntimeError("Legacy rollback would restore an active goal. Stop that goal explicitly first.")
             directory.mkdir(parents=True, exist_ok=True)
+            imported.extend(prepare_destination(request, backup, home, directory, [tid], databases, sources, records))
             server = Server(request, backup / "codex.stderr", home, directory)
             try:
                 _, compared, rebuilt = verify_conversation(server, directory, tid, expected[tid], request, backup, databases, copied, sources[tid])
@@ -499,6 +697,8 @@ def run(request):
     report = {"version": 1, "mode": request["mode"], "codexVersion": version,
               "verified": verified, "inventory": len(records), "legacyApiComparisons": differences,
               "historyRefreshed": sorted(refreshed),
+              "historyImported": sorted(set(imported)),
+              "stagedHistoryRebuilt": staged,
               "goals": "not merged; original DBs retained", "backupPath": str(backup)}
     report_file = backup / "report.json"
     report_file.write_text(json.dumps(report, indent=2), encoding="utf-8")

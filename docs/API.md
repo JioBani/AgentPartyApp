@@ -65,17 +65,30 @@ rollouts, app mappings and configuration under
 all rollouts/databases plus temporary history comparison copies. `auth.json`
 is not copied. Treat retained backups, including configuration, as private data.
 
-Only official Codex APIs write operational state. Verification compares IDs,
-user/assistant messages, metadata and supported auxiliary state. Where Codex's
-paginated history is stale, the worker may perform a model-free resume and
-unsubscribe after checking for an active goal. It never starts a model turn,
-overrides an unavailable provider, or unarchives a conversation to force success.
-An existing native store missing a particular thread can also fail verification
-for archived paginated threads or sub-agents that Codex cannot resume independently.
-This limitation is not restricted to completely empty native stores. Preserve legacy
-mode and review the reported thread; do not bypass the check.
+Official Codex APIs create the state index. With all destination app-servers
+closed, the one-time worker imports backed-up history projections into
+`thread_history_1.sqlite` in a single SQLite transaction. CLI version, complete
+history schema and migration checksums must match. It selects the most advanced
+projection of each rollout, rejects equal-position conflicts and loss of existing
+item IDs, and verifies the copied rows and database integrity before commit.
+This also preserves archived and child-thread history without resuming those
+threads or changing archive flags. Runtime adapters never access database schemas.
+
+Verification compares IDs, user/assistant messages, metadata and supported
+auxiliary state. Paginated history also compares ordered turns and complete API
+items, including tool/image items, against an isolated source baseline. Where
+uncached history needs reconstruction, the worker may perform a model-free
+resume and unsubscribe after checking for an active goal. It never starts a
+model turn or changes an operational conversation's provider/archive state.
+When the original projection is absent, a private rollout/index copy is replayed
+through Codex. Only that copy can be temporarily unarchived and use the built-in
+provider for model-free parsing of retired-provider history. This is reported in
+job progress. Appended settings must preserve the original bytes exactly and
+must not produce conversation items; the private cursor is checked and reset to
+the original byte/ordinal boundary before import. Original runtime settings and
+archive flags remain unchanged. Unreconstructable history still fails visibly.
 Unknown/conflicting state fails visibly and leaves the mode unchanged. A failed
-attempt may already have added indexes or refreshed history through Codex;
+attempt may already have added indexes or atomically imported history;
 the old stores and backups remain intact.
 
 Poll the GET endpoint for completion. Rerunning after interruption creates a
@@ -85,6 +98,16 @@ including conversations created after switching to native. It does not restore
 stale backup files over current data. No automatic storage fallback or deletion
 is performed. Explicit profile/CLI SQLite overrides and conflicting user
 `sqlite_home` settings require a separate path review.
+Conflicting archive/section/memory flags across stale stores can reject a legacy
+data transition; do not confuse that operation with application downgrade.
+
+Application downgrade is a separate compatibility contract from `mode: legacy`.
+Unpatched 0.12.2 ignores the mode record and can reject a conversation unarchived
+after native conversion because its old isolated index still says archived.
+Use the prepared storage-compatible baseline as the downgrade target. That build
+reads the existing mode record, has no migration worker or transition route, and
+does not rewrite data on downgrade. Retain both executable packages before
+conversion; see [release gates](CODEX_STORAGE_RELEASE_GATES.md).
 
 ## Discovery
 

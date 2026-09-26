@@ -5,7 +5,8 @@ Uses real provider calls. All new files stay under a unique .tmp directory.
 Member actions use the real member-scoped MCP endpoint. Direct HTTP is used
 for fixture setup, inspection, close/resume and storage administration, which
 have no corresponding member tool. Codex thread/archive is fixture setup via
-the official app-server API; no source DB rows are deleted to simulate loss.
+the official app-server API. Optional missing-cache setup removes only derived
+history rows in the disposable QA database, retaining the original rollout.
 """
 import argparse
 import importlib.util
@@ -25,6 +26,11 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--auth-source', required=True, type=pathlib.Path)
 parser.add_argument('--codex', required=True, type=pathlib.Path)
 parser.add_argument('--model', default='gpt-6-luna')
+parser.add_argument('--old-app-root', type=pathlib.Path, help='Built, unmodified pre-transition app checkout for actual downgrade QA')
+parser.add_argument('--old-commit', default='0caade2', help='Expected committed source of the downgrade app')
+parser.add_argument('--rebuild-missing-cache', action='store_true')
+parser.add_argument('--app-exe', type=pathlib.Path, help='Optional packaged conversion executable')
+parser.add_argument('--old-app-exe', type=pathlib.Path, help='Optional packaged downgrade executable')
 args = parser.parse_args()
 assert os.name == 'nt'
 assert args.auth_source.name == 'auth.json' and args.auth_source.is_file()
@@ -51,6 +57,7 @@ fixture=importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
 request={'command':str(args.codex),'args':[]}
 base=None
 validated_app=False
+launcher=None
 party=None
 report={'case':str(CASE),'model':args.model,'steps':[]}
 
@@ -140,16 +147,21 @@ def official(directory):
     return fixture.Server(request,CASE/'fixture.stderr',HOME,directory)
 
 
-try:
-    with (CASE/'app.stdout').open('w') as out, (CASE/'app.stderr').open('w') as err:
-        subprocess.Popen(['node','scripts/launch-electron.mjs','--workspace',str(WORKSPACE)],
-            cwd=ROOT,env=env,stdout=out,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW)
+def launch(app_root, label):
+    global launcher, base, validated_app
+    base=None; validated_app=False
+    executable = args.app_exe if app_root==ROOT else args.old_app_exe
+    command = [str(executable.resolve())] if executable else ['node','scripts/launch-electron.mjs']
+    expected_root = executable.resolve().parent/'resources/app.asar/dist/main/application' if executable else app_root/'dist/main/application'
+    with (CASE/(label+'.stdout')).open('w') as out, (CASE/(label+'.stderr')).open('w') as err:
+        launcher=subprocess.Popen([*command,'--workspace',str(WORKSPACE)],
+            cwd=app_root,env=env,stdout=out,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW)
     for _ in range(120):
         for file in (WORKSPACE/'.agent_party_app/instances').glob('*.json'):
             base=json.loads(file.read_text(encoding='utf-8-sig'))['baseUrl']
             try:
                 state=api('/api/state')
-                assert pathlib.Path(state['runtime']['appRoot']).resolve().is_relative_to(ROOT)
+                assert pathlib.Path(state['runtime']['appRoot']).resolve()==expected_root.resolve(),state['runtime']
                 assert pathlib.Path(state['logs']['logFilePath']).resolve().is_relative_to(DATA)
                 validated_app=True
                 break
@@ -158,6 +170,17 @@ try:
         time.sleep(.5)
     assert base,'App did not start'
     (CASE/'connection.json').write_text(json.dumps({'base':base,'home':str(HOME),'data':str(DATA)}))
+
+
+def stop():
+    global validated_app
+    api('/api/window/close',{})
+    launcher.wait(timeout=60)
+    validated_app=False
+
+
+try:
+    launch(ROOT,'app')
     assert api('/api/codex/storage')['mode']=='native'
     api('/api/parties',{'name':'Partial Codex storage QA'})
     party=api('/api/state')['party']['currentPartyId']
@@ -199,6 +222,13 @@ try:
     assert indexed(a) is not None and indexed(c) is None
     with fixture.connect(source/'state_5.sqlite') as db:
         assert db.execute('select archived from threads where id=?',(c,)).fetchone()==(1,)
+    if args.rebuild_missing_cache:
+        import sqlite3
+        assert source.resolve().is_relative_to(CASE)
+        with sqlite3.connect(source/'thread_history_1.sqlite') as db:
+            for table in reversed(fixture.HISTORY_TABLES):
+                db.execute('delete from "'+table+'" where thread_id=?',(c,))
+        checkpoint('Fixture: archived C retains rollout but its derived source cache is missing')
     checkpoint('Fixture: native DB exists, archived legacy-only C is absent',c=c)
     result=transition('native')
     if result['job']['state']=='complete':
@@ -207,6 +237,18 @@ try:
         try: assert fixture.thread_messages(server.read(c))==expected
         finally: server.close()
         checkpoint('PASS: missing archived conversation also migrated without unarchiving',job=result['job'])
+        if args.rebuild_missing_cache:
+            server=official(HOME)
+            try: server.call('thread/unarchive',{'threadId':c})
+            finally: server.close()
+            resume('main'); resume('archived-c')
+            assert reply('archived-c','Repeat your previous exact response.','ARCHIVED_C_514')==c
+            assert reply('archived-c','Now reply exactly REBUILT_LATEST_915.','REBUILT_LATEST_915')==c
+            close_all()
+            server=official(HOME)
+            try: assert sum(fixture.thread_messages(server.read(c))['assistant'].values())==3
+            finally: server.close()
+            checkpoint('PASS: rebuilt projection accepts later real turns without skipping history',c=c)
     else:
         assert result['job']['state']=='failed' and result['mode']=='legacy',result
         assert c in result['job']['error'] and 'archived' in result['job']['error'].lower(),result
@@ -218,6 +260,44 @@ try:
         resume('main'); resume('legacy-b')
         assert reply('legacy-b','Repeat your previous exact response.','NATIVE_B_LATEST_973')==b
         checkpoint('REPRODUCED: archived C blocks transition; legacy mode, archive and B latest context preserved',job=result['job'])
+        raise AssertionError('Archived migration is a required release gate')
+    if args.old_app_root:
+        old=args.old_app_root.resolve()
+        assert (old/'dist/main/main.js').is_file() and old!=ROOT
+        assert subprocess.check_output(['git','rev-parse','HEAD'],cwd=old,text=True).strip().startswith(args.old_commit)
+        subprocess.run(['git','diff','--exit-code','HEAD','--','src','scripts','package.json'],cwd=old,check=True)
+        resume('main'); resume('legacy-b')
+        assert reply('legacy-b','Now reply exactly BEFORE_DOWNGRADE_629.','BEFORE_DOWNGRADE_629')==b
+        d=create('native-d','NEW_NATIVE_D_758')
+        close_all()
+        assert not legacy_home(d).exists(), 'D must never have used a legacy DB'
+        # No rollback API or compatibility preparation before launching the
+        # actual old app: only the application binaries change.
+        stop(); launch(old,'old-app')
+        resume('main'); resume('legacy-b'); resume('native-d')
+        assert reply('legacy-b','Repeat your previous exact response.','BEFORE_DOWNGRADE_629')==b
+        assert reply('native-d','Repeat your previous exact response.','NEW_NATIVE_D_758')==d
+        if args.rebuild_missing_cache:
+            resume('archived-c')
+            assert reply('archived-c','Repeat your previous exact response.','REBUILT_LATEST_915')==c
+        assert reply('native-d','Now reply exactly OLD_APP_LATEST_386.','OLD_APP_LATEST_386')==d
+        checkpoint('PASS: actual downgrade app resumes updated and newly created native conversations',oldCommit=args.old_commit,b=b,d=d)
+        close_all(); stop(); launch(ROOT,'reupgraded-app')
+        assert api('/api/codex/storage')['mode']=='native'
+        resume('main'); resume('native-d')
+        assert reply('native-d','Repeat your previous exact response.','OLD_APP_LATEST_386')==d
+        checkpoint('PASS: re-upgrade retains the last response written by the old app',d=d)
+        e=create('crash-new-e','CRASH_NATIVE_E_247')
+        assert not legacy_home(e).exists()
+        # The downgrade must also work when the new app cannot shut down or
+        # run its fallback API. Kill only this validator's owned process tree.
+        subprocess.run(['taskkill','/PID',str(launcher.pid),'/T','/F'],check=True,
+                       capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW)
+        launcher.wait(timeout=30); validated_app=False
+        launch(old,'old-after-crash')
+        resume('main'); resume('crash-new-e')
+        assert reply('crash-new-e','Repeat your previous exact response.','CRASH_NATIVE_E_247')==e
+        checkpoint('PASS: actual downgrade after new-app crash needs no rollback API and preserves new conversation',e=e)
     report['completed']=True
     checkpoint('QA complete')
 except Exception as error:
@@ -225,6 +305,6 @@ except Exception as error:
     raise
 finally:
     if base and validated_app:
-        try: api('/api/window/close',{})
+        try: stop()
         except OSError: pass
     print('Private artifacts retained at',str(CASE),flush=True)
