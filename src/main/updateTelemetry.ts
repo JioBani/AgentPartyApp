@@ -40,6 +40,8 @@ export interface UpdateTelemetryDeps {
 interface Stored {
   installId: string;
   lastVersion?: string;
+  /** UTC day (YYYY-MM-DD) of the last update_check sent — one per day is enough to count actives. */
+  lastCheckDay?: string;
 }
 
 /** Which status transitions are worth an event, and what they carry. */
@@ -85,7 +87,16 @@ export class UpdateTelemetry {
     updater.on("status", (status: UpdateStatus) => {
       const event = eventFor(this.lastState, status);
       this.lastState = status.state;
-      if (event) this.send(event);
+      if (!event) return;
+      // Checks repeat every few hours; one a day per install keeps the collector
+      // inside its free quota and still counts daily actives.
+      if (event.event === "update_check") {
+        const day = new Date().toISOString().slice(0, 10);
+        if (this.stored.lastCheckDay === day) return;
+        this.stored.lastCheckDay = day;
+        this.save();
+      }
+      this.send(event);
     });
   }
 
@@ -145,7 +156,14 @@ export class UpdateTelemetry {
     try {
       const data = JSON.parse(fs.readFileSync(this.file, "utf8")) as Partial<Stored>;
       if (typeof data.installId === "string" && data.installId) {
-        return { stored: { installId: data.installId, ...(typeof data.lastVersion === "string" ? { lastVersion: data.lastVersion } : {}) }, fresh: false };
+        return {
+          stored: {
+            installId: data.installId,
+            ...(typeof data.lastVersion === "string" ? { lastVersion: data.lastVersion } : {}),
+            ...(typeof data.lastCheckDay === "string" ? { lastCheckDay: data.lastCheckDay } : {}),
+          },
+          fresh: false,
+        };
       }
     } catch {
       // First launch, or an unreadable file: start a new id (save() logs if the disk refuses).
