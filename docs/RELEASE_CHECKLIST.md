@@ -63,13 +63,17 @@ git -C C:\Project\AgentPartyApp log --oneline v<previous>..master
 
 ```powershell
 git -C C:\Project\AgentPartyApp worktree add `
-  C:\Project\AgentPartyApp-wt-release-v<version> `
+  .worktrees/release-v<version> `
   -b release/v<version> master
 
-Set-Location C:\Project\AgentPartyApp-wt-release-v<version>
+Set-Location C:\Project\AgentPartyApp\.worktrees\release-v<version>
 npm version <version> --no-git-tag-version
-npm ci
 ```
+
+의존성은 따로 설치하지 않는다. `.worktrees/` 아래 워크트리는 메인 체크아웃의
+`node_modules` 를 그대로 쓰고, 패키징 동안에만 `package-win.mjs` 가 링크를 걸었다가
+지운다. `package-lock.json` 이 바뀐 릴리스라면 메인 체크아웃에서 `npm install` 을 먼저
+실행한다(워크트리에서 `npm ci`/`npm install` 을 실행하지 않는다).
 
 `package.json`과 루트 `package-lock.json`의 버전 일치는 `release:prepare`의 소스
 린트가 검사한다. 두 파일을 직접 열어 재확인하지 않는다. 의존성 감사 결과에 새

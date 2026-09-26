@@ -13,12 +13,12 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { writeReleaseManifest } from "./release-lint.mjs";
+import { binPath, findInstallRoot, installPath, linkInstallForPackaging } from "./lib/installRoot.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const isWin = process.platform === "win32";
 const npmCmd = isWin ? "npm.cmd" : "npm";
-const localTool = (name) =>
-  path.join(projectRoot, "node_modules", ".bin", isWin ? `${name}.cmd` : name);
+const localTool = (name) => binPath(projectRoot, name);
 
 const requiredBuildTools = ["tsc", "vite", "electron-builder"];
 
@@ -36,7 +36,7 @@ function missingInstalls() {
   const pkg = JSON.parse(readFileSync(path.join(projectRoot, "package.json"), "utf8"));
   const declared = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
   const missingPackages = declared.filter(
-    (name) => !existsSync(path.join(projectRoot, "node_modules", ...name.split("/"))),
+    (name) => !existsSync(installPath(projectRoot, ...name.split("/"))),
   );
   const missingTools = requiredBuildTools.filter((name) => !existsSync(localTool(name)));
   return [...new Set([...missingPackages, ...missingTools])];
@@ -138,6 +138,10 @@ async function main() {
   // Verify what package.json actually declares instead of treating the
   // directory as sufficient.
   const missing = missingInstalls();
+  if (missing.length > 0 && findInstallRoot(projectRoot) !== projectRoot) {
+    // A worktree uses the main checkout's install; installing here would fork it.
+    throw new Error(`의존성 누락 (${summarize(missing)}): 메인 체크아웃(${findInstallRoot(projectRoot)})에서 npm install 하세요. 워크트리에서는 설치하지 않습니다.`);
+  }
   if (missing.length > 0) {
     console.log(dim(`  의존성 누락 (${summarize(missing)}) → npm install 실행 중...\n`));
     await runStep({ name: "의존성 설치", cmd: npmCmd, args: ["install"] }, 0, 0);
@@ -151,6 +155,11 @@ async function main() {
           (hints.length > 0 ? `\n${hints.join("\n")}` : ""),
       );
     }
+  }
+
+  if (linkInstallForPackaging(projectRoot)) {
+    console.log(dim(`  워크트리: 패키징 동안만 node_modules 를 공용 설치본에 연결합니다 (끝나면 링크만 제거).
+`));
   }
 
   const steps = buildSteps();

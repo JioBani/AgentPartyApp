@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { qaTempDir, qaTempFile, projectRoot } from "./lib/qaTemp.mjs";
+import { installPath } from "./lib/installRoot.mjs";
 
 const here = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -31,13 +32,13 @@ console.log("\nQA bundles live in the worktree, not the shared install:");
 }
 
 /*
- * The shared install is shared through a LINK, so a path check alone can be
- * fooled: `<worktree>/node_modules/...` looks lane-private and is not. Resolve
- * it and prove the bundle directory is not under the real shared location.
+ * The install is shared: a worktree under `.worktrees/` reaches the main
+ * checkout's node_modules by walking up (older worktrees through a link). Find
+ * it the way Node does and prove the bundle directory is not under it.
  */
 console.log("\nthe shared install really is shared — and the bundles are not in it:");
 {
-  const link = path.join(here, "node_modules");
+  const link = installPath(here);
   const realInstall = fs.existsSync(link) ? fs.realpathSync(link) : "";
   const realTemp = fs.realpathSync(qaTempDir());
   assert(Boolean(realInstall), "the install is reachable from this worktree");
