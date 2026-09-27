@@ -102,6 +102,7 @@ import {
 } from "../../shared/appTheme";
 import { applyNativeCliAuthProgress, nativeCliAuthProgressCheck } from "../../shared/nativeCliAuth";
 import type { SshServerDraft } from "../../shared/sshServers";
+import type { TelemetryStatus } from "../../shared/updateTelemetry";
 import type { SshDraftValidationError, SshServerService } from "../ssh/sshServerService";
 
 export interface AppControllerDeps {
@@ -168,6 +169,8 @@ export interface AppControllerDeps {
    * replace, so the update endpoints report that plainly instead of pretending.
    */
   updater?: UpdateController;
+  /** Update telemetry, desktop-only. Absent in the headless remote engine. */
+  telemetry?: { status(): TelemetryStatus };
   /**
    * Where each approval request was seen, so one can be answered by its id
    * alone. Fed from the workspace event stream in main.ts; absent in the
@@ -821,6 +824,12 @@ export class AppController {
    * serves every window — so the status is fetched once per window and kept live
    * by the "update:status" push wired in main.ts.
    */
+  /** What update telemetry sends and whether the last events went out (QA, and a user who asks). */
+  getTelemetryStatus(): { ok: true; telemetry: TelemetryStatus } {
+    if (!this.deps.telemetry) throw new Error("이 프로세스는 업데이트 텔레메트리를 보내지 않습니다.");
+    return { ok: true, telemetry: this.deps.telemetry.status() };
+  }
+
   getUpdateStatus(): { ok: true; update: UpdateStatus } {
     return { ok: true, update: this.updater().getStatus() };
   }

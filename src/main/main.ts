@@ -35,6 +35,7 @@ import { decideJev } from "./jevService";
 import type { GateReviewer } from "../shared/messageGate";
 import { DiscordBridgeService } from "./discordBridgeService";
 import { UpdateService } from "./updateService";
+import { UpdateTelemetry } from "./updateTelemetry";
 import { DiscordControlService } from "./discordControl";
 import { loadDotEnv } from "./dotenv";
 import { DEEPSEEK_API_KEY_ENV } from "../shared/deepseekDefaults";
@@ -114,6 +115,7 @@ let discordBridge: DiscordBridgeService | undefined;
 let engineRegistry: EngineRegistry | undefined;
 let subscriptionProxyService: SubscriptionProxyService | undefined;
 let updateService: UpdateService | undefined;
+let updateTelemetry: UpdateTelemetry | undefined;
 let sshServerService: SshServerService | undefined;
 /** Internal Windows directory whose engine is the party-state source of truth. */
 let partyStorageWorkspace: string | undefined;
@@ -729,6 +731,15 @@ ${body}
       entry.window.webContents.send("update:status", status);
     }
   });
+  // Follows the updater from the side; it never gates an update (updateTelemetry.ts).
+  updateTelemetry = new UpdateTelemetry({
+    userDataDir: app.getPath("userData"),
+    appVersion: app.getVersion(),
+    isPackaged: app.isPackaged,
+    channel: () => getSettings().updateChannel || "stable",
+    log: (level, message, data) => log(level, "telemetry", message, data),
+  });
+  updateTelemetry.start(updateService);
 
   sshServerService = new SshServerService({
     store: new SshServerStore(app.getPath("userData"), safeStorage),
@@ -794,6 +805,7 @@ ${body}
     onWorkspacesChanged: () => reconcileDiscovery(),
     discord: discordBridge,
     updater: updateService,
+    telemetry: updateTelemetry,
     approvals,
     sshServers: sshServerService,
     browser: embeddedBrowser,

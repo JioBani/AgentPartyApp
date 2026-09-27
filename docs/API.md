@@ -524,6 +524,27 @@ even on a build where self-update is unavailable. **500** with the reason when
 the list cannot be fetched (rate limit, network) — it never returns an empty
 list to mean failure.
 
+### `GET /api/telemetry`
+
+Update telemetry as this process runs it. The app sends one anonymous event per
+update step (`first_run`, `update_installed`, `update_check`,
+`update_available`, `update_download_start`, `update_downloaded`,
+`update_error`) to the AgentPartyTelemetry collector, fire-and-forget with a
+3-second timeout: the updater never waits on it, and a failed send is logged
+(`telemetry` scope) and dropped. Payload shape: `src/shared/updateTelemetry.ts`.
+
+Unpackaged builds send nothing unless `AGENTPARTY_TELEMETRY_URL` is set, so QA
+runs do not reach the real collector; point it at a local receiver to test.
+
+```json
+{ "ok": true, "telemetry": { "enabled": true, "endpoint": "https://…/collect", "installId": "…",
+  "recent": [{ "event": "update_available", "at": "2026-09-27T…", "result": "sent" }] } }
+```
+
+`recent` holds the last 20 events with `result` `sent` / `failed` (with `detail`)
+/ `skipped` (disabled build). When disabled, `enabled` is false and
+`disabledReason` says why.
+
 ### `POST /api/update/check`
 
 Re-asks the release feed. Optional body `{ "quiet": true }`. Returns the same
