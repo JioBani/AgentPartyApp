@@ -333,11 +333,13 @@ export const PARTY_CODEX_CORE_TOOL_ALIASES = {
 } as const satisfies Record<string, PartyCoreToolName>;
 export type PartyCodexCoreToolAlias = keyof typeof PARTY_CODEX_CORE_TOOL_ALIASES;
 
+const jevRequestLimitsDescription = "One text/object/array state and 1+ named questions per call; no fixed question-count cap. Each question needs non-empty string instructions. choice: 2-255 options; noul: yes/no probability, optional true/false descriptions; score: 2-10 ordered levels. TypeSafe documents 64K tokens for state + all questions and 32K for state + the longest question; OpenRouter lists 32K context, so 64K total through OpenRouter is unverified. AgentParty sets no call-count or concurrency cap; OpenRouter rate and credit limits apply.";
+
 const partyDynamicToolDescriptions: Record<PartyToolName, string> = {
   "jev-providers": "List Jev providers, configuration/availability, and the app-wide default. Jev is a Decisions model, not a member chat model.",
   "jev-default-provider": "Set the app-wide default Jev provider. This affects calls that omit provider. Use jev-providers first. A call may instead pass provider explicitly without changing this setting.",
-  "jev-decide": "Ask Jev one Decisions request about a state. choice selects ONE named option and returns probabilities; noul answers a yes/no proposition with the probability of YES from 0 to 1 (0.5 is uncertain, not a halfway score); score places the state on ordered levels and may return a value between them. Put multiple independent questions about the same state in one call. Pass provider to override the app default. Returns all answers and measured usage.",
-  "jev-decide-file": "Ask Jev once and write the complete JSON response at an absolute path on YOUR execution host. The tool returns path and usage; an existing file is protected unless overwrite=true. Source files are read by your own script, which can call the local Jev API directly.",
+  "jev-decide": `Ask Jev one Decisions request. ${jevRequestLimitsDescription} choice selects ONE option; noul returns the probability of YES from 0 to 1 (0.5 is uncertain); score may fall between levels. Optional provider overrides the app default. Returns all answers and measured usage.`,
+  "jev-decide-file": `Ask Jev once and write the complete JSON response at an absolute path on YOUR execution host. ${jevRequestLimitsDescription} Pass path and optional overwrite (default false); the tool returns path and usage. Source files are read by your own script, which can call the local Jev API directly.`,
   send: "Send the same message to one or more members of your party. Pass `to` as one member name or an array of names. Batch results separate delivered, queued, and failed recipients. Omit both delivery flags to use your member override and then the Runtime default. Set interrupt=true to cut in, or queue=true to explicitly wait behind the current turn. Legacy interrupt=false is treated as omitted so model-generated false values cannot disable the saved setting.",
   "member-create": "Create and start one or more members. Use the existing top-level fields for one member, or pass `members` as an array of member objects for a batch. Pass tabGroup as a tabGroups[].id returned by list (or a unique member name in that open group); omit it to create a new tab group. Call list-models for valid harness/model settings and list-locations for recent validated cwd suggestions. Pass location: {host, cwd, distro?, server?} to choose Windows, WSL, or SSH explicitly; server is required for SSH. Omit location to inherit your own execution location.",
   "member-remove": "Remove one or more members from your party. Pass `name` as one member name or an array of names.",
@@ -436,7 +438,7 @@ const jevQuestionSchema = {
 
 const jevDecisionProperties = {
   state: { oneOf: [{ type: "string" }, { type: "object" }, { type: "array" }], description: "Text or structured context to evaluate. Every question sees this same state." },
-  questions: { type: "object", minProperties: 1, additionalProperties: jevQuestionSchema, description: "Question IDs map to independent Choice, Noul, or Score questions. Answers use these IDs; the IDs themselves are not shown to Jev." },
+  questions: { type: "object", minProperties: 1, additionalProperties: jevQuestionSchema, description: "At least one named Choice, Noul, or Score question; no fixed count cap. Answers use these IDs; the IDs themselves are not shown to Jev. TypeSafe budget: 64K tokens total and 32K for state plus the longest question; OpenRouter lists 32K context." },
   provider: { type: "string", description: "Optional Jev provider id. Omit to use the app default." },
 };
 
@@ -1199,7 +1201,7 @@ const jevQuestionInput = z.discriminatedUnion("type", [
 ]);
 const jevDecisionInput = {
   state: z.union([z.string(), z.record(z.string(), z.unknown()), z.array(z.unknown())]).describe("Text or structured context shared by all questions."),
-  questions: z.record(z.string(), jevQuestionInput).describe("Independent questions keyed by answer ID. Choice returns one option and probabilities; Noul returns yes probability; Score returns a position on ordered levels."),
+  questions: z.record(z.string(), jevQuestionInput).describe("At least one independent question keyed by answer ID; no fixed count cap. Choice: 2-255 options; Noul: yes probability; Score: 2-10 levels. TypeSafe budget: 64K tokens total and 32K for state plus the longest question; OpenRouter lists 32K context."),
   provider: z.string().optional(),
 };
 
