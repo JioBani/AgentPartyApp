@@ -1393,11 +1393,23 @@ Calls OpenRouter's model endpoint to verify the configured key.
 ### Jev Decisions gateway
 
 The app keeps the provider credential and exposes Jev as a single-call local API.
-Jev is a Decisions model, not a member chat model. Its input is `state` (a
-string, JSON object, or related-context array) and a non-empty `questions`
-object. Each question has `type` and `instructions`; `criteria` is required for
-`choice` and `score`, and optional for `noul`. Multiple questions about the same
-state fit in one paid call.
+Jev is a Decisions model, not a member chat model. Required parameters are
+`state` (text, JSON object, or array) and `questions` (at least one named
+question). Each question needs `type` (`choice`, `noul`, or `score`) and a
+non-empty string `instructions`. `criteria` is required for `choice` and
+`score`, and optional for `noul`. Optional `provider` selects a provider for
+this call; currently only `openrouter` is available. Multiple questions about
+the same state fit in one paid call.
+
+**Request limits:** AgentParty sets no fixed question count, total call count,
+concurrency, or request-body size limit. Each API or MCP decision call makes one
+provider request; OpenRouter rate and credit limits still apply. TypeSafe
+documents **64K tokens** for `state` plus all questions and **32K tokens** for
+`state` plus the longest single question. [OpenRouter lists this model as 32K
+context](https://openrouter.ai/typesafe/jev-1.13), so 64K total through the
+current provider is not guaranteed. These are token limits, not character
+counts. See [TypeSafe model limits](https://docs.typesafe.ai/models).
+
 For separate records, write a script that makes one call per record with the
 concurrency you choose. The app does not offer a batch job or source-file
 adapter. The OpenRouter Decisions request and response are documented in the
@@ -1460,10 +1472,12 @@ tool catalog.
 
 When enabled, member MCP exposes `jev-providers`, `jev-default-provider`,
 `jev-decide`, and `jev-decide-file`. The first two list providers and change
-the app-wide default. `jev-decide` returns the complete response. The file tool
-accepts the same decision request plus an absolute `path` on the member's
-execution host and optional `overwrite` (default `false`). It writes the full
-response as JSON and returns path, model, provider, question count, and usage.
+the app-wide default. Both decision tools accept the same `state`, `questions`,
+and optional `provider` parameters and request limits described above.
+`jev-decide` returns the complete response. The file tool also requires an
+absolute `path` on the member's execution host and accepts `overwrite`
+(default `false`). It writes the full response as JSON and returns path, model,
+provider, question count, and usage.
 If the provider answered but writing fails, the tool returns an error **and**
 the complete answer so the paid result is not lost. Existing files are not
 replaced unless `overwrite:true` is passed.
