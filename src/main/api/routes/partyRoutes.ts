@@ -332,6 +332,7 @@ export const partyRoutes: MethodRoute[] = [
   ...PARTY_ACTION_NAMES.filter((action) => !NON_MEMBER_ACTIONS.has(action)).map((action): MethodRoute => ({
     name: `member.${camelAction(action)}`,
     http: `POST /api/party/members/:name/${action}`,
+    remote: action === "disconnect-codex-thread" || action === "reconnect-codex-thread" ? false : undefined,
     handler: (p, ctx) => ctx.controller.handlePartyAction(ctx.workspace, text(p.name), action, p, ctx.windowId, ctx.partyId),
   })),
 ];

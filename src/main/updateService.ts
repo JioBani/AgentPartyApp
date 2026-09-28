@@ -55,6 +55,9 @@ export interface UpdateServiceDeps {
   getChannel?: () => UpdateChannel;
   /** Called before a channel switch becomes active. A write failure is surfaced. */
   persistChannel?: (channel: UpdateChannel) => void;
+  /** Drain local initialization BEFORE spawning NSIS, which may terminate us. */
+  prepareForInstall?: () => Promise<void>;
+  cancelInstallPreparation?: () => void;
   /** Test seam: production lazily requires electron-updater instead. */
   updaterFactory?: () => AutoUpdaterLike;
   /** How often to re-check while the app stays open. 0 disables the timer. */
@@ -100,6 +103,7 @@ export class UpdateService extends EventEmitter {
   private updater: AutoUpdaterLike | undefined;
   private timer: NodeJS.Timeout | undefined;
   private inFlight: Promise<UpdateStatus> | undefined;
+  private installing = false;
   /**
    * When true, the updater's `checking-for-update` event must not overwrite an
    * already-actionable status (available / downloading / downloaded). Settings
@@ -243,14 +247,26 @@ export class UpdateService extends EventEmitter {
    * Quits and runs the downloaded installer. Returns only if it could NOT be
    * started — on success the process is already going away.
    */
-  install(): { ok: true } {
+  async install(): Promise<{ ok: true }> {
     if (this.status.state !== "downloaded") {
       throw new Error("설치할 업데이트가 아직 다운로드되지 않았습니다.");
     }
-    log("info", "update", "quit and install", { version: this.status.latestVersion });
-    // isSilent=false → show the NSIS progress; isForceRunAfter=true → relaunch.
-    this.ensureUpdater().quitAndInstall(false, true);
-    return { ok: true };
+    if (this.installing) throw new Error("업데이트 설치를 준비하고 있습니다.");
+    const updater = this.ensureUpdater();
+    this.installing = true;
+    try {
+      await this.deps.prepareForInstall?.();
+      log("info", "update", "quit and install", { version: this.status.latestVersion });
+      // isSilent=false → show the NSIS progress; isForceRunAfter=true → relaunch.
+      updater.quitAndInstall(false, true);
+      const afterInstall = this.getStatus();
+      if (afterInstall.state === "error") throw new Error(afterInstall.error || "업데이트 설치를 시작하지 못했습니다.");
+      return { ok: true };
+    } catch (error) {
+      this.deps.cancelInstallPreparation?.();
+      this.installing = false;
+      throw error;
+    }
   }
 
   /**
@@ -468,6 +484,10 @@ export class UpdateService extends EventEmitter {
   }
 
   private fail(error: unknown): void {
+    if (this.installing) {
+      this.deps.cancelInstallPreparation?.();
+      this.installing = false;
+    }
     const detail = error instanceof Error ? error.message : String(error);
     // The log keeps everything; the UI gets a sentence. electron-updater's
     // errors carry the full HTTP response — headers and Set-Cookie included —

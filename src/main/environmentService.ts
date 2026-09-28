@@ -15,7 +15,7 @@
  *    when the caller asks for it.
  */
 import * as path from "node:path";
-import { CODEX_INITIALIZE_TIMEOUT_MS, withAgentPartyCodexStartup } from "../core/codexStartup";
+import { CODEX_INITIALIZE_TIMEOUT_MS } from "../core/codexStartup";
 import * as fs from "node:fs";
 import * as crypto from "node:crypto";
 import { getSettings } from "./settings";
@@ -713,13 +713,13 @@ async function codexCheck(workspacePath: string, observer?: NativeCliStepObserve
   const runtimeStartedAt = Date.now();
   const runtimeCwd = workspace.cwd;
   const runtimeArgs = [...resolved.argsPrefix, ...codexExtraArgs(), "-c", 'cli_auth_credentials_store="file"', "app-server"];
-  const runtimeProbe = await withAgentPartyCodexStartup(() => probeCodexAppServer(
+  const runtimeProbe = await probeCodexAppServer(
     resolved,
     [...codexExtraArgs(), "-c", 'cli_auth_credentials_store="file"'],
     runtimeCwd,
     codexEnv,
     CODEX_INITIALIZE_TIMEOUT_MS,
-  ));
+  );
   steps.push(runtimeProbe.ok
     ? successfulStep("runtime", "app-server 초기화", runtimeProbe.detail, runtimeStartedAt, {
         command: displayCommand(resolved.command, runtimeArgs),

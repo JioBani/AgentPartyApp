@@ -227,7 +227,7 @@ export interface UpdateController {
   listReleases(refresh?: boolean): Promise<ReleaseSummary[]>;
   check(options?: UpdateCheckOptions): Promise<UpdateStatus>;
   download(): Promise<UpdateStatus>;
-  install(): { ok: true };
+  install(): Promise<{ ok: true }> | { ok: true };
   setMockStatus(patch: Partial<UpdateStatus> | undefined): UpdateStatus;
   setMockReleases(releases: ReleaseSummary[] | undefined): ReleaseSummary[] | undefined;
 }
@@ -275,7 +275,7 @@ export class AppController {
     return (this.codexStorage ??= new CodexStorageService(this.deps.sessionManager)).status();
   }
 
-  transitionCodexStorage(input: { mode?: unknown; externalCodexStopped?: unknown; acceptGoalReset?: unknown }) {
+  transitionCodexStorage(input: { mode?: unknown; externalCodexStopped?: unknown; acceptGoalReset?: unknown; excludeMissingThreadIds?: unknown }) {
     return (this.codexStorage ??= new CodexStorageService(this.deps.sessionManager)).start(input);
   }
 
@@ -879,7 +879,7 @@ export class AppController {
    * Quits and installs the downloaded build. Every running member is stopped by
    * the quit — the UI confirms before calling this.
    */
-  installUpdate(): { ok: true } {
+  async installUpdate(): Promise<{ ok: true }> {
     return this.updater().install();
   }
 

@@ -3,7 +3,7 @@ import type { PartyApplicationService } from "../application/partyApplicationSer
 import { sanitizeAttachments } from "../../shared/attachments";
 import { normalizeAutoCompact } from "../../shared/autoCompact";
 
-export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "force-stop" | "broadcast" | "auto-compact" | "compact" | "permission" | "runtime" | "gate" | "outbound-interrupt" | "sleep" | "wake" | "keep-awake";
+export type PartyActionName = "send" | "close" | "resume" | "respawn" | "open" | "start" | "bind" | "remove" | "status" | "interrupt" | "force-stop" | "broadcast" | "auto-compact" | "compact" | "permission" | "runtime" | "gate" | "outbound-interrupt" | "sleep" | "wake" | "keep-awake" | "disconnect-codex-thread" | "reconnect-codex-thread";
 
 type PartyActionHandler = (party: PartyApplicationService, name: string, body: any, partyId?: string) => PartyMutationResult | Promise<PartyMutationResult>;
 
@@ -23,6 +23,8 @@ const PARTY_ACTIONS: Record<PartyActionName, PartyActionHandler> = {
   // human user turn uses sendMemberMessage instead and is never gated.
   send: (party, name, body, partyId) => party.sendGatedMessage(name, String(body.content || ""), body.from, sanitizeAttachments(body.attachments), partyId, { interrupt: typeof body.interrupt === "boolean" ? body.interrupt : undefined, force: body.force === true, forceReason: typeof body.forceReason === "string" ? body.forceReason : undefined }),
   close: (party, name, _body, partyId) => party.closeMember(name, partyId),
+  "disconnect-codex-thread": (party, name, body, partyId) => party.disconnectCodexThread(name, body, partyId),
+  "reconnect-codex-thread": (party, name, body, partyId) => party.reconnectCodexThread(name, body, partyId),
   resume: (party, name, _body, partyId) => party.resumeMember(name, partyId),
   respawn: (party, name, body, partyId) => party.respawnMember(name, body, partyId),
   open: (party, name, _body, partyId) => party.openMember(name, partyId),

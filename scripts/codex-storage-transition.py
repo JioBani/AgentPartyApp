@@ -19,6 +19,8 @@ import subprocess
 import sys
 import threading
 import time
+import contextlib
+import stat
 try:
     import tomllib
 except ImportError:
@@ -39,16 +41,39 @@ def normalized(value):
     return pathlib.Path(str(value).removeprefix("\\\\?\\")).resolve()
 
 
+class ClosingConnection(sqlite3.Connection):
+    def __exit__(self, *args):
+        try:
+            return super().__exit__(*args)
+        finally:
+            self.close()
+
+
+def database(*args, **kwargs):
+    return sqlite3.connect(*args, factory=ClosingConnection, **kwargs)
+
+
 def connect(file):
-    return sqlite3.connect(file.as_uri() + "?mode=ro", uri=True, timeout=10)
+    return database(file.as_uri() + "?mode=ro", uri=True, timeout=10)
 
 
 def tables(db):
     return {r[0] for r in db.execute("select name from sqlite_master where type='table'")}
 
 
-def rowset(db, table):
-    return set(db.execute('select * from "' + table + '"')) if table in tables(db) else set()
+def rowset(db, table, excluded_threads=()):
+    if table not in tables(db):
+        return set()
+    rows = set(db.execute('select * from "' + table + '"'))
+    if excluded_threads:
+        columns = [r[1] for r in db.execute('pragma table_info("' + table + '")')]
+        references = [columns.index(r[3]) for r in db.execute('pragma foreign_key_list("' + table + '")')
+                      if r[2] == "threads" and r[4] == "id"]
+        if table == "thread_spawn_edges":
+            # Codex 0.158 declares these relationships without SQL foreign keys.
+            references.extend(columns.index(name) for name in ("parent_thread_id", "child_thread_id"))
+        rows = {row for row in rows if not any(row[i] in excluded_threads for i in references)}
+    return rows
 
 
 def fingerprint(text):
@@ -125,10 +150,14 @@ class Server:
         self.sequence += 1
         self.child.stdin.write(json.dumps({"id": self.sequence, "method": method, "params": params}) + "\n")
         self.child.stdin.flush()
-        try:
-            response = self.responses.get(timeout=300)
-        except queue.Empty as error:
-            raise RuntimeError("Codex did not answer within 300 seconds; inspect the preserved worker log.") from error
+        while True:
+            try:
+                response = self.responses.get(timeout=300)
+                break
+            except queue.Empty as error:
+                if method != "initialize":
+                    raise RuntimeError("Codex did not answer within 300 seconds; inspect the preserved worker log.") from error
+                emit(phase="initialize-slow", warning="Codex initialization is still running. Waiting without terminating its SQLite backfill.")
         if response.get("id") != self.sequence:
             raise RuntimeError("Codex stopped during storage verification; inspect the preserved worker log.")
         if "error" in response:
@@ -190,26 +219,76 @@ def resolve_home(request):
     return home, sqlite_home
 
 
-def inventory(user_data, native):
+def inventory(user_data, native, home=None, excluded=None):
+    excluded = excluded if excluded is not None else {}
+    referenced = {tid for tid, _ in legacy_targets(user_data)}
     paths = sorted((user_data / "codex-sqlite").glob("*/state_*.sqlite"))
     if (native / "state_5.sqlite").exists():
         paths.append(native / "state_5.sqlite")
-    records, sources, metadata = {}, {}, {}
+    records, sources, metadata, locations = {}, {}, {}, {}
     for file in paths:
         if file.name != "state_5.sqlite":
             raise RuntimeError("An unvalidated state DB version was found: " + str(file))
         with connect(file) as db:
             for tid, rollout in db.execute("select id, rollout_path from threads"):
                 location = normalized(rollout)
-                if tid in records and records[tid] != location:
-                    raise RuntimeError("Conflicting rollout paths for thread " + tid)
-                records[tid] = location
+                locations.setdefault(tid, set()).add(location)
                 sources.setdefault(tid, []).append(file)
             fields = {r[1] for r in db.execute("pragma table_info(threads)")}
             selected = [f for f in PROTECTED_THREAD_FIELDS if f in fields]
             for row in db.execute("select id," + ",".join(selected) + " from threads"):
                 for field, value in zip(selected, row[1:]):
                     metadata.setdefault((row[0], field), set()).add(value)
+    for tid, candidates in locations.items():
+        existing = set()
+        for location in candidates:
+            try:
+                info = location.stat()
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISREG(info.st_mode):
+                raise RuntimeError("Rollout path is not a regular file: " + str(location))
+            existing.add(location)
+        if not existing and tid not in referenced:
+            if not home or any(not location.is_relative_to(home) for location in candidates):
+                raise RuntimeError("Missing rollout outside the selected Codex home requires a separate path review: " + tid)
+            for location in candidates:
+                category = location.relative_to(home).parts[0]
+                if category not in ("sessions", "archived_sessions"):
+                    raise RuntimeError("Missing rollout has an unvalidated directory: " + str(location))
+                root = home / category
+                if not root.is_dir():
+                    raise RuntimeError("Rollout root is unavailable; no missing conversations may be excluded: " + str(root))
+                # Force an actual directory read: an inaccessible/offline mount
+                # must not be interpreted as a set of deleted conversations.
+                with os.scandir(root) as entries:
+                    next(entries, None)
+            # No member can resume this absent rollout. Preserve all source
+            # DBs/caches in the backup; never resurrect deleted cached content.
+            excluded[tid] = sorted(str(p) for p in candidates)
+            sources.pop(tid, None)
+            emit(phase="missing-unreferenced-rollout", threadId=tid)
+            continue
+        if not existing:
+            raise missing_member_error(user_data, tid)
+        if len(candidates) == 1:
+            records[tid] = next(iter(candidates))
+        elif len(existing) == 1:
+            # Codex archive/unarchive moves the same rollout. An old isolated
+            # index can retain its now-missing path. Never choose between two
+            # existing files or discard metadata other than that derived flag.
+            records[tid] = next(iter(existing))
+            emit(phase="stale-index-resolved", threadId=tid, missingPaths=len(candidates) - 1)
+        else:
+            raise RuntimeError("Conflicting rollout paths for thread " + tid + "; expected exactly one existing file. Original indexes were not changed.")
+        parts = records[tid].relative_to(home).parts if home and records[tid].is_relative_to(home) else ()
+        if records[tid].is_file() and parts and parts[0] in ("archived_sessions", "sessions"):
+            archived = int(parts[0] == "archived_sessions")
+            old = metadata.get((tid, "archived"))
+            if old and old != {archived}:
+                emit(phase="stale-archive-index-resolved", threadId=tid, archived=archived)
+                metadata[(tid, "archived")] = {archived}
+    metadata = {key: values for key, values in metadata.items() if key[0] not in excluded}
     for (tid, field), values in metadata.items():
         if len(values) > 1:
             raise RuntimeError("Conflicting " + field + " values for thread " + tid)
@@ -218,10 +297,60 @@ def inventory(user_data, native):
 
 def backup_database(source, destination):
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with connect(source) as src, sqlite3.connect(destination) as dest:
+    with connect(source) as src, database(destination) as dest:
         src.backup(dest)
         if dest.execute("pragma quick_check").fetchone()[0] != "ok":
             raise RuntimeError("SQLite backup validation failed: " + str(source))
+
+
+def preflight_space(request, home, native, states, records):
+    """Conservative peak estimate before creating backups or opening a writer.
+
+    Keep a reserve for the OS and unrelated writers. This is a preflight, not
+    a promise about other processes: subsequent I/O errors remain visible.
+    """
+    directories = {p.parent for p in states} | {native}
+    db_bytes = sum(p.stat().st_size for d in directories for p in d.glob("*.sqlite*") if not p.name.startswith("logs_"))
+    rollout_bytes = sum(p.stat().st_size for p in set(records.values()) if p.is_file())
+    user_data = normalized(request["userData"])
+    app_bytes = sum(p.stat().st_size for p in (user_data / "party-store").rglob("*") if p.is_file())
+    # Immutable backup + upgraded read copies + rebuild/import/SQLite WAL
+    # headroom. Baselines are per-thread and released after each comparison.
+    required = 4 * db_bytes + 3 * rollout_bytes + app_bytes
+    reserve = 5 * 1024**3
+    volumes = {user_data.anchor: user_data, native.anchor: native, home.anchor: home}
+    for directory in volumes.values():
+        existing = directory
+        while not existing.exists():
+            existing = existing.parent
+        free = shutil.disk_usage(existing).free
+        if free < required + reserve:
+            raise RuntimeError(f"Insufficient free space on {directory.anchor}: need an estimated {required + reserve} bytes including reserve; available {free}. No storage files have been changed.")
+    emit(phase="space-checked", estimatedPeakBytes=required, reserveBytes=reserve)
+
+
+def remove_scratch(backup, directory):
+    """Delete only owned transient copies; immutable backup and reports remain."""
+    root = normalized(backup)
+    target = normalized(directory)
+    if target == root or not target.is_relative_to(root) or directory.is_symlink():
+        raise RuntimeError("Refusing to remove scratch outside the backup: " + str(directory))
+    if directory.exists():
+        # Windows can retain a just-exited process's cwd handle briefly.
+        # Retry only sharing violations, never hide a persistent cleanup error.
+        for attempt in range(20):
+            try:
+                shutil.rmtree(directory)
+                break
+            except OSError as error:
+                if error.winerror != 32 or attempt == 19:
+                    raise
+                time.sleep(0.25)
+
+
+def cleanup_scratch(backup):
+    for name in ("baseline", "read-copies"):
+        remove_scratch(backup, backup / name)
 
 
 def prepare_backup(request, home, native, states, records):
@@ -233,6 +362,8 @@ def prepare_backup(request, home, native, states, records):
     databases = {}
     for directory in {p.parent for p in states} | {native}:
         for source in directory.glob("*.sqlite"):
+            if source.name.startswith("logs_"):
+                continue  # Diagnostic logs carry no conversation/session state.
             key = hashlib.sha256(str(source).encode()).hexdigest()[:24]
             destination = backup / "databases" / key / source.name
             backup_database(source, destination)
@@ -313,16 +444,21 @@ def prepare_read_copies(request, backup, databases, states, copied):
         history = state.parent / "thread_history_1.sqlite"
         if str(history) in databases:
             backup_database(pathlib.Path(databases[str(history)]), directory / history.name)
-        with sqlite3.connect(dest) as db:
+        with database(dest) as db:
             ids = {r[0] for r in db.execute("select id from threads")}
-            for tid in ids:
+            included = ids.intersection(copied)
+            for tid in included:
                 location = home / copied[tid].relative_to(backup / "home")
-                db.execute("update threads set rollout_path=? where id=?", (str(location), tid))
-            paginated = [r[0] for r in db.execute("select id from threads where history_mode='paginated'")]
+                category = copied[tid].relative_to(backup / "home").parts[0]
+                if category in ("sessions", "archived_sessions"):
+                    db.execute("update threads set rollout_path=?,archived=? where id=?", (str(location), int(category == "archived_sessions"), tid))
+                else:
+                    db.execute("update threads set rollout_path=? where id=?", (str(location), tid))
+            paginated = [r[0] for r in db.execute("select id from threads where history_mode='paginated'") if r[0] in included]
         # Some Codex releases initialize the history database lazily, on the
         # first history read. Supply one real copied rollout to trigger that
         # official path, rather than applying Codex's SQL migrations ourselves.
-        seed = min(paginated or ids, key=lambda tid: copied[tid].stat().st_size) if ids else None
+        seed = min(paginated or included, key=lambda tid: copied[tid].stat().st_size) if included else None
         if seed:
             rollout = home / copied[seed].relative_to(backup / "home")
             rollout.parent.mkdir(parents=True, exist_ok=True)
@@ -350,6 +486,33 @@ def history_rows(db, tid):
             for table in HISTORY_TABLES}
 
 
+def copy_thread_history(source, destination, tid):
+    """Copy one thread under the exact original schema, including committed WAL.
+
+    A whole-store backup per thread multiplies storage by the thread count.
+    The immutable whole-store backup already exists; disposable API baselines
+    need only this thread. No Codex schema translation happens here.
+    """
+    with connect(source) as src, database(destination) as dest:
+        expected_schema = history_schema(src)
+        definitions = list(src.execute("select type,sql from sqlite_master where sql is not null and name not like 'sqlite_%'"))
+        for kind, sql in definitions:
+            if kind == "table":
+                dest.execute(sql)
+        for table in ("_sqlx_migrations", *HISTORY_TABLES):
+            query = 'select * from "' + table + '"'
+            cursor = src.execute(query) if table == "_sqlx_migrations" else src.execute(query + " where thread_id=?", (tid,))
+            marks = ",".join("?" for _ in cursor.description)
+            dest.executemany('insert into "' + table + '" values (' + marks + ')', cursor)
+        for kind, sql in definitions:
+            if kind != "table":
+                dest.execute(sql)
+        if history_schema(dest) != expected_schema or history_rows(src, tid) != history_rows(dest, tid):
+            raise RuntimeError("Thread baseline copy differs from its source: " + tid)
+        if dest.execute("pragma quick_check").fetchone()[0] != "ok" or dest.execute("pragma foreign_key_check").fetchone():
+            raise RuntimeError("Thread baseline copy failed integrity checks: " + tid)
+
+
 def restore_history_cache(directory, tids, databases, sources, records):
     """Import complete per-thread projections, never archive/unarchive a rollout.
 
@@ -358,11 +521,13 @@ def restore_history_cache(directory, tids, databases, sources, records):
     the entire import on failure or process termination. This is deliberately
     outside the adapter and verifies the actual source/destination schemas.
     """
+    if not tids:
+        return []  # A fresh home has no lazily-created history DB yet.
     destination = directory / "thread_history_1.sqlite"
     if not destination.exists():
         raise RuntimeError("Codex did not initialize its history database: " + str(destination))
     imported = []
-    with sqlite3.connect(destination.as_uri() + "?mode=rw", uri=True, timeout=10) as target:
+    with database(destination.as_uri() + "?mode=rw", uri=True, timeout=10) as target:
         target.execute("pragma foreign_keys=on")
         target.execute("begin immediate")
         schema = history_schema(target)
@@ -458,8 +623,8 @@ def baseline_thread(request, backup, databases, copied, source_files, tid):
         # even after Codex exits. Never copy only the SQLite main file.
         backup_database(original_backup, dest)
         if history:
-            backup_database(pathlib.Path(history), baseline / "thread_history_1.sqlite")
-        with sqlite3.connect(dest) as db:
+            copy_thread_history(pathlib.Path(history), baseline / "thread_history_1.sqlite", tid)
+        with database(dest) as db:
             for row in db.execute("select id from threads").fetchall():
                 location = copied.get(row[0], backup / "home" / "unavailable" / row[0])
                 db.execute("update threads set rollout_path=? where id=?", (str(location), row[0]))
@@ -467,7 +632,7 @@ def baseline_thread(request, backup, databases, copied, source_files, tid):
     rollout = baseline_home / copied[tid].relative_to(backup / "home")
     rollout.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(copied[tid], rollout)
-    with sqlite3.connect(dest) as db:
+    with database(dest) as db:
         db.execute("update threads set rollout_path=? where id=?", (str(rollout), tid))
     server = Server(request, backup / "baseline.stderr", baseline_home, baseline)
     try:
@@ -523,7 +688,7 @@ def trim_staging_projection(baseline, rollout, original, tid):
             if event.get("type") not in ("session_meta", "turn_context") and not settings:
                 raise RuntimeError("Staged history rebuild added conversation activity: " + tid)
     size = original.stat().st_size
-    with sqlite3.connect(baseline / "thread_history_1.sqlite") as db:
+    with database(baseline / "thread_history_1.sqlite") as db:
         projection = db.execute("select next_rollout_byte_offset,next_rollout_ordinal from thread_history_projection_state where thread_id=?", (tid,)).fetchone()
         if projection != (rollout.stat().st_size, lines + appended):
             raise RuntimeError("Staged rebuild did not project the complete rollout with the expected ordinal boundary: " + tid)
@@ -539,7 +704,9 @@ def trim_staging_projection(baseline, rollout, original, tid):
 
 
 def legacy_thread(request, backup, databases, copied, source_files, tid):
-    return baseline_thread(request, backup, databases, copied, source_files, tid)[0]
+    thread, baseline = baseline_thread(request, backup, databases, copied, source_files, tid)
+    remove_scratch(backup, baseline)
+    return thread
 
 
 def rebuild_missing_history(request, backup, databases, copied, sources):
@@ -568,15 +735,8 @@ def rebuild_missing_history(request, backup, databases, copied, sources):
 def verify_conversation(server, directory, tid, expected, request, backup, databases, copied, sources):
     actual_thread = server.read(tid)
     actual = thread_messages(actual_thread)
-    paginated = False
-    for source in sources:
-        with connect(pathlib.Path(databases[str(source)])) as db:
-            fields = {r[1] for r in db.execute("pragma table_info(threads)")}
-            if "history_mode" in fields and db.execute("select history_mode from threads where id=?", (tid,)).fetchone()[0] == "paginated":
-                paginated = True
-                break
-    if actual == expected and not paginated:
-        return actual, False, False
+    # Compare ordered API history for ordinary threads too. Matching only
+    # user/assistant text cannot detect missing tools, images or ordering.
     reference_thread = legacy_thread(request, backup, databases, copied, sources, tid)
     reference = thread_messages(reference_thread)
     if actual == reference and thread_history(actual_thread) == thread_history(reference_thread):
@@ -593,8 +753,64 @@ def verify_conversation(server, directory, tid, expected, request, backup, datab
     return refreshed, True, True
 
 
+def index_signature(directory):
+    file = directory / "state_5.sqlite"
+    if not file.is_file():
+        raise RuntimeError("Codex index is missing: " + str(file))
+    with connect(file) as db:
+        if "backfill_state" not in tables(db):
+            raise RuntimeError("Codex index has no validated backfill state: " + str(file))
+        statuses = list(db.execute("select status from backfill_state"))
+        if not statuses or any(row[0] != "complete" for row in statuses):
+            raise RuntimeError("Codex index is not complete. No live initialization was started. Complete or explicitly recover this index with Codex before retrying: " + str(file))
+        return set(db.execute("select version,description,success,checksum from _sqlx_migrations"))
+
+
+def require_ready_index(directory, databases):
+    reference = databases.get(str(directory / "state_5.sqlite"))
+    if not reference or index_signature(directory) != index_signature(pathlib.Path(reference).parent):
+        raise RuntimeError("Codex index needs an official schema upgrade before storage transition. Run Codex with this store and retry: " + str(directory))
+
+
+def prepare_index(request, backup, home, directory, databases):
+    if not (directory / "state_5.sqlite").exists():
+        require_absent_index_sidecars(directory)
+        if list(directory.glob("state_*.sqlite")):
+            raise RuntimeError("An existing Codex index version needs an official upgrade: " + str(directory))
+        # Codex indexes real rollout paths into disposable SQLite storage.
+        # A worker crash can only strand this private index, never a live one.
+        stage = backup / "read-copies" / ("bootstrap-" + hashlib.sha256(str(directory).encode()).hexdigest()[:24])
+        stage.mkdir(parents=True)
+        server = Server(request, backup / "bootstrap.stderr", home, stage)
+        server.close()
+        index_signature(stage)
+        directory.mkdir(parents=True, exist_ok=True)
+        temporary = directory / (".agentparty-state-" + backup.name + ".sqlite")
+        backup_database(stage / "state_5.sqlite", temporary)
+        require_absent_index_sidecars(directory)
+        # Windows rename refuses an existing destination. Never overwrite an
+        # index created concurrently by an external CLI/IDE.
+        os.rename(temporary, directory / "state_5.sqlite")
+        databases[str(directory / "state_5.sqlite")] = str(stage / "state_5.sqlite")
+        emit(phase="index-published", directory=str(directory))
+    require_ready_index(directory, databases)
+
+
+def require_absent_index_sidecars(directory):
+    if any((directory / ("state_5.sqlite" + suffix)).exists() for suffix in ("-wal", "-shm", "-journal")):
+        raise RuntimeError("Codex index sidecars remain without a database. Preserve them for recovery; no replacement index was published: " + str(directory))
+
+
+def live_server(request, backup, home, directory, databases):
+    # Each live launch requires an already-complete, current-schema index.
+    # The worker's crash Job Object must never kill a live backfill.
+    require_ready_index(directory, databases)
+    return Server(request, backup / "codex.stderr", home, directory)
+
+
 def prepare_destination(request, backup, home, directory, tids, databases, sources, records):
-    server = Server(request, backup / "codex.stderr", home, directory)
+    prepare_index(request, backup, home, directory, databases)
+    server = live_server(request, backup, home, directory, databases)
     try:
         # Official API locates and indexes rollouts, including archived ones.
         for tid in tids:
@@ -604,7 +820,7 @@ def prepare_destination(request, backup, home, directory, tids, databases, sourc
     return restore_history_cache(directory, tids, databases, sources, records)
 
 
-def verify_metadata(states, databases, native, metadata):
+def verify_metadata(states, databases, native, metadata, excluded_threads=()):
     with connect(native / "state_5.sqlite") as target:
         for (tid, field), values in metadata.items():
             row = target.execute('select "' + field + '" from threads where id=?', (tid,)).fetchone()
@@ -613,7 +829,7 @@ def verify_metadata(states, databases, native, metadata):
         for source in states:
             with connect(pathlib.Path(databases[str(source)])) as db:
                 for table in ("thread_spawn_edges", *AUXILIARY_TABLES):
-                    if not rowset(db, table).issubset(rowset(target, table)):
+                    if not rowset(db, table, excluded_threads).issubset(rowset(target, table)):
                         raise RuntimeError("State requires a separately reviewed migration: " + table)
                 if "thread_sections" in tables(db):
                     fields = {r[1] for r in db.execute("pragma table_info(thread_sections)")}
@@ -669,6 +885,16 @@ def legacy_targets(user_data):
     return targets
 
 
+def missing_member_error(user_data, tid):
+    owners = []
+    for file in (user_data / "party-store/.agent_party_app/parties").glob("*/party.json"):
+        party = json.loads(file.read_text(encoding="utf-8-sig"))
+        owners.extend(file.parent.name + "/" + str(member.get("name"))
+                      for member in party.get("members", []) if member.get("harnessSessionId") == tid)
+    return RuntimeError("A saved member has no indexed rollout: " + tid + "; members: " + ", ".join(owners) +
+                        ". Restore the Codex rollout/index, or explicitly disconnect this member's Codex thread with expectedThreadId and confirm=true. Its AgentParty transcript will be retained.")
+
+
 def run(request):
     if os.name != "nt":
         raise RuntimeError("This transition worker currently supports Windows only.")
@@ -679,11 +905,39 @@ def run(request):
                              text=True, creationflags=subprocess.CREATE_NO_WINDOW).stdout.strip()
     home, native = resolve_home(request)
     user_data = normalized(request["userData"])
-    states, records, sources, metadata = inventory(user_data, native)
+    excluded = {}
+    states, records, sources, metadata = inventory(user_data, native, home, excluded)
+    requested_exclusions = request.get("excludeMissingThreadIds", [])
+    if not isinstance(requested_exclusions, list) or any(not isinstance(tid, str) for tid in requested_exclusions):
+        raise RuntimeError("excludeMissingThreadIds must be an explicit array of thread IDs.")
+    if excluded:
+        emit(phase="missing-rollout-review", excludedMissing=len(excluded), missingRollouts=excluded)
+    if set(requested_exclusions) != set(excluded):
+        raise RuntimeError("Missing unreferenced rollout files require explicit review. Check that storage is online, then retry with excludeMissingThreadIds containing exactly these IDs: " + json.dumps(sorted(excluded)))
     for tid, _ in legacy_targets(user_data):
         if tid not in records:
-            raise RuntimeError("A saved member has no indexed rollout: " + tid)
+            raise missing_member_error(user_data, tid)
+    destinations = [native] if request["mode"] == "native" else [directory for _, directory in legacy_targets(user_data)]
+    for directory in destinations:
+        if (directory / "state_5.sqlite").exists():
+            index_signature(directory)  # Reject incomplete live indexes before any backup/writer.
+    preflight_space(request, home, native, states, records)
     backup, databases, copied, expected, signatures = prepare_backup(request, home, native, states, records)
+    try:
+        run_verified(request, version, home, native, user_data, states, records, sources, metadata,
+                     backup, databases, copied, expected, signatures, excluded)
+    except Exception as failure:
+        try:
+            cleanup_scratch(backup)
+        except Exception as cleanup_failure:
+            raise RuntimeError(f"Storage verification failed: {failure}; scratch cleanup also failed: {cleanup_failure}") from failure
+        raise
+    else:
+        cleanup_scratch(backup)
+
+
+def run_verified(request, version, home, native, user_data, states, records, sources, metadata,
+                 backup, databases, copied, expected, signatures, excluded):
     databases = prepare_read_copies(request, backup, databases, states, copied)
     staged = rebuild_missing_history(request, backup, databases, copied, sources)
     differences = []
@@ -692,7 +946,7 @@ def run(request):
     verified = 0
     if request["mode"] == "native":
         imported.extend(prepare_destination(request, backup, home, native, records, databases, sources, records))
-        server = Server(request, backup / "codex.stderr", home, native)
+        server = live_server(request, backup, home, native, databases)
         try:
             with (backup / "verified.jsonl").open("w", encoding="utf-8") as journal:
                 for tid in records:
@@ -707,12 +961,12 @@ def run(request):
                     emit(phase="verify", verified=verified, total=len(records))
         finally:
             server.close()
-        verify_metadata(states, databases, native, metadata)
+        verify_metadata(states, databases, native, metadata, excluded)
     else:
         targets = legacy_targets(user_data)
         for tid, directory in targets:
             if tid not in records:
-                raise RuntimeError("A saved member has no indexed rollout: " + tid)
+                raise missing_member_error(user_data, tid)
             goals = directory / "goals_1.sqlite"
             if goals.exists():
                 with connect(goals) as db:
@@ -720,7 +974,7 @@ def run(request):
                         raise RuntimeError("Legacy rollback would restore an active goal. Stop that goal explicitly first.")
             directory.mkdir(parents=True, exist_ok=True)
             imported.extend(prepare_destination(request, backup, home, directory, [tid], databases, sources, records))
-            server = Server(request, backup / "codex.stderr", home, directory)
+            server = live_server(request, backup, home, directory, databases)
             try:
                 _, compared, rebuilt = verify_conversation(server, directory, tid, expected[tid], request, backup, databases, copied, sources[tid])
                 if compared:
@@ -754,15 +1008,87 @@ def run(request):
               "historyRefreshed": sorted(refreshed),
               "historyImported": sorted(set(imported)),
               "stagedHistoryRebuilt": staged,
+              "missingUnreferencedRollouts": excluded,
               "goals": "not merged; original DBs retained", "backupPath": str(backup)}
     report_file = backup / "report.json"
     report_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    emit(complete=True, phase="verified", verified=verified, backupPath=str(backup), reportPath=str(report_file))
+    emit(complete=True, phase="verified", verified=verified, excludedMissing=len(excluded), missingRollouts=excluded, backupPath=str(backup), reportPath=str(report_file))
+
+
+def own_worker_process_tree():
+    """An OS Job Object kills orphaned Codex children if this worker crashes.
+
+    The handle is deliberately retained until process exit; closing it earlier
+    would also terminate this worker. Assignment precedes all child launches.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    class Limits(ctypes.Structure):
+        _fields_ = [("process_time", ctypes.c_longlong), ("job_time", ctypes.c_longlong),
+                    ("flags", wintypes.DWORD), ("min_working", ctypes.c_size_t),
+                    ("max_working", ctypes.c_size_t), ("processes", wintypes.DWORD),
+                    ("affinity", ctypes.c_size_t), ("priority", wintypes.DWORD),
+                    ("scheduling", wintypes.DWORD)]
+
+    class Extended(ctypes.Structure):
+        _fields_ = [("limits", Limits), ("io", ctypes.c_ulonglong * 6),
+                    ("process_memory", ctypes.c_size_t), ("job_memory", ctypes.c_size_t),
+                    ("peak_process", ctypes.c_size_t), ("peak_job", ctypes.c_size_t)]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+    kernel.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    kernel.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    handle = kernel.CreateJobObjectW(None, None)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    limits = Extended()
+    limits.limits.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not kernel.SetInformationJobObject(handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if not kernel.AssignProcessToJobObject(handle, kernel.GetCurrentProcess()):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return handle
+
+
+@contextlib.contextmanager
+def worker_lock(file):
+    import msvcrt
+    file.parent.mkdir(parents=True, exist_ok=True)
+    # No replace/unlink: both apps must inspect the same OS-locked file.
+    with file.open("a+b", buffering=0) as lock:
+        lock.seek(0)
+        try:
+            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError as error:
+            raise RuntimeError("Another Codex storage worker holds the maintenance lock.") from error
+        try:
+            if file.stat().st_size == 0:
+                lock.write(b"1")
+            yield
+        finally:
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 if __name__ == "__main__":
     try:
-        run(json.load(sys.stdin))
+        worker_job_handle = own_worker_process_tree() if os.name == "nt" else None
+        if len(sys.argv) == 3 and sys.argv[1] == "--lock":
+            lock_file = normalized(sys.argv[2])
+            with worker_lock(lock_file):
+                emit(locked=True)
+                request = json.load(sys.stdin)
+                if lock_file != normalized(request["userData"]) / "codex-storage.lock":
+                    raise RuntimeError("Worker lock does not match the requested user data directory.")
+                run(request)
+        elif len(sys.argv) == 1:
+            run(json.load(sys.stdin))
+        else:
+            raise RuntimeError("Unexpected storage worker arguments.")
     except Exception as error:
         emit(error=str(error))
         sys.exit(1)

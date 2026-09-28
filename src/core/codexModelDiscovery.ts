@@ -9,7 +9,7 @@ import {
   isStalledSqliteBackfillError,
   withAgentPartyCodexStartup,
 } from "./codexSqliteHome";
-import { CODEX_INITIALIZE_TIMEOUT_MS } from "./codexStartup";
+import { CODEX_INITIALIZE_TIMEOUT_MS, waitForCodexInitialization } from "./codexStartup";
 import { terminateProcessTree } from "./processTree";
 
 /**
@@ -30,10 +30,7 @@ export interface CodexModelDiscoveryOptions {
   timeoutMs?: number;
 }
 
-// Codex 0.155.1 can spend roughly 50 seconds backfilling a brand-new isolated
-// state database before it answers initialize/model-list. Keep discovery
-// bounded, but allow that first-run migration to complete instead of killing
-// it at 20 seconds and leaving every retry with another incomplete database.
+// Only requests after initialize are time-bounded; backfill must finish.
 const DEFAULT_TIMEOUT_MS = CODEX_INITIALIZE_TIMEOUT_MS;
 
 export async function discoverCodexModels(options: CodexModelDiscoveryOptions): Promise<CodexModelInfo[]> {
@@ -143,13 +140,16 @@ async function discoverCodexModelsWithStartupLease(options: CodexModelDiscoveryO
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error(`Codex model discovery timed out after ${timeoutMs}ms.`)), timeoutMs);
-    timer.unref?.();
-  });
-
   try {
-    return await Promise.race([timeout, listModels(request, () => child.stdin.writable && child.stdin.write(`${JSON.stringify({ method: "initialized", params: {} })}\n`))]);
+    await waitForCodexInitialization(request("initialize", {
+      clientInfo: { name: "agentparty", title: "AgentParty", version: "0.1.0" },
+      capabilities: { experimentalApi: true },
+    }), console.warn, timeoutMs);
+    child.stdin.write(`${JSON.stringify({ method: "initialized", params: {} })}\n`);
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(`Codex model discovery timed out after ${timeoutMs}ms.`)), timeoutMs);
+    });
+    return await Promise.race([timeout, listModels(request)]);
   } finally {
     if (timer) clearTimeout(timer);
     lineReader.close();
@@ -158,13 +158,7 @@ async function discoverCodexModelsWithStartupLease(options: CodexModelDiscoveryO
   }
 }
 
-async function listModels(request: (method: string, params: unknown) => Promise<any>, notifyInitialized: () => unknown): Promise<CodexModelInfo[]> {
-  await request("initialize", {
-    clientInfo: { name: "agentparty", title: "AgentParty", version: "0.1.0" },
-    capabilities: { experimentalApi: true },
-  });
-  notifyInitialized();
-
+async function listModels(request: (method: string, params: unknown) => Promise<any>): Promise<CodexModelInfo[]> {
   const rawModels: unknown[] = [];
   let cursor: string | undefined;
   // Paginate defensively; the observed catalog is one page (nextCursor null).

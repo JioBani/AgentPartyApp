@@ -3,7 +3,8 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, IpcMainInvokeEvent, Menu, safeStorage, screen, shell, type WebContents } from "electron";
 import { EmbeddedHarnessRouter } from "../core/routerShim";
-import { finishCodexStartupBeforeQuit } from "../core/codexStartup";
+import { cancelCodexInstallPreparation, finishCodexStartupBeforeQuit, prepareCodexForInstall } from "../core/codexStartup";
+import { assertCodexStorageUnlocked } from "../core/codexStorageLock";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
 import { installCrashHandlers } from "./crashHandler";
@@ -726,6 +727,24 @@ ${body}
     isPackaged: () => app.isPackaged,
     getChannel: () => getSettings().updateChannel,
     persistChannel: (channel) => { updateSettings({ updateChannel: channel }); },
+    prepareForInstall: async () => {
+      assertCodexStorageUnlocked(app.getPath("userData"));
+      const ready = prepareCodexForInstall();
+      codexShutdownPending = true;
+      codexInstallPending = true;
+      await ready;
+      codexShutdownReady = true;
+    },
+    cancelInstallPreparation: () => {
+      codexShutdownReady = false;
+      codexShutdownPending = false;
+      codexInstallPending = false;
+      cancelCodexInstallPreparation();
+      if (codexQuitRequestedDuringInstall) {
+        codexQuitRequestedDuringInstall = false;
+        app.quit();
+      }
+    },
   });
   updateService.on("status", (status: unknown) => {
     for (const entry of registry().all()) {
@@ -1478,6 +1497,14 @@ if (!allowMultiInstance && !app.requestSingleInstanceLock()) {
 } else {
   if (!allowMultiInstance) {
     app.on("second-instance", (_event, argv) => {
+      if (codexShutdownPending) {
+        if (!codexInstallPending && !codexRelaunchQueued) {
+          codexRelaunchQueued = true;
+          app.relaunch({ args: argv.slice(1) });
+        }
+        log("info", "window", "second instance deferred until shutdown or installation completes");
+        return;
+      }
       const requested = workspaceFromArgv(argv);
       log("info", "window", "second instance folded into this process", { argv: argv.slice(1), resolvedWorkspace: requested });
       // The lock is taken before `whenReady`, so a launch that races our own
@@ -1512,6 +1539,7 @@ if (!allowMultiInstance && !app.requestSingleInstanceLock()) {
 }
 
 app.on("activate", () => {
+  if (codexShutdownPending) return;
   if (registry().all().length === 0) {
     void createWindow(defaultWorkspace());
   }
@@ -1519,8 +1547,12 @@ app.on("activate", () => {
 
 let codexShutdownReady = false;
 let codexShutdownPending = false;
+let codexInstallPending = false;
+let codexRelaunchQueued = false;
+let codexQuitRequestedDuringInstall = false;
 app.on("before-quit", (event) => {
   if (!codexShutdownReady) {
+    if (codexInstallPending) codexQuitRequestedDuringInstall = true;
     event.preventDefault();
     if (!codexShutdownPending) {
       codexShutdownPending = true;

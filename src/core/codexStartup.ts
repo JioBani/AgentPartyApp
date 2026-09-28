@@ -3,6 +3,10 @@ let startupTail: Promise<void> = Promise.resolve();
 let shuttingDown = false;
 let storageMaintenance = false;
 
+export function assertCodexStorageMaintenanceIdle(): void {
+  if (storageMaintenance) throw new Error("Codex storage maintenance is running. Wait for it to finish before changing thread connections.");
+}
+
 // Large existing rollout collections can take minutes to index on first launch.
 export const CODEX_INITIALIZE_TIMEOUT_MS = 300_000;
 
@@ -41,18 +45,30 @@ export function finishCodexStartupBeforeQuit(): Promise<void> {
   return startupTail;
 }
 
-export async function waitForCodexInitialization<T>(initialization: Promise<T>): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
+/** An installer must not be spawned while a migration or handshake owns DBs. */
+export function prepareCodexForInstall(): Promise<void> {
+  if (storageMaintenance) throw new Error("Codex 저장소 전환 중에는 업데이트를 설치할 수 없습니다. 전환이 끝난 뒤 다시 시도하세요.");
+  return finishCodexStartupBeforeQuit();
+}
+
+/** If installer dispatch fails, the still-running app can accept starts again. */
+export function cancelCodexInstallPreparation(): void {
+  shuttingDown = false;
+}
+
+export async function waitForCodexInitialization<T>(
+  initialization: Promise<T>,
+  reportSlow: (message: string) => void = console.warn,
+  warningMs = CODEX_INITIALIZE_TIMEOUT_MS,
+): Promise<T> {
+  // A timed-out initialize may still be backfilling SQLite. Killing it leaves
+  // Codex's persistent backfill flag running, blocking CLI/IDE starts as well.
+  const timer = setTimeout(() => reportSlow(
+    `Codex initialization is still running after ${warningMs / 1000}s. Waiting for it to finish to protect its storage.`,
+  ), warningMs);
   try {
-    return await Promise.race([
-      initialization,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(
-          `Codex initialization did not finish within ${CODEX_INITIALIZE_TIMEOUT_MS / 1000}s. The process must be stopped; its storage may require recovery.`,
-        )), CODEX_INITIALIZE_TIMEOUT_MS);
-      }),
-    ]);
+    return await initialization;
   } finally {
-    if (timer) clearTimeout(timer);
+    clearTimeout(timer);
   }
 }

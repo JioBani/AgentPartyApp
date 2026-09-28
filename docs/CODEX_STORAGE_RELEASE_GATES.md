@@ -1,5 +1,35 @@
 # Codex 저장소 전환과 즉시 복귀 후보
 
+> **현재 출시 승인 보류:** Opus 5.5 xhigh 적대적 리뷰 후 디스크 증폭, OS 잠금,
+> 복귀 후보 최소화, 설치 보호를 수정했다. [후속 검토 기록](CODEX_STORAGE_ADVERSARIAL_REVIEW.md)의
+> 남은 조건이 해소되기 전에는 아래 과거 통과 기록만으로 출시·운영 전환을 승인하지 않는다.
+
+## 2026-09-29 적대적 리뷰 후 검증
+
+리뷰어의 최종 결론은 **코드상 신규 blocker 없음**, 아래 설치·운영 조건은 별도다.
+compat 커밋은 `815ac82`이며, 전환 후보는 같은 0.18.0 기준 워크트리에서 수정했다.
+Codex CLI 버전 allowlist는 없다. 스키마/무결성/내용 검증은 유지한다.
+
+- 전체 `npm run build` 통과(타입 검사, renderer/main, engine bundle).
+- 최신 실제 앱 왕복: `.tmp/partial-storage-vday4_w5`.
+- 실제 Codex의 새 4,000개 색인 × 양 앱 discovery/환경 검사: `.tmp/initialize-wait-0t9v2ig8`.
+- 정상 빈 멤버, 과거 ID 복구, 확인/CAS/실행 중 거절, 재연결, 공식 CLI 삭제 후 남은
+  legacy cache와 명시적 누락 제외: `.tmp/partial-storage-net6bugs`.
+- 첫 턴 시작 직후 실제 중단과 저장소 왕복: `.tmp/partial-storage-tnybrszo`.
+- 실제 색인 중 정상 종료와 second-instance 재실행: `.tmp/partial-storage-ken7o9qs`.
+- 구형 스키마/중복 store/오래된 보관 경로와 전체 API 이력: `.tmp/codex-version-39j895a6`.
+- OS lock/worker 강제 종료, 디스크/불완전 index/스키마/sidecar/경로 거절,
+  installer dispatch 및 실제 NSIS macro의 정상 종료 대기·강제 종료 금지 검사 통과.
+
+실제 제품 NSIS의 설치/자동 업데이트/feed recall, 운영 규모의 격리 다중 store 전체 실행은
+아직 완료되지 않았다. 최초 운영 실행을 검증 대신 사용하지 않는다. compat을 먼저 배포해
+복귀 대상으로 고정하고 storage 릴리스 버전은 더 높게 해야 한다. 중간에 mode reader가 없는
+빌드를 게시하지 않으며, 저장소 모드 기록의 version 1 호환 계약을 유지한다.
+
+앱 버전 복귀는 native 저장소를 계속 읽는 계약이다. upstream Codex의 backfill 중 OS/프로세스
+크래시로 이미 망가진 공유 저장소를 앱 다운그레이드가 복구하는 것은 아니다. 이 조건에서
+“모든 문제를 다운그레이드로 즉시 해결”은 보장할 수 없다. 자세한 잔여 조건은 후속 검토 기록에 있다.
+
 2026-09-27 · Windows · Codex 0.155.1
 
 > 현재 변경(2026-09-28): AgentParty 0.18.0 / Codex 0.158.0 기준으로 다시 통합했다.

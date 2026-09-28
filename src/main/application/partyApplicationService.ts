@@ -1,5 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { assertCodexStorageMaintenanceIdle } from "../../core/codexStartup";
+import { assertCodexStorageUnlocked } from "../../core/codexStorageLock";
+import { getUserDataDir } from "../userDataDir";
 import type { BrowserActionInput, BrowserActionResult } from "../../shared/browserControl";
 import { browserTabMember } from "../../shared/browserTab";
 import { randomUUID } from "node:crypto";
@@ -2449,6 +2452,50 @@ export class PartyApplicationService {
     this.persistParty(workspace, state, this.partyIdOf(member));
     log("info", "party", "member closed", { workspace, partyId: member.partyId, member: member.name });
     return this.result(`Member '${member.name}' closed.`, state, member);
+  }
+
+  /** Explicit recovery for a deleted/unpersisted Codex thread; keep the transcript. */
+  disconnectCodexThread(name: string, input: { expectedThreadId?: unknown; confirm?: unknown }, partyId?: string): PartyCommandResult {
+    assertCodexStorageMaintenanceIdle();
+    assertCodexStorageUnlocked(getUserDataDir());
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    if (member.runtime !== "codex") throw new Error("Only a Codex member has a Codex thread connection.");
+    if (member.status !== "closed" || member.sessionId || member.externalCli) {
+      throw new Error("Close this member and its external CLI before disconnecting its Codex thread.");
+    }
+    if (input.confirm !== true || !member.harnessSessionId || input.expectedThreadId !== member.harnessSessionId) {
+      throw new Error("Confirm disconnect with confirm=true and the current expectedThreadId. Its transcript is retained; the next start creates a new Codex conversation.");
+    }
+    const previousThreadId = member.harnessSessionId;
+    member.disconnectedCodexThreadIds = [...new Set([...(member.disconnectedCodexThreadIds || []), previousThreadId])];
+    member.harnessSessionId = undefined;
+    member.lastContextTokens = undefined;
+    member.lastContextWindow = undefined;
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "Codex thread explicitly disconnected; transcript retained", { partyId: member.partyId, member: name, previousThreadId });
+    return this.result(`Codex thread '${previousThreadId}' disconnected. Transcript retained; next start begins a new conversation.`, state, member);
+  }
+
+  reconnectCodexThread(name: string, input: { threadId?: unknown; confirm?: unknown }, partyId?: string): PartyCommandResult {
+    assertCodexStorageMaintenanceIdle();
+    assertCodexStorageUnlocked(getUserDataDir());
+    const workspace = this.workspacePath();
+    const state = this.ensureMigrated(this.repository.read(workspace));
+    const member = this.requireMember(state, name, partyId);
+    if (member.runtime !== "codex" || member.status !== "closed" || member.sessionId || member.externalCli || member.harnessSessionId) {
+      throw new Error("Reconnect requires a closed Codex member with no current thread or external CLI.");
+    }
+    if (input.confirm !== true || typeof input.threadId !== "string" || !member.disconnectedCodexThreadIds?.includes(input.threadId)) {
+      throw new Error("Confirm reconnect with confirm=true and a threadId previously disconnected from this member.");
+    }
+    member.harnessSessionId = input.threadId;
+    member.updatedAt = new Date().toISOString();
+    this.persistParty(workspace, state, this.partyIdOf(member));
+    log("info", "party", "Codex thread explicitly reconnected", { partyId: member.partyId, member: name, threadId: input.threadId });
+    return this.result(`Codex thread '${input.threadId}' reconnected. Codex must still be able to read its original conversation.`, state, member);
   }
 
   removeMember(name: string, partyId?: string): PartyCommandResult {

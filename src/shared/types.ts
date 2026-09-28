@@ -398,6 +398,8 @@ export interface PartyMember {
    * member — or reopening the app — resumes that thread and keeps model context.
    */
   harnessSessionId?: string;
+  /** Explicitly detached Codex references; retained so a mistaken detach can be reversed. */
+  disconnectedCodexThreadIds?: string[];
   /**
    * The native conversation is temporarily owned by an interactive CLI.
    * Kept independently from `status` so closing the tab can remain an explicit

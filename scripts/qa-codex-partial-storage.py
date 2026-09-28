@@ -30,9 +30,14 @@ parser.add_argument('--model', default='gpt-6-luna')
 parser.add_argument('--old-app-root', type=pathlib.Path, help='Built, unmodified pre-transition app checkout for actual downgrade QA')
 parser.add_argument('--old-commit', default='0caade2', help='Expected committed source of the downgrade app')
 parser.add_argument('--rebuild-missing-cache', action='store_true')
+parser.add_argument('--recovery-only', action='store_true', help='Real-app empty-member and explicit stale-reference recovery QA')
+parser.add_argument('--interrupt-only', action='store_true', help='Interrupt a first real turn and verify its saved rollout and migration')
+parser.add_argument('--quit-overlap-home', type=pathlib.Path, help='Synthetic QA home for real cold-backfill quit/second-instance overlap')
 parser.add_argument('--app-exe', type=pathlib.Path, help='Optional packaged conversion executable')
 parser.add_argument('--old-app-exe', type=pathlib.Path, help='Optional packaged downgrade executable')
 args = parser.parse_args()
+if args.old_app_root:
+    args.old_commit = subprocess.check_output(['git','rev-parse','--verify',args.old_commit],cwd=args.old_app_root,text=True).strip()
 assert os.name == 'nt'
 assert args.auth_source.name == 'auth.json' and args.auth_source.is_file()
 assert args.codex.is_file()
@@ -51,6 +56,11 @@ for key in ['ELECTRON_RUN_AS_NODE','AGENTPARTY_E2E','CODEX_SQLITE_HOME','AGENTPA
 env.update(CODEX_HOME=str(HOME),AGENTPARTY_NATIVE_CODEX_HOME=str(HOME),
     AGENTPARTY_USER_DATA=str(DATA),AGENTPARTY_AUTOMATION_PORT='0',
     AGENTPARTY_ALLOW_MULTI_INSTANCE='1',AGENTPARTY_QA='1')
+if args.quit_overlap_home:
+    synthetic = args.quit_overlap_home.resolve()
+    assert synthetic.is_relative_to(ROOT / '.tmp')
+    shutil.copytree(synthetic / 'sessions', HOME / 'sessions')
+    env['AGENTPARTY_ALLOW_MULTI_INSTANCE'] = '0'
 # The harness's inherited CODEX_SQLITE_HOME must never reach a fixture server.
 os.environ.pop('CODEX_SQLITE_HOME',None)
 os.environ['CODEX_HOME']=str(HOME)
@@ -104,12 +114,13 @@ def reply(name, prompt, expected):
     raise AssertionError('No real reply from '+name)
 
 
-def create(name, token):
+def create(name, token=None):
     mcp('member-create',{'name':name,'role':'QA only. Follow explicit prompts. Do not edit files.',
         'harness':'codex','model':args.model,'effort':'low','serviceTier':'inherit',
         'location':{'host':'windows','cwd':str(MAIN_ROOT)},
         'codexPolicy':{'sandbox':'read-only','approval':'never','guardian':False}})
-    return reply(name,'Reply exactly '+token+'.',token)
+    if token is not None:
+        return reply(name,'Reply exactly '+token+'.',token)
 
 
 def close_all():
@@ -121,8 +132,8 @@ def resume(name):
     if member(name).get('status')=='closed': api('/api/party/members/'+name+'/resume',{})
 
 
-def transition(mode):
-    result=api('/api/codex/storage/transition',{'mode':mode,'externalCodexStopped':True,'acceptGoalReset':True})
+def transition(mode, excluded=None):
+    result=api('/api/codex/storage/transition',{'mode':mode,'externalCodexStopped':True,'acceptGoalReset':True,'excludeMissingThreadIds':excluded or []})
     assert result['job']['state']=='running', result
     for i in range(300):
         result=api('/api/codex/storage')
@@ -183,12 +194,171 @@ def stop():
 
 try:
     launch(ROOT,'app')
-    assert api('/api/codex/storage')['mode']=='native'
+    if args.quit_overlap_home:
+        for _ in range(1000):
+            running = []
+            for file in (DATA/'codex-sqlite').glob('*/state_5.sqlite'):
+                try:
+                    with fixture.connect(file) as db:
+                        if 'backfill_state' in fixture.tables(db) and any(r[0]=='running' for r in db.execute('select status from backfill_state')):
+                            running.append(file)
+                except Exception:
+                    continue  # Startup can be between file creation and table creation.
+            if running: break
+            time.sleep(.02)
+        else: raise AssertionError('No active real backfill observed before quit')
+        old_base = base
+        api('/api/window/close', {})
+        with (CASE/'second-instance.stdout').open('w') as out:
+            second = subprocess.Popen(['node','scripts/launch-electron.mjs','--workspace',str(WORKSPACE)], cwd=ROOT,
+                                      env=env,stdout=out,stderr=out,creationflags=subprocess.CREATE_NO_WINDOW)
+            second.wait(timeout=60)
+        launcher.wait(timeout=120)
+        for _ in range(240):
+            for file in (WORKSPACE/'.agent_party_app/instances').glob('*.json'):
+                base = json.loads(file.read_text(encoding='utf-8-sig'))['baseUrl']
+                try:
+                    if base != old_base and api('/api/state')['windows']: break
+                except (OSError, RuntimeError): pass
+            else:
+                time.sleep(.25)
+                continue
+            break
+        else: raise AssertionError('Second-instance request was lost while quitting')
+        original_log = (CASE/'app.stdout').read_text(encoding='utf-8',errors='replace')
+        assert 'second instance deferred' in original_log, 'The test missed the shutdown overlap'
+        for file in running: fixture.index_signature(file.parent)
+        api('/api/window/close', {})
+        for _ in range(120):
+            try: api('/api/health')
+            except (OSError, RuntimeError): break
+            time.sleep(.25)
+        else: raise AssertionError('Relaunched QA app did not exit')
+        validated_app = False
+        report['completed'] = True
+        checkpoint('PASS: real backfill survives normal quit; second instance during drain relaunches a usable window; completed indexes retained')
+        raise SystemExit(0)
+    assert api('/api/codex/storage')['mode']=='legacy'
+    assert not (DATA/'codex-storage.json').exists(), 'Status reads must not pin storage policy'
+    result=transition('native')
+    assert result['job']['state']=='complete' and result['mode']=='native',result
     api('/api/parties',{'name':'Partial Codex storage QA'})
     party=api('/api/state')['party']['currentPartyId']
     for _ in range(120):
         if api('/api/state')['codexModels']['status']=='ready': break
         time.sleep(1)
+    if args.interrupt_only:
+        create('first-interrupt')
+        mcp('send', {'to':'first-interrupt','content':'Write a numbered list of 100 short counting words. Do not use tools.'})
+        for _ in range(1200):
+            session = next(s for s in api('/api/state')['sessions'] if s['id'] == member('first-interrupt')['sessionId'])
+            if session['snapshot'].get('turnState') == 'responding': break
+            time.sleep(.05)
+        else: raise AssertionError('First turn did not reach turn/started')
+        mcp('interrupt', {'target':'first-interrupt'})
+        for _ in range(300):
+            session = next(s for s in api('/api/state')['sessions'] if s['id'] == member('first-interrupt')['sessionId'])
+            if session['snapshot'].get('turnCount',0) > 0: break
+            time.sleep(.1)
+        else: raise AssertionError('Interrupted turn did not settle')
+        close_all()
+        tid = member('first-interrupt').get('harnessSessionId')
+        assert tid
+        server = official(HOME)
+        try:
+            thread = server.read(tid)
+            assert pathlib.Path(thread['path']).is_file()
+            assert thread['turns'][-1]['status'] == 'interrupted', thread['turns'][-1]['status']
+        finally: server.close()
+        result = transition('legacy')
+        assert result['job']['state'] == 'complete', result
+        result = transition('native')
+        assert result['job']['state'] == 'complete', result
+        report['completed'] = True
+        checkpoint('PASS: first real turn interrupted after turn/started retains a resumable rollout and passes native/legacy migration', threadId=tid)
+        raise SystemExit(0)
+    if args.recovery_only:
+        create('empty-member')
+        close_all()
+        assert not member('empty-member').get('harnessSessionId')
+        result = transition('legacy')
+        assert result['job']['state'] == 'complete' and result['mode'] == 'legacy', result
+        checkpoint('PASS: a real empty member persists no thread ID and does not block transition')
+        # Fixture setup: pre-July legacy apps could save a zero-turn ID.
+        # An imported/missing thread can also coexist with a retained transcript.
+        stop()
+        party_file = DATA / 'party-store/.agent_party_app/parties' / party / 'party.json'
+        saved = json.loads(party_file.read_text(encoding='utf-8-sig'))
+        old_id = '01900000-0000-7000-8000-000000000007'
+        for item in saved['members']:
+            if item['name'] == 'empty-member': item['harnessSessionId'] = old_id
+        party_file.write_text(json.dumps(saved), encoding='utf-8')
+        transcript = party_file.parent / 'members/empty-member/transcript.json'
+        transcript.parent.mkdir(parents=True, exist_ok=True)
+        transcript.write_text(json.dumps({'version':1,'blocks':[{'id':'retained','kind':'user','text':'Retained imported conversation evidence'}]}), encoding='utf-8')
+        launch(ROOT, 'recovery-app')
+        blocks = api('/api/party/members/empty-member/transcript')['blocks']
+        result = transition('native')
+        assert result['job']['state'] == 'failed' and result['mode'] == 'legacy', result
+        assert old_id in result['job']['error'] and 'empty-member' in result['job']['error'], result
+        action = '/api/party/members/empty-member/disconnect-codex-thread'
+        for payload in ({'expectedThreadId':old_id}, {'expectedThreadId':'stale','confirm':True}):
+            try: api(action, payload)
+            except RuntimeError as error: assert 'Confirm disconnect' in str(error), error
+            else: raise AssertionError('Disconnect accepted missing consent or stale identity')
+        api(action, {'expectedThreadId':old_id,'confirm':True})
+        assert not member('empty-member').get('harnessSessionId')
+        assert api('/api/party/members/empty-member/transcript')['blocks'] == blocks
+        stop(); launch(ROOT, 'recovery-restarted')
+        assert not member('empty-member').get('harnessSessionId')
+        assert api('/api/party/members/empty-member/transcript')['blocks'] == blocks
+        result = transition('native')
+        assert result['job']['state'] == 'complete' and result['mode'] == 'native', result
+        resume('main'); resume('empty-member')
+        new_id = reply('empty-member', 'Reply exactly RECOVERY_NEW_219.', 'RECOVERY_NEW_219')
+        assert new_id != old_id
+        try: api(action, {'expectedThreadId':new_id,'confirm':True})
+        except RuntimeError as error: assert 'Close this member' in str(error), error
+        else: raise AssertionError('A live member was disconnected')
+        close_all()
+        api(action, {'expectedThreadId':new_id,'confirm':True})
+        assert new_id in member('empty-member')['disconnectedCodexThreadIds']
+        api('/api/party/members/empty-member/reconnect-codex-thread', {'threadId':new_id,'confirm':True})
+        assert member('empty-member')['harnessSessionId'] == new_id
+        result = transition('legacy')
+        assert result['job']['state'] == 'complete', result
+        legacy = legacy_home(new_id)
+        with fixture.connect(legacy / 'thread_history_1.sqlite') as db:
+            retained = fixture.history_rows(db, new_id)
+        stop()
+        # Official destructive CLI action is restricted to this validator's
+        # generated UUID and disposable home; no operational file is addressed.
+        deleted = subprocess.run([str(args.codex), 'delete', new_id, '--force'],
+                                 env={**os.environ, 'CODEX_HOME':str(HOME), 'CODEX_SQLITE_HOME':str(HOME)},
+                                 capture_output=True, text=True, timeout=60)
+        assert deleted.returncode == 0, deleted.stderr
+        with fixture.connect(HOME / 'thread_history_1.sqlite') as db:
+            native_after_delete = fixture.history_rows(db, new_id)
+        launch(ROOT, 'after-official-delete')
+        result = transition('native')
+        assert result['job']['state'] == 'failed' and result['mode'] == 'legacy', result
+        assert new_id in result['job']['error'] and 'empty-member' in result['job']['error'], result
+        api(action, {'expectedThreadId':new_id,'confirm':True})
+        result = transition('native')
+        assert result['job']['state'] == 'failed' and 'explicit review' in result['job']['error'], result
+        assert result['job']['excludedMissing'] == 1 and new_id in result['job']['missingRollouts'], result
+        result = transition('native', [new_id])
+        assert result['job']['state'] == 'complete' and result['mode'] == 'native', result
+        assert result['job']['excludedMissing'] == 1, result
+        final_report = json.loads(pathlib.Path(result['job']['reportPath']).read_text())
+        assert new_id in final_report['missingUnreferencedRollouts']
+        with fixture.connect(legacy / 'thread_history_1.sqlite') as db:
+            assert fixture.history_rows(db, new_id) == retained
+        with fixture.connect(HOME / 'thread_history_1.sqlite') as db:
+            assert fixture.history_rows(db, new_id) == native_after_delete, 'Deleted cached history was resurrected'
+        report['completed'] = True
+        checkpoint('PASS: empty member; missing-index failure; consent/CAS/live guards; transcript retained across restart; real new conversation; healthy reconnect; official delete with stale legacy cache fails while referenced, then excludes without resurrecting or deleting the source cache')
+        raise SystemExit(0)
     a=create('native-a','NATIVE_A_431')
     close_all()
     result=transition('legacy')

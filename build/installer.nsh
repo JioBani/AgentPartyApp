@@ -19,6 +19,36 @@
 !include "WordFunc.nsh"
 !include "WinMessages.nsh"
 
+; Never force-kill an app while Codex initialization or storage maintenance
+; still owns its databases. This also covers manually launched downgrade
+; installers, which cannot use UpdateService's pre-install drain.
+!macro customCheckAppRunning
+  ; quitAndInstall spawns us before app.quit runs. Allow that already-drained
+  ; app to exit naturally before showing a prompt (also for silent updates).
+  StrCpy $R1 0
+  ${If} ${isUpdated}
+    StrCpy $R1 60
+  ${EndIf}
+  IfSilent 0 +2
+    StrCpy $R1 60
+  ${Do}
+    !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
+    ${If} $R0 != 0
+      ${ExitDo}
+    ${EndIf}
+    ${If} $R1 > 0
+      IntOp $R1 $R1 - 1
+      Sleep 1000
+      ${Continue}
+    ${EndIf}
+    IfSilent 0 +3
+      SetErrorLevel 2
+      Quit
+    MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "AgentParty is still running. Close it and wait for Codex initialization or storage maintenance to finish, then choose Retry. The installer will not force-close the app." /SD IDCANCEL IDRETRY +2
+      Quit
+  ${Loop}
+!macroend
+
 !macro customInstall
   DetailPrint "Registering agent-party on PATH"
   ReadRegStr $0 HKCU "Environment" "Path"

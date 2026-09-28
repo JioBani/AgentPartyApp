@@ -26,7 +26,7 @@ export { withAgentPartyCodexStartup } from "./codexStartup";
 
 /**
  * Compatibility path for existing isolated storage and unconverted hosts.
- * New Windows profiles use Codex's own storage policy. Existing recovery
+ * Windows profiles use native storage only after explicit conversion. Existing recovery
  * directories remain discoverable so an upgrade never strands their state.
  */
 export function agentPartyCodexSqliteHome(userDataDir: string, scope: string): string {

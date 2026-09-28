@@ -735,7 +735,11 @@ export class CodexAdapter extends EventEmitter {
           const spawnStarted = Date.now();
           this.ensureProcess();
           this.reportStartupStage("process-spawn", Date.now() - spawnStarted);
-          const ready = waitForCodexInitialization(this.measureStartupStage("initialize", () => this.initializeServer()));
+          const ready = waitForCodexInitialization(this.measureStartupStage("initialize", () => this.initializeServer()), (detail) => {
+            this.log("initialize_slow", { detail });
+            this.emitEvent({ type: "diagnostic", severity: "warning", category: "startup",
+              title: "Codex 저장소 초기화를 기다리고 있습니다", detail, at: now() });
+          });
           this.processInitializing = ready;
           try {
             await ready;

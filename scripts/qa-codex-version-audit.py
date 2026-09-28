@@ -18,10 +18,13 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--fixture', required=True, type=pathlib.Path)
+parser.add_argument('--fixture-db', default='home', help='Database directory relative to the QA fixture')
 parser.add_argument('--codex', required=True, type=pathlib.Path)
 args = parser.parse_args()
 original = args.fixture.resolve()
-assert '.tmp' in original.parts and (original/'home/state_5.sqlite').is_file()
+fixture_db = (original / args.fixture_db).resolve()
+assert fixture_db.is_relative_to(original)
+assert '.tmp' in original.parts and (fixture_db/'state_5.sqlite').is_file()
 (ROOT/'.tmp').mkdir(exist_ok=True)
 case = pathlib.Path(tempfile.mkdtemp(prefix='codex-version-',dir=ROOT/'.tmp')).resolve()
 home, legacy, native, reference = [case/name for name in ('home','codex-sqlite/fixture','native','reference')]
@@ -33,7 +36,7 @@ w=importlib.util.module_from_spec(spec);spec.loader.exec_module(w)
 for name in ('sessions','archived_sessions'):
     if (original/'home'/name).exists(): shutil.copytree(original/'home'/name,home/name)
 (home/'config.toml').write_text('cli_auth_credentials_store="file"\n')
-for file in (original/'home').glob('*.sqlite'): w.backup_database(file,legacy/file.name)
+for file in fixture_db.glob('*.sqlite'): w.backup_database(file,legacy/file.name)
 with sqlite3.connect(legacy/'state_5.sqlite') as db:
     records=db.execute('select id,rollout_path,archived from threads').fetchall()
     for tid,file,_ in records:
@@ -47,6 +50,18 @@ def schema(directory):
             result[file.name]={r[0]:r[1] for r in db.execute("select name,sql from sqlite_master where name not like 'sqlite_%'")}
     return result
 before=schema(legacy)
+# A second legacy store has the pre-archive path/flag for the same thread.
+# This is the actual duplicate-index shape; the surviving rollout is unique.
+stale = case/'codex-sqlite/stale'
+stale.mkdir()
+for file in legacy.glob('*.sqlite'): w.backup_database(file,stale/file.name)
+archived_tid = next(tid for tid,_,a in records if a)
+with sqlite3.connect(stale/'state_5.sqlite') as db:
+    file = pathlib.Path(db.execute('select rollout_path from threads where id=?',(archived_tid,)).fetchone()[0])
+    old_path = home/'sessions'/file.relative_to(home/'archived_sessions')
+    assert not old_path.exists()
+    db.execute('update threads set rollout_path=?,archived=0 where id=?',(str(old_path),archived_tid))
+stale_schema = schema(stale)
 for file in legacy.glob('*.sqlite'): w.backup_database(file,reference/file.name)
 request={'command':str(args.codex.resolve()),'args':[]}
 version=subprocess.check_output([request['command'],'--version'],text=True).strip()
@@ -78,14 +93,20 @@ child=subprocess.run(['python','-B',str(ROOT/'scripts/codex-storage-transition.p
 (case/'transition.stdout').write_text(child.stdout,encoding='utf-8')
 (case/'transition.stderr').write_text(child.stderr,encoding='utf-8')
 assert child.returncode==0,(child.stdout[-3000:],child.stderr)
+for backup in (case/'codex-storage-backups').iterdir():
+    assert not (backup/'baseline').exists(), 'Completed verification retained per-thread scratch'
+    assert not (backup/'read-copies').exists(), 'Completed verification retained upgraded scratch'
 server=w.Server(request,case/'cli.stderr',home,native)
 try:
     for tid,_,_ in records: assert w.thread_history(server.read(tid))==upgraded[tid],tid
 finally:server.close()
 assert schema(legacy)==before,'Original legacy schemas must remain untouched'
+assert schema(stale)==stale_schema,'Stale source schemas must remain untouched'
+with w.connect(stale/'state_5.sqlite') as db:
+    assert db.execute('select rollout_path,archived from threads where id=?',(archived_tid,)).fetchone()==(str(old_path),0)
 with w.connect(legacy/'state_5.sqlite') as db:
     for tid,_,archived in records:
         assert db.execute('select archived from threads where id=?',(tid,)).fetchone()==(archived,)
-summary['transition']='PASS: old-schema legacy -> current native, all API history retained, source schemas untouched'
+summary['transition']='PASS: duplicate old-schema stores with stale archive path -> current native; all API history retained; original schemas and stale indexes untouched; scratch removed'
 (case/'result.json').write_text(json.dumps(summary,indent=2))
 print(json.dumps(summary,indent=2),flush=True)

@@ -1,3 +1,4 @@
+import { withAgentPartyCodexStartup } from "./codexStartup";
 import { spawn } from "node:child_process";
 import * as readline from "node:readline";
 import * as fs from "node:fs";
@@ -199,7 +200,7 @@ export function probeAppServerCommand(
   shell = false,
   hostLabel = "실행 호스트",
 ): Promise<HarnessExecutionProbeResult> {
-  return new Promise((resolve) => {
+  return withAgentPartyCodexStartup(() => new Promise((resolve) => {
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
     let stderrTail = "";
@@ -280,12 +281,7 @@ export function probeAppServerCommand(
     });
 
     timer = setTimeout(() => {
-      finish({
-        ok: false,
-        detail: `Codex app-server가 ${timeoutMs}ms 안에 초기화되지 않았습니다.`,
-        error: evidence(`initialize timeout (command=${command}, cwd=${cwd})`),
-        failureKind: "timeout",
-      });
+      console.warn(`Codex environment initialization is still running after ${timeoutMs}ms (command=${command}, cwd=${cwd}). Waiting to protect its SQLite backfill.`, evidence("No response yet."));
     }, timeoutMs);
 
     try {
@@ -305,7 +301,7 @@ export function probeAppServerCommand(
         failureKind: "protocol",
       });
     }
-  });
+  }));
 }
 
 export function codexRuntimeFailureReason(probe: HarnessExecutionProbeResult): string {
