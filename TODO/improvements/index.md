@@ -1,5 +1,11 @@
 # 개선
 
+## 최우선
+
+- [IMPROVEMENT-012 · 진행 중인 작업을 끊지 않고 방향을 덧붙이기](./IMPROVEMENT-012-steer-running-turn.md) · **최우선**
+
+## 나머지
+
 - [IMPROVEMENT-001 · 파티와 멤버 이름을 한글로도 자연스럽게 짓기](./IMPROVEMENT-001-korean-party-member-names.md)
 - [IMPROVEMENT-002 · 파티와 멤버를 삭제하지 않고 보관했다가 되돌리기](./IMPROVEMENT-002-archive-parties-members.md)
 - [IMPROVEMENT-003 · 다른 파티의 멤버에게도 안전하게 메시지 보내기](./IMPROVEMENT-003-cross-party-messaging.md)
@@ -11,7 +17,6 @@
 - [IMPROVEMENT-009 · 여러 이미지를 첨부해도 어느 것을 말하는지 쉽게 가리키기](./IMPROVEMENT-009-multi-image-references.md)
 - [IMPROVEMENT-010 · 격리된 QA 앱을 한 명령으로 안전하게 띄우기](./IMPROVEMENT-010-qa-app-one-command.md)
 - [IMPROVEMENT-011 · 디스코드 연결을 오래 켜두고도 안정적으로 제어하기](./IMPROVEMENT-011-discord-bridge-hardening.md)
-- [IMPROVEMENT-012 · 진행 중인 작업을 끊지 않고 방향을 덧붙이기](./IMPROVEMENT-012-steer-running-turn.md)
 - [IMPROVEMENT-013 · 다른 파티나 최소화된 창의 승인 요청도 놓치지 않기](./IMPROVEMENT-013-approval-notifications.md)
 - [IMPROVEMENT-014 · Windows 설치와 업데이트의 신뢰 경고를 줄이기](./IMPROVEMENT-014-signed-distribution.md)
 - [IMPROVEMENT-015 · 사용자 설치본에서 내부 개발 문서를 제외하기](./IMPROVEMENT-015-package-user-docs-only.md)
