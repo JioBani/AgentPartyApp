@@ -1,7 +1,7 @@
 """One-time Windows storage transition. Runtime sessions do not depend on Python.
 
 Codex owns the state index. The one-time worker also imports backed-up history
-projections into an identical-version destination, in one SQLite transaction.
+projections into a schema-compatible destination, in one SQLite transaction.
 Original isolated DBs, rollout files and archive flags are retained. Normal
 runtime never reads or writes Codex database schemas.
 """
@@ -25,7 +25,6 @@ except ImportError:
     print(json.dumps({"error": "Python 3.11+ is required for this one-time storage operation."}), flush=True)
     sys.exit(1)
 
-SUPPORTED_VERSION = "codex-cli 0.155.1"
 PROTECTED_THREAD_FIELDS = ("archived", "memory_mode", "thread_section_id", "section_position", "section_entered_at_ms")
 AUXILIARY_TABLES = ("thread_dynamic_tools", "thread_attachments", "projects", "project_roots",
                     "project_idempotency_keys", "remote_control_enrollments", "external_agent_config_imports")
@@ -294,6 +293,58 @@ def history_schema(db):
             set(db.execute("select version,description,success,checksum from _sqlx_migrations")))
 
 
+def prepare_read_copies(request, backup, databases, states, copied):
+    """Let the installed Codex upgrade private DB copies, preserving backups.
+
+    Legacy directories can contain schemas from several CLI releases. We do
+    not translate those schemas ourselves or maintain a CLI version allowlist.
+    Initialization runs against a separate private home, with index paths pointed
+    inside that home, so it cannot reach operational rollouts. Later history
+    baselines supply the actual copied rollout for the thread they read.
+    """
+    readable = dict(databases)
+    for state in states:
+        directory = backup / "read-copies" / hashlib.sha256(str(state.parent).encode()).hexdigest()[:24]
+        home = directory / "home"
+        home.mkdir(parents=True)
+        original = pathlib.Path(databases[str(state)])
+        dest = directory / state.name
+        backup_database(original, dest)
+        history = state.parent / "thread_history_1.sqlite"
+        if str(history) in databases:
+            backup_database(pathlib.Path(databases[str(history)]), directory / history.name)
+        with sqlite3.connect(dest) as db:
+            ids = {r[0] for r in db.execute("select id from threads")}
+            for tid in ids:
+                location = home / copied[tid].relative_to(backup / "home")
+                db.execute("update threads set rollout_path=? where id=?", (str(location), tid))
+            paginated = [r[0] for r in db.execute("select id from threads where history_mode='paginated'")]
+        # Some Codex releases initialize the history database lazily, on the
+        # first history read. Supply one real copied rollout to trigger that
+        # official path, rather than applying Codex's SQL migrations ourselves.
+        seed = min(paginated or ids, key=lambda tid: copied[tid].stat().st_size) if ids else None
+        if seed:
+            rollout = home / copied[seed].relative_to(backup / "home")
+            rollout.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(copied[seed], rollout)
+        server = Server(request, backup / "schema-upgrade.stderr", home, directory)
+        try:
+            if seed:
+                server.read(seed)
+        finally:
+            server.close()
+        with connect(dest) as db:
+            if {r[0] for r in db.execute("select id from threads")} != ids:
+                raise RuntimeError("Codex changed the thread inventory while preparing a read copy: " + str(state))
+            if db.execute("pragma quick_check").fetchone()[0] != "ok":
+                raise RuntimeError("Codex could not prepare a valid read copy: " + str(state))
+        readable[str(state)] = str(dest)
+        if (directory / history.name).exists():
+            readable[str(history)] = str(directory / history.name)
+    emit(phase="read-copies-prepared", count=len(states))
+    return readable
+
+
 def history_rows(db, tid):
     return {table: set(db.execute('select * from "' + table + '" where thread_id=?', (tid,)))
             for table in HISTORY_TABLES}
@@ -305,7 +356,7 @@ def restore_history_cache(directory, tids, databases, sources, records):
     All app-servers are closed by the caller. Inputs are consistent backups;
     only the selected destination history DB is writable. SQLite rolls back
     the entire import on failure or process termination. This is deliberately
-    outside the adapter and is gated by the exact CLI version in run().
+    outside the adapter and verifies the actual source/destination schemas.
     """
     destination = directory / "thread_history_1.sqlite"
     if not destination.exists():
@@ -403,9 +454,11 @@ def baseline_thread(request, backup, databases, copied, source_files, tid):
     dest = baseline / "state_5.sqlite"
     history = databases.get(str(source.parent / "thread_history_1.sqlite"))
     if not dest.exists():
-        shutil.copyfile(original_backup, dest)
+        # Read copies and rebuilt baselines may retain committed pages in WAL
+        # even after Codex exits. Never copy only the SQLite main file.
+        backup_database(original_backup, dest)
         if history:
-            shutil.copyfile(history, baseline / "thread_history_1.sqlite")
+            backup_database(pathlib.Path(history), baseline / "thread_history_1.sqlite")
         with sqlite3.connect(dest) as db:
             for row in db.execute("select id from threads").fetchall():
                 location = copied.get(row[0], backup / "home" / "unavailable" / row[0])
@@ -422,7 +475,9 @@ def baseline_thread(request, backup, databases, copied, source_files, tid):
             paginated = db.execute("select history_mode from threads where id=?", (tid,)).fetchone()[0] == "paginated"
         # Existing cache is authoritative. Rebuild absent cache only on this
         # private copy; operational archive flags and rollouts never change.
-        cached = bool(history) and latest_projection >= 0
+        # A first read can create an empty cursor at zero. That is not a
+        # preserved history projection and must not suppress reconstruction.
+        cached = bool(history) and latest_projection > 0
         rebuild = paginated and not cached
         if rebuild:
             with connect(dest) as db:
@@ -497,7 +552,7 @@ def rebuild_missing_history(request, backup, databases, copied, sources):
             history = databases.get(str(state.parent / "thread_history_1.sqlite"))
             if history:
                 with connect(pathlib.Path(history)) as db:
-                    cached |= db.execute("select 1 from thread_history_projection_state where thread_id=?", (tid,)).fetchone() is not None
+                    cached |= db.execute("select 1 from thread_history_projection_state where thread_id=? and next_rollout_byte_offset>0", (tid,)).fetchone() is not None
         if paginated and not cached:
             _, baseline = baseline_thread(request, backup, databases, copied, candidates, tid)
             state = baseline / "state_5.sqlite"
@@ -619,10 +674,9 @@ def run(request):
         raise RuntimeError("This transition worker currently supports Windows only.")
     if sys.version_info < (3, 11):
         raise RuntimeError("Python 3.11+ is required for this one-time operation.")
+    # Informational only: no CLI release allowlist or version comparison.
     version = subprocess.run([request["command"], *request["args"], "--version"], capture_output=True,
-                             text=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW).stdout.strip()
-    if version != SUPPORTED_VERSION:
-        raise RuntimeError("Validate the installed Codex version before migrating: " + version)
+                             text=True, creationflags=subprocess.CREATE_NO_WINDOW).stdout.strip()
     home, native = resolve_home(request)
     user_data = normalized(request["userData"])
     states, records, sources, metadata = inventory(user_data, native)
@@ -630,6 +684,7 @@ def run(request):
         if tid not in records:
             raise RuntimeError("A saved member has no indexed rollout: " + tid)
     backup, databases, copied, expected, signatures = prepare_backup(request, home, native, states, records)
+    databases = prepare_read_copies(request, backup, databases, states, copied)
     staged = rebuild_missing_history(request, backup, databases, copied, sources)
     differences = []
     refreshed = set()

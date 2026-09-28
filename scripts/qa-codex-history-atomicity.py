@@ -43,7 +43,9 @@ else:
     case = pathlib.Path(tempfile.mkdtemp(prefix='history-atomicity-',dir=ROOT/'.tmp'))
     source = source_case/'home/thread_history_1.sqlite'
     with w.connect(source_case/'home/state_5.sqlite') as db:
-        tid, rollout = db.execute('select id,rollout_path from threads where archived=1 limit 1').fetchone()
+        row = db.execute('select id,rollout_path from threads order by archived desc limit 1').fetchone()
+        assert row, 'The QA fixture must contain a conversation'
+        tid, rollout = row
     target = case/'destination'; target.mkdir()
     snapshot = case/'snapshot/thread_history_1.sqlite'
     w.backup_database(source,snapshot)

@@ -1,6 +1,6 @@
 """Real-app QA for an existing native DB missing legacy conversations.
 
-Requires a built worktree, Windows Codex 0.155.1 and an authenticated QA home.
+Requires a built worktree, installed Windows Codex and an authenticated QA home.
 Uses real provider calls. All new files stay under a unique .tmp directory.
 Member actions use the real member-scoped MCP endpoint. Direct HTTP is used
 for fixture setup, inspection, close/resume and storage administration, which
@@ -22,6 +22,7 @@ import urllib.request
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+MAIN_ROOT = pathlib.Path(subprocess.check_output(['git','rev-parse','--path-format=absolute','--git-common-dir'],cwd=ROOT,text=True).strip()).parent
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--auth-source', required=True, type=pathlib.Path)
 parser.add_argument('--codex', required=True, type=pathlib.Path)
@@ -36,6 +37,7 @@ assert os.name == 'nt'
 assert args.auth_source.name == 'auth.json' and args.auth_source.is_file()
 assert args.codex.is_file()
 assert (ROOT/'dist/main/main.js').is_file(), 'Build this worktree first'
+(ROOT/'.tmp').mkdir(exist_ok=True)
 CASE = pathlib.Path(tempfile.mkdtemp(prefix='partial-storage-', dir=ROOT/'.tmp')).resolve()
 HOME, DATA, WORKSPACE = [CASE/name for name in ['home','user-data','workspace']]
 for directory in [HOME,DATA,WORKSPACE]: directory.mkdir()
@@ -105,7 +107,7 @@ def reply(name, prompt, expected):
 def create(name, token):
     mcp('member-create',{'name':name,'role':'QA only. Follow explicit prompts. Do not edit files.',
         'harness':'codex','model':args.model,'effort':'low','serviceTier':'inherit',
-        'location':{'host':'windows','cwd':str(ROOT.parent/'AgentPartyApp')},
+        'location':{'host':'windows','cwd':str(MAIN_ROOT)},
         'codexPolicy':{'sandbox':'read-only','approval':'never','guardian':False}})
     return reply(name,'Reply exactly '+token+'.',token)
 
@@ -251,16 +253,12 @@ try:
             checkpoint('PASS: rebuilt projection accepts later real turns without skipping history',c=c)
     else:
         assert result['job']['state']=='failed' and result['mode']=='legacy',result
-        assert c in result['job']['error'] and 'archived' in result['job']['error'].lower(),result
-        server=official(source)
-        try: assert fixture.thread_messages(server.read(c))==expected
-        finally: server.close()
         with fixture.connect(source/'state_5.sqlite') as db:
             assert db.execute('select archived from threads where id=?',(c,)).fetchone()==(1,)
-        resume('main'); resume('legacy-b')
-        assert reply('legacy-b','Repeat your previous exact response.','NATIVE_B_LATEST_973')==b
-        checkpoint('REPRODUCED: archived C blocks transition; legacy mode, archive and B latest context preserved',job=result['job'])
-        raise AssertionError('Archived migration is a required release gate')
+        # In the missing-cache fixture, source/read is intentionally empty.
+        # Report the actual transition failure instead of masking it with a
+        # second assertion against that deliberately removed cache.
+        raise AssertionError('Archived migration failed: '+result['job']['error'])
     if args.old_app_root:
         old=args.old_app_root.resolve()
         assert (old/'dist/main/main.js').is_file() and old!=ROOT

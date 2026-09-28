@@ -57,8 +57,9 @@ goal usage are not merged. Active goals are never silently reactivated during
 history repair or rollback. Maintenance blocks new local Codex starts and
 temporarily stops background Codex usage polling.
 
-The asynchronous operation requires Python 3.11+ on PATH and Codex 0.155.1;
-other versions are rejected until validated. Normal sessions do not need Python.
+The asynchronous operation requires Python 3.11+ on PATH and the installed Codex
+app-server. There is no Codex CLI version allowlist or version comparison; its
+reported version is recorded only for diagnostics. Normal sessions do not need Python.
 It backs up SQLite through the consistent backup API (including committed WAL),
 rollouts, app mappings and configuration under
 `userData/codex-storage-backups/<timestamp>`. Allow enough free disk space for
@@ -67,8 +68,12 @@ is not copied. Treat retained backups, including configuration, as private data.
 
 Official Codex APIs create the state index. With all destination app-servers
 closed, the one-time worker imports backed-up history projections into
-`thread_history_1.sqlite` in a single SQLite transaction. CLI version, complete
-history schema and migration checksums must match. It selects the most advanced
+`thread_history_1.sqlite` in a single SQLite transaction. Before importing, the
+installed Codex opens private copies of the source databases and a copied rollout,
+so Codex itself applies any required schema upgrades (including lazy history
+initialization). Original stores and immutable backups are retained. The resulting
+source and destination history schemas and migration checksums must match; this
+is a data-compatibility check, not a CLI release-number gate. It selects the most advanced
 projection of each rollout, rejects equal-position conflicts and loss of existing
 item IDs, and verifies the copied rows and database integrity before commit.
 This also preserves archived and child-thread history without resuming those
