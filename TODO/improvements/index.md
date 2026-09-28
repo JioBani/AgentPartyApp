@@ -20,3 +20,4 @@
 - [IMPROVEMENT-013 · 다른 파티나 최소화된 창의 승인 요청도 놓치지 않기](./IMPROVEMENT-013-approval-notifications.md)
 - [IMPROVEMENT-014 · Windows 설치와 업데이트의 신뢰 경고를 줄이기](./IMPROVEMENT-014-signed-distribution.md)
 - [IMPROVEMENT-015 · 사용자 설치본에서 내부 개발 문서를 제외하기](./IMPROVEMENT-015-package-user-docs-only.md)
+- [IMPROVEMENT-016 · "작업 중" 표시를 모델 아이콘 애니메이션으로 줄이기](./IMPROVEMENT-016-compact-working-indicator.md)
