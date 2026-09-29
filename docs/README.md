@@ -26,5 +26,7 @@ listed here.
 - `기획 노트*.md`: feature-specific design decisions; each file names its scope.
 - `model research/`, `claude-code-ux-research/`, and `codex-ux-research/`: dated
   research records, not current product contracts.
+- [PERF-REPORT-2026-09-29-INPUT-LAG-AND-PERF-API.md](PERF-REPORT-2026-09-29-INPUT-LAG-AND-PERF-API.md):
+  input-lag investigation and the perf API extension plan (scope, cost, priority).
 When changing a user-visible capability, update the capability definition,
 `src/shared/apiSpec.ts`, and [API.md](API.md) together.
