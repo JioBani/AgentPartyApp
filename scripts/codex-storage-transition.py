@@ -335,15 +335,33 @@ def remove_scratch(backup, directory):
     target = normalized(directory)
     if target == root or not target.is_relative_to(root) or directory.is_symlink():
         raise RuntimeError("Refusing to remove scratch outside the backup: " + str(directory))
+
+    def remove_readonly_file(function, filename, error_info):
+        error = error_info[1]
+        path = pathlib.Path(filename)
+        # Git leaves read-only pack/index files in disposable plugin clones.
+        # Clear only that file attribute, never ACLs or permissions on backups.
+        info = path.lstat()
+        if (os.name == "nt" and isinstance(error, PermissionError)
+                and function in (os.unlink, os.remove)
+                and normalized(path).is_relative_to(target)
+                and stat.S_ISREG(info.st_mode)
+                and not info.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT
+                and info.st_file_attributes & stat.FILE_ATTRIBUTE_READONLY):
+            path.chmod(stat.S_IWRITE)
+            function(filename)
+        else:
+            raise error
+
     if directory.exists():
-        # Windows can retain a just-exited process's cwd handle briefly.
-        # Retry only sharing violations, never hide a persistent cleanup error.
+        # Exited Codex/Git processes and file scanners can briefly retain handles.
+        # Access denied may also be transient; persistent ACL errors still fail.
         for attempt in range(20):
             try:
-                shutil.rmtree(directory)
+                shutil.rmtree(directory, onerror=remove_readonly_file)
                 break
             except OSError as error:
-                if error.winerror != 32 or attempt == 19:
+                if getattr(error, "winerror", None) not in (5, 32) or attempt == 19:
                     raise
                 time.sleep(0.25)
 
