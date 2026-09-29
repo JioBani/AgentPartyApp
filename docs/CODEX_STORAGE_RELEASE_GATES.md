@@ -61,8 +61,14 @@
   `.tmp/plugins-clone-*` 일부가 남을 수 있으며, 운영 home은 자동 정리하지 않는다.
 - helper 적용 후 실제 앱 `.tmp/partial-storage-_neltlcp`의 일반/보관/누락 캐시,
   legacy 복귀, compat으로 최신·신규 대화 재개, 재업데이트, 강제 종료 후 복귀 통과.
+- helper 수정 커밋 `9f52223` 전체 타입 검사·Windows 패키징 통과. 해당 패키지의
+  실제 앱 복구 검사 `.tmp/partial-storage-vjgkecck`도 빈 멤버, 누락 thread 거절,
+  확인/CAS/실행 중 보호, 재시작·재연결, 삭제 후 stale cache 제외를 모두 통과했다.
 - 최신 전체 사본 검증: `E:\AgentParty-migration-validation\operational-copy-wh67wr32`.
-  **최종 결과 대기 중이며 아직 통과로 계산하지 않는다.**
+  **386개 저장소 / 924개 대화 전수 검증 및 scratch 정리 통과, worker exit 0.**
+  캐시 11개 재구성, 이력 191개 가져오기, 누락 제외 0개. 외부 QA rollout 1개는
+  검증 사본 안으로 옮겨 포함했으므로 이 PASS가 운영의 외부 경로 문제를 해결한 것은 아니다.
+  이는 운영 worker의 대규모 데이터 검사이며 실제 NSIS 설치를 검증한 결과는 아니다.
 - 운영 사전 검사: native backfill complete, 누락 rollout 없음. 다만 외부 QA 경로의
   `01a0dd36-982f-7540-98c7-24dc36dee71b`가 여전히 전환을 막는다. 저장된 멤버의
   현재 thread 참조는 없지만 자동 제외하거나 삭제하지 않았다.
