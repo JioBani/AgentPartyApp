@@ -16,6 +16,9 @@
   않도록 `st_nlink == 1` 조건을 추가했고, 실제 hardlink의 속성·내용 보존 검사도 통과했다.
   정리 실패 시 전환 중단, private Codex의 플러그인 동기화 비용, stderr의 엄격한 실패
   판정은 운영상 제한으로 남는다. 사용자 런타임의 플러그인 기능은 변경하지 않았다.
+  [공식 플러그인 문서](https://developers.openai.com/plugins/build/plugins)는
+  `enabled=false`여도 marketplace refresh가 파일을 설치/갱신할 수 있다고 명시한다.
+  따라서 이 설정을 다운로드 차단 방법으로 적용하지 않았다.
 - 실제 앱 E2E `.tmp/partial-storage-xyp07x63` 통과: 일반/보관 대화 전환,
   누락 캐시 재구성 후 실제 후속 응답, legacy 복귀, 실제 compat 패키지로 최신/신규
   대화 재개, 재업데이트, 새 앱 강제 종료 후 compat으로 재개. 멤버 작업은 실제
@@ -23,9 +26,22 @@
 - `0.18.2-beta.3` 전체 타입 검사/빌드/Windows 패키징과 릴리스 manifest 생성 통과.
   패키지 간 같은 시나리오도 `.tmp/partial-storage-ksp0ajvw`에서 전부 통과했다.
   이는 실제 실행 파일 간 복귀 검사이며 NSIS 설치/공개 feed recall을 대신하지 않는다.
-- 새 운영 규모 사본: `E:\AgentParty-migration-validation\operational-copy-h6jewcf1`,
-  저장소 386개/대화 924개. **최종 결과 대기 중이며 아직 통과로 계산하지 않는다.**
+- 두 번째 운영 규모 사본: `E:\AgentParty-migration-validation\operational-copy-h6jewcf1`,
+  저장소 386개/대화 924개. 성능 병목을 확인한 뒤 격리된 QA worker만 의도적으로
+  종료했다. 운영 프로세스는 종료하지 않았다. 이 실행은 **미완료**다.
   사본의 요구 공간 추정은 reserve 포함 61,257,372,040 bytes다.
+  성능 진단에서 386개 index의 중복 포함 thread 행은 226,182개였고,
+  같은 백업 DB를 읽기 전용으로 열어 조회하고 닫는 작업 100회에 0.396초가 걸렸다.
+  현재 코드가 대화/저장소 조합마다 DB를 반복해서 여는 비용이 있으므로, 과거의
+  단일 저장소 기반 35분 추정을 이 다중 저장소 환경의 소요 시간으로 사용하지 않는다.
+- 불변 backup/read-copy의 읽기 전용 연결만 검증 범위 안에서 재사용하도록 보완했다.
+  allowlist는 시작 시 고정하므로 live 목적지와 나중에 만든 baseline은 제외된다.
+  연결당 page cache는 256 KiB로 제한하고, 예외가 나도 모든 연결을 닫은 뒤 scratch를
+  정리한다. close 실패도 모아 원래 오류와 함께 보고한다. 추가 적대적 리뷰에서
+  정합성 blocker 없음. 실제 SQLite/Windows 핸들 검사와 원본 보존 검사 통과.
+- 연결 재사용 후 실제 앱 재검증 `.tmp/partial-storage-tiy9bgwp` 전 시나리오 통과.
+- 최신 전체 사본 검증: `E:\AgentParty-migration-validation\operational-copy-9hht1ne8`.
+  **최종 결과 대기 중이며 아직 통과로 계산하지 않는다.**
 - 운영 사전 검사: native backfill complete, 누락 rollout 없음. 다만 외부 QA 경로의
   `01a0dd36-982f-7540-98c7-24dc36dee71b`가 여전히 전환을 막는다. 저장된 멤버의
   현재 thread 참조는 없지만 자동 제외하거나 삭제하지 않았다.

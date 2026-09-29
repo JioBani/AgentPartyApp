@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 import contextlib
+import contextvars
 import stat
 try:
     import tomllib
@@ -53,8 +54,49 @@ def database(*args, **kwargs):
     return sqlite3.connect(*args, factory=ClosingConnection, **kwargs)
 
 
+READ_COPY_CONNECTIONS = contextvars.ContextVar("read_copy_connections", default=None)
+
+
 def connect(file):
+    pool = READ_COPY_CONNECTIONS.get()
+    if pool is not None:
+        allowed, readers = pool
+        if file in allowed:
+            # Only frozen backup/read-copy files qualify. SQLite's normal context
+            # manager ends a transaction without closing this scoped connection.
+            if file not in readers:
+                readers[file] = sqlite3.connect(file.as_uri() + "?mode=ro", uri=True, timeout=10)
+                # Hundreds of stores must not each retain the default 2 MiB cache.
+                readers[file].execute("pragma cache_size=-256")
+            return readers[file]
     return database(file.as_uri() + "?mode=ro", uri=True, timeout=10)
+
+
+@contextlib.contextmanager
+def read_copy_connections(databases):
+    """Reuse immutable source readers, then close all before scratch cleanup.
+
+    Live destinations and later-created replay baselines are deliberately absent
+    from this fixed allowlist. They retain independent, short-lived connections.
+    """
+    readers = {}
+    token = READ_COPY_CONNECTIONS.set(({pathlib.Path(p) for p in databases.values()}, readers))
+    try:
+        yield
+    finally:
+        primary_error = sys.exc_info()[1]
+        READ_COPY_CONNECTIONS.reset(token)
+        failures = []
+        for file, reader in readers.items():
+            try:
+                reader.close()
+            except Exception as error:
+                failures.append(str(file) + ": " + str(error))
+        if failures:
+            message = "Read-copy connections failed to close: " + "; ".join(failures)
+            if primary_error is not None:
+                message = str(primary_error) + "; " + message
+            raise RuntimeError(message) from primary_error
 
 
 def tables(db):
@@ -958,6 +1000,14 @@ def run(request):
 def run_verified(request, version, home, native, user_data, states, records, sources, metadata,
                  backup, databases, copied, expected, signatures, excluded):
     databases = prepare_read_copies(request, backup, databases, states, copied)
+    with read_copy_connections(databases):
+        return verify_prepared_copies(request, version, home, native, user_data, states, records,
+                                      sources, metadata, backup, databases, copied, expected,
+                                      signatures, excluded)
+
+
+def verify_prepared_copies(request, version, home, native, user_data, states, records, sources,
+                          metadata, backup, databases, copied, expected, signatures, excluded):
     staged = rebuild_missing_history(request, backup, databases, copied, sources)
     differences = []
     refreshed = set()
