@@ -162,7 +162,10 @@ class Server:
         if sqlite_home is not None:
             env["CODEX_SQLITE_HOME"] = str(sqlite_home)
         self.stderr = open(stderr_file, "a", encoding="utf-8")
-        self.child = subprocess.Popen([request["command"], *request["args"], "app-server"],
+        # The helper joins its own Job Object before launching Codex. Even when
+        # Codex exits normally, remaining Git/plugin descendants die with that
+        # helper instead of continuing to write into a baseline being removed.
+        self.child = subprocess.Popen([sys.executable, "-B", str(pathlib.Path(__file__).resolve()), "--server"],
             cwd=str(home), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=self.stderr, text=True, encoding="utf-8", creationflags=subprocess.CREATE_NO_WINDOW)
         self.responses = queue.Queue()
@@ -180,6 +183,14 @@ class Server:
 
         threading.Thread(target=receive, daemon=True).start()
         try:
+            command = [request["command"], *request["args"], "app-server"]
+            self.child.stdin.write(json.dumps({"command": command}) + "\n")
+            self.child.stdin.flush()
+            ready = self.wait_response(initializing=True)
+            if ready.get("error"):
+                raise RuntimeError(str(ready["error"]["message"]))
+            if ready != {"id": 0, "result": {"serverReady": True}}:
+                raise RuntimeError("Codex process helper stopped before startup.")
             self.call("initialize", {"clientInfo": {"name": "agentparty-storage-transition", "version": "1"},
                                      "capabilities": {"experimentalApi": True}})
             self.child.stdin.write(json.dumps({"method": "initialized", "params": {}}) + "\n")
@@ -188,18 +199,20 @@ class Server:
             self.close()
             raise
 
+    def wait_response(self, initializing=False):
+        while True:
+            try:
+                return self.responses.get(timeout=300)
+            except queue.Empty as error:
+                if not initializing:
+                    raise RuntimeError("Codex did not answer within 300 seconds; inspect the preserved worker log.") from error
+                emit(phase="initialize-slow", warning="Codex initialization is still running. Waiting without terminating its SQLite backfill.")
+
     def call(self, method, params):
         self.sequence += 1
         self.child.stdin.write(json.dumps({"id": self.sequence, "method": method, "params": params}) + "\n")
         self.child.stdin.flush()
-        while True:
-            try:
-                response = self.responses.get(timeout=300)
-                break
-            except queue.Empty as error:
-                if method != "initialize":
-                    raise RuntimeError("Codex did not answer within 300 seconds; inspect the preserved worker log.") from error
-                emit(phase="initialize-slow", warning="Codex initialization is still running. Waiting without terminating its SQLite backfill.")
+        response = self.wait_response(initializing=method == "initialize")
         if response.get("id") != self.sequence:
             raise RuntimeError("Codex stopped during storage verification; inspect the preserved worker log.")
         if "error" in response:
@@ -404,7 +417,7 @@ def remove_scratch(backup, directory):
                 shutil.rmtree(directory, onerror=remove_readonly_file)
                 break
             except OSError as error:
-                if getattr(error, "winerror", None) not in (5, 32) or attempt == 19:
+                if getattr(error, "winerror", None) not in (5, 32, 145) or attempt == 19:
                     raise
                 time.sleep(0.25)
 
@@ -1123,6 +1136,20 @@ def own_worker_process_tree():
     return handle
 
 
+def run_server_process():
+    """Launch after Job assignment, with a handshake before inheriting stdin.
+
+    Only the launch header is in the pipe when readline runs. The parent waits
+    for serverReady before sending RPC, so Python cannot prefetch Codex input.
+    This process's exit closes its Job and terminates surviving descendants.
+    """
+    header = json.loads(sys.stdin.buffer.readline())
+    child = subprocess.Popen(header["command"], stdin=sys.stdin, stdout=sys.stdout,
+                             stderr=sys.stderr, creationflags=subprocess.CREATE_NO_WINDOW)
+    emit(id=0, result={"serverReady": True})
+    return child.wait()
+
+
 @contextlib.contextmanager
 def worker_lock(file):
     import msvcrt
@@ -1146,7 +1173,9 @@ def worker_lock(file):
 if __name__ == "__main__":
     try:
         worker_job_handle = own_worker_process_tree() if os.name == "nt" else None
-        if len(sys.argv) == 3 and sys.argv[1] == "--lock":
+        if sys.argv[1:] == ["--server"]:
+            sys.exit(run_server_process())
+        elif len(sys.argv) == 3 and sys.argv[1] == "--lock":
             lock_file = normalized(sys.argv[2])
             with worker_lock(lock_file):
                 emit(locked=True)
@@ -1159,5 +1188,8 @@ if __name__ == "__main__":
         else:
             raise RuntimeError("Unexpected storage worker arguments.")
     except Exception as error:
-        emit(error=str(error))
+        if sys.argv[1:] == ["--server"]:
+            emit(id=0, error={"message": str(error)})
+        else:
+            emit(error=str(error))
         sys.exit(1)

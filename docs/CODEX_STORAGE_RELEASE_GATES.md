@@ -39,8 +39,29 @@
   연결당 page cache는 256 KiB로 제한하고, 예외가 나도 모든 연결을 닫은 뒤 scratch를
   정리한다. close 실패도 모아 원래 오류와 함께 보고한다. 추가 적대적 리뷰에서
   정합성 blocker 없음. 실제 SQLite/Windows 핸들 검사와 원본 보존 검사 통과.
+  동일한 실제 백업 DB/조회 100회 비교는 0.396초 → 0.016초였다. 이는 연결 비용
+  비교이지 전체 전환 시간의 배율 추정이 아니다. 전체 사본 실행의 캐시 재구성 단계에서
+  worker working set 약 295 MiB / 관측 시점 peak 약 350 MiB였다.
 - 연결 재사용 후 실제 앱 재검증 `.tmp/partial-storage-tiy9bgwp` 전 시나리오 통과.
-- 최신 전체 사본 검증: `E:\AgentParty-migration-validation\operational-copy-9hht1ne8`.
+- `69d0d00` 전체 빌드/패키징 통과. 최신 패키지의 복구 경계 검사
+  `.tmp/partial-storage-uq2xw3ui` 통과: 빈 멤버, 누락 thread의 전환 거절,
+  명시적 확인/CAS/실행 중 보호, 연결 해제·재연결·재시작 후 transcript 유지,
+  공식 QA thread 삭제 후 stale cache의 명시적 제외와 원본 보존.
+- 연결 재사용 후 전체 사본 `operational-copy-9hht1ne8`은 924개 중 754개 검증 후
+  임시 Git 디렉터리의 WinError 145로 실패했다. 관측된 worker peak working set은
+  약 1,064 MiB였다. 정상 종료한 Codex의 Git 자식이 남아 삭제와 경합하는 문제를
+  실제 Windows 프로세스로 재현했다.
+- 각 검증용 Codex 서버를 별도 helper의 Job Object 안에서 시작하도록 수정했다.
+  helper 종료는 남은 자손도 종료하며, RPC 전 handshake로 stdio 경계를 보장한다.
+  초기화 중에는 기존처럼 강제 종료하지 않고 기다린다. 비동기 종료 직후의
+  WinError 145도 기존 5초 이내 정리 재시도에 포함한다. 저장소 형식은 바꾸지 않는다.
+  `qa-codex-server-tree.py`는 이전 코드의 고아 프로세스를 재현하고 수정 코드의
+  10회 종료·scratch 삭제를 검증했다. 이는 OS 회귀 검사이며 제품 E2E가 아니다.
+  추가 적대적 리뷰에서 blocker 없음. 실제 home의 플러그인 동기화가 중간 종료되면
+  `.tmp/plugins-clone-*` 일부가 남을 수 있으며, 운영 home은 자동 정리하지 않는다.
+- helper 적용 후 실제 앱 `.tmp/partial-storage-_neltlcp`의 일반/보관/누락 캐시,
+  legacy 복귀, compat으로 최신·신규 대화 재개, 재업데이트, 강제 종료 후 복귀 통과.
+- 최신 전체 사본 검증: `E:\AgentParty-migration-validation\operational-copy-wh67wr32`.
   **최종 결과 대기 중이며 아직 통과로 계산하지 않는다.**
 - 운영 사전 검사: native backfill complete, 누락 rollout 없음. 다만 외부 QA 경로의
   `01a0dd36-982f-7540-98c7-24dc36dee71b`가 여전히 전환을 막는다. 저장된 멤버의
