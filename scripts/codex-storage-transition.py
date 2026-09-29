@@ -346,6 +346,7 @@ def remove_scratch(backup, directory):
                 and function in (os.unlink, os.remove)
                 and normalized(path).is_relative_to(target)
                 and stat.S_ISREG(info.st_mode)
+                and info.st_nlink == 1
                 and not info.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT
                 and info.st_file_attributes & stat.FILE_ATTRIBUTE_READONLY):
             path.chmod(stat.S_IWRITE)

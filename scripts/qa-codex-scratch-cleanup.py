@@ -31,6 +31,24 @@ assert not scratch.exists()
 assert original.read_bytes() == b"preserved backup"
 print("PASS: read-only scratch removed; immutable backup retained", flush=True)
 
+scratch.mkdir()
+linked_source = backup / "linked-original"
+linked_source.write_bytes(b"original attributes must survive")
+os.link(linked_source, scratch / "linked-copy")
+linked_source.chmod(stat.S_IREAD)
+try:
+    try:
+        worker.remove_scratch(backup, scratch)
+        raise AssertionError("Read-only hardlink was modified")
+    except PermissionError:
+        pass
+    assert linked_source.stat().st_file_attributes & stat.FILE_ATTRIBUTE_READONLY
+    assert linked_source.read_bytes() == b"original attributes must survive"
+finally:
+    linked_source.chmod(stat.S_IWRITE)
+worker.remove_scratch(backup, scratch)
+print("PASS: hardlinked original attributes retained", flush=True)
+
 kernel = ctypes.WinDLL("kernel32", use_last_error=True)
 kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
                               ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
