@@ -26,8 +26,11 @@ export { withAgentPartyCodexStartup } from "./codexStartup";
 
 /**
  * Compatibility path for existing isolated storage and unconverted hosts.
- * Windows profiles use native storage only after explicit conversion. Existing recovery
- * directories remain discoverable so an upgrade never strands their state.
+ * On Windows it serves only conversations that predate the native cutover
+ * (see codexStoragePolicy). Every fresh isolated store re-indexes the whole
+ * shared rollout folder on first start, which is why they are no longer made
+ * for new threads. Existing recovery directories remain discoverable so an
+ * upgrade never strands their state.
  */
 export function agentPartyCodexSqliteHome(userDataDir: string, scope: string): string {
   const digest = crypto.createHash("sha256").update(scope).digest("hex").slice(0, 16);

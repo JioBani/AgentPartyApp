@@ -67,16 +67,32 @@ also rejects maintenance and is local-only, without a member MCP equivalent.
 ### `GET /api/codex/storage`
 
 Returns `supported`, `version`, `mode` (`native` or `legacy`), optional
-`verifiedAt`, `backupPath`, `reportPath`, and the latest `job`. Jobs report
-`state` (`running`, `complete`, `failed`), `target`, `phase`, progress counts,
-and an actionable `error` on failure. Only a completed verification changes
-`mode`; an interrupted job does not imply that migration completed.
+`verifiedAt`, `backupPath`, `reportPath`, `newThreadsNativeSince`, and the
+latest `job`. Jobs report `state` (`running`, `complete`, `failed`), `target`,
+`phase`, progress counts, and an actionable `error` on failure. Only a completed
+verification changes `mode`; an interrupted job does not imply that migration
+completed.
 
-Windows profiles, including fresh profiles, retain legacy storage until explicitly
-transitioned. Reading status does not create or change a storage-mode record.
-Native mode removes AgentParty's per-member SQLite override and respects the
-user's Codex home, SQLite environment and configuration. WSL/SSH keep their
-existing policy. A corrupt storage-mode record produces an error.
+Native storage removes AgentParty's per-member SQLite override and respects the
+user's Codex home, SQLite environment and configuration. On Windows, AgentParty
+no longer creates isolated per-member stores for new conversations. The first
+desktop start without an explicit mode records `newThreadsNativeSince` in
+`codex-native-cutover.json`. After that time, every new Codex thread uses native
+storage. A conversation keeps its member's isolated store only when that store
+already exists and the thread predates the cutover. Codex thread IDs are
+UUIDv7, so the ID carries the creation time. Existing conversations therefore
+continue without migration, and a new member starts without re-indexing every
+rollout. `mode` still reports `legacy` until the full transition below. An
+explicit record from that transition overrides the cutover: `native` for every
+thread, or `legacy` for every thread after a rollback. WSL/SSH keep their
+existing policy. Reading status never writes either file. A corrupt record or
+cutover produces an error.
+
+AgentParty sets `CODEX_SQLITE_HOME` only on its own Codex children. If the app
+is launched from inside one of them, it discards an inherited value that points
+into its isolated stores and logs `ignored CODEX_SQLITE_HOME inherited from an
+AgentParty member session`. The transition worker also refuses a native
+destination inside those stores.
 
 ### `POST /api/codex/storage/transition`
 

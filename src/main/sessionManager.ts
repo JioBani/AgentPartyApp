@@ -1807,7 +1807,7 @@ export class SessionManager extends EventEmitter {
         // executable overrides (settings → 환경 tab).
         executablePath: settings.codexExecutablePath || undefined,
         storageDir: path.join(this.userDataDir, "logs"),
-        sqliteHome: codexSqliteHomeForScope(this.userDataDir, sqliteScope),
+        sqliteHome: codexSqliteHomeForScope(this.userDataDir, sqliteScope, resumeSessionId),
         resumeSessionId,
         partyBridge: binding?.bridge,
         partyIdentity: binding?.identity,

@@ -5,6 +5,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, IpcMainInvokeEvent, Men
 import { EmbeddedHarnessRouter } from "../core/routerShim";
 import { cancelCodexInstallPreparation, finishCodexStartupBeforeQuit, prepareCodexForInstall } from "../core/codexStartup";
 import { assertCodexStorageUnlocked } from "../core/codexStorageLock";
+import { discardInheritedIsolatedSqliteHome, ensureCodexNativeCutover } from "../core/codexStoragePolicy";
 import { AutomationApiServer } from "./automationApi";
 import { initLogger, log, setDebugLoggingEnabled } from "./logger";
 import { installCrashHandlers } from "./crashHandler";
@@ -384,6 +385,15 @@ async function bootstrap(): Promise<void> {
   const dotEnvKeys = loadDotEnv(app.getAppPath());
   if (dotEnvKeys.length) {
     log("info", "env", ".env values loaded", { keys: dotEnvKeys });
+  }
+  const inheritedSqliteHome = discardInheritedIsolatedSqliteHome(app.getPath("userData"));
+  if (inheritedSqliteHome) {
+    log("warn", "codex-storage", "ignored CODEX_SQLITE_HOME inherited from an AgentParty member session", { path: inheritedSqliteHome });
+  }
+  // Before any Codex process starts: threads created from now on are newer than the cutover.
+  const nativeCutover = ensureCodexNativeCutover(app.getPath("userData"));
+  if (nativeCutover) {
+    log("info", "codex-storage", "new Codex threads use the user's Codex storage from now on", { ...nativeCutover });
   }
   const settings = getSettings();
   setDebugLoggingEnabled(settings.debugEnabled);

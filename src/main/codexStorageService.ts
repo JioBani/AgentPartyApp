@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import { codexExecutable, codexExtraArgs, resolveCodexExecutable } from "../core/codexExec";
-import { readCodexStorageRecord, writeCodexStorageRecord, type CodexStorageMode } from "../core/codexStoragePolicy";
+import { activeCodexNativeCutover, readCodexStorageRecord, writeCodexStorageRecord, type CodexStorageMode } from "../core/codexStoragePolicy";
 import { withCodexStorageMaintenance } from "../core/codexStartup";
 import { assertCodexStorageUnlocked, codexStorageLockPath } from "../core/codexStorageLock";
 import { getSettings } from "./settings";
@@ -58,7 +58,14 @@ export class CodexStorageService {
   private lockPath(): string { return codexStorageLockPath(getUserDataDir()); }
 
   status() {
-    return { supported: process.platform === "win32", ...readCodexStorageRecord(getUserDataDir()), job: this.job };
+    const userData = getUserDataDir();
+    const cutover = activeCodexNativeCutover(userData);
+    return {
+      supported: process.platform === "win32",
+      ...readCodexStorageRecord(userData),
+      ...(cutover ? { newThreadsNativeSince: cutover.newThreadsNativeSince } : {}),
+      job: this.job,
+    };
   }
 
   start(input: { mode?: unknown; externalCodexStopped?: unknown; acceptGoalReset?: unknown; excludeMissingThreadIds?: unknown }) {

@@ -33,6 +33,7 @@ parser.add_argument('--rebuild-missing-cache', action='store_true')
 parser.add_argument('--recovery-only', action='store_true', help='Real-app empty-member and explicit stale-reference recovery QA')
 parser.add_argument('--interrupt-only', action='store_true', help='Interrupt a first real turn and verify its saved rollout and migration')
 parser.add_argument('--quit-overlap-home', type=pathlib.Path, help='Synthetic QA home for real cold-backfill quit/second-instance overlap')
+parser.add_argument('--cutover-only', action='store_true', help='Upgrade from --old-app-root (isolated stores) without a transition: old conversations keep their store, new ones are native')
 parser.add_argument('--app-exe', type=pathlib.Path, help='Optional packaged conversion executable')
 parser.add_argument('--old-app-exe', type=pathlib.Path, help='Optional packaged downgrade executable')
 args = parser.parse_args()
@@ -192,7 +193,118 @@ def stop():
     validated_app=False
 
 
+def wait_models():
+    for _ in range(120):
+        if api('/api/state')['codexModels']['status']=='ready': return
+        time.sleep(1)
+    raise AssertionError('Codex model discovery did not become ready')
+
+
+def native_indexed(tid):
+    return (HOME/'state_5.sqlite').is_file() and indexed(tid) is not None
+
+
+def isolated_stores():
+    root=DATA/'codex-sqlite'
+    return sorted(p.name for p in root.iterdir()) if root.is_dir() else []
+
+
+def store_updated(directory, tid):
+    # The native index backfills every shared rollout, so presence there does not
+    # show which store a live session writes. The writing store advances.
+    with fixture.connect(directory/'state_5.sqlite') as db:
+        return db.execute('select updated_at_ms from threads where id=?',(tid,)).fetchone()[0]
+
+
+def replies_together(tokens):
+    """Send to several new members at once; each must answer exactly once."""
+    def assistant(name):
+        blocks=api('/api/party/members/'+name+'/transcript')['blocks']
+        assert not [b for b in blocks if b.get('kind')=='error'],blocks
+        return [b.get('text') for b in blocks if b.get('kind')=='assistant']
+    for name,token in tokens.items():
+        mcp('send',{'to':name,'content':'Reply exactly '+token+'. Do not use tools.'})
+    for _ in range(180):
+        answered={name:assistant(name) for name in tokens}
+        if all(texts for texts in answered.values()):
+            assert all(texts==[tokens[name]] for name,texts in answered.items()),answered
+            return {name:member(name)['harnessSessionId'] for name in tokens}
+        time.sleep(1)
+    raise AssertionError('Parallel replies did not arrive')
+
+
+def cutover_qa():
+    """Upgrade an isolated-store profile. No transition API is called."""
+    global party
+    old=args.old_app_root.resolve()
+    assert (old/'dist/main/main.js').is_file() and old!=ROOT
+    launch(old,'pre-cutover')
+    api('/api/parties',{'name':'Codex cutover QA'})
+    party=api('/api/state')['party']['currentPartyId']
+    wait_models()
+    a=create('legacy-a','LEGACY_A_318')
+    close_all()
+    store=legacy_home(a)
+    assert store.is_dir() and not native_indexed(a)
+    assert not (DATA/'codex-native-cutover.json').exists()
+    before=isolated_stores()
+    a_written=store_updated(store,a)
+    checkpoint('Fixture: the pre-cutover app keeps A in an isolated store',a=a,stores=before)
+    stop()
+
+    launch(ROOT,'upgraded')
+    status=api('/api/codex/storage')
+    assert status['mode']=='legacy' and status.get('newThreadsNativeSince'),status
+    assert not (DATA/'codex-storage.json').exists(),'The cutover must not pin an explicit mode'
+    wait_models()
+    resume('main'); resume('legacy-a')
+    assert reply('legacy-a','Repeat your previous exact response.','LEGACY_A_318')==a
+    assert reply('legacy-a','Now reply exactly LEGACY_A_UPGRADED_604.','LEGACY_A_UPGRADED_604')==a
+    assert store_updated(store,a)>a_written,'A pre-cutover conversation must keep writing its isolated store'
+    a_written=store_updated(store,a)
+    for name in ('native-b','native-c'): create(name)
+    tids=replies_together({'native-b':'NATIVE_B_275','native-c':'NATIVE_C_913'})
+    assert all(native_indexed(tid) for tid in tids.values()),tids
+    assert isolated_stores()==before,'No isolated store may be created after the cutover'
+    checkpoint('PASS: upgrade keeps A in its store; parallel new members are native with no new isolated store',status=status,**tids)
+
+    close_all(); stop()
+    launch(ROOT,'upgraded-restart')
+    resume('main'); resume('legacy-a'); resume('native-b')
+    assert reply('legacy-a','Repeat your previous exact response.','LEGACY_A_UPGRADED_604')==a
+    assert reply('native-b','Repeat your previous exact response.','NATIVE_B_275')==tids['native-b']
+    assert store_updated(store,a)>a_written and isolated_stores()==before
+    checkpoint('PASS: after restart both the isolated and the native conversation continue')
+
+    close_all(); stop()
+    env['CODEX_SQLITE_HOME']=str(store)  # as if a member session launched the app
+    try: launch(ROOT,'inherited-env')
+    finally: env.pop('CODEX_SQLITE_HOME')
+    log_file=pathlib.Path(api('/api/state')['logs']['logFilePath'])
+    assert 'ignored CODEX_SQLITE_HOME inherited' in log_file.read_text(encoding='utf-8',errors='replace')
+    resume('main')
+    d=create('native-d','NATIVE_D_552')
+    assert native_indexed(d) and isolated_stores()==before,'An inherited member store must not capture new threads'
+    with fixture.connect(store/'state_5.sqlite') as db:
+        assert db.execute('select 1 from threads where id=?',(d,)).fetchone() is None
+    checkpoint('PASS: an app launched with an inherited isolated CODEX_SQLITE_HOME ignores it and logs why',d=d)
+
+    close_all()
+    result=transition('native')
+    assert result['job']['state']=='complete' and result['mode']=='native',result
+    resume('main'); resume('legacy-a'); resume('native-c')
+    assert reply('legacy-a','Repeat your previous exact response.','LEGACY_A_UPGRADED_604')==a
+    assert reply('native-c','Repeat your previous exact response.','NATIVE_C_913')==tids['native-c']
+    checkpoint('PASS: a later full transition migrates the mixed profile and both kinds continue',verified=result['job']['verified'])
+
+
 try:
+    if args.cutover_only:
+        assert args.old_app_root,'--cutover-only needs --old-app-root'
+        cutover_qa()
+        report['completed']=True
+        checkpoint('QA complete')
+        raise SystemExit(0)
     launch(ROOT,'app')
     if args.quit_overlap_home:
         for _ in range(1000):

@@ -271,6 +271,10 @@ def resolve_home(request):
         raise RuntimeError("A relative sqlite_home requires an explicit path review before transition.")
     if request["mode"] == "legacy" and config.get("sqlite_home"):
         raise RuntimeError("Codex config sqlite_home overrides legacy isolation. Resolve that explicit user setting before requesting legacy mode.")
+    # AgentParty sets CODEX_SQLITE_HOME only on its own Codex children. An app
+    # launched from one of them would otherwise migrate into that member's store.
+    if request["mode"] == "native" and sqlite_home.is_relative_to(normalized(request["userData"]) / "codex-sqlite"):
+        raise RuntimeError("The native Codex SQLite home resolves to an AgentParty isolated store: " + str(sqlite_home) + ". Start AgentParty normally, not from a Codex session, and retry.")
     return home, sqlite_home
 
 
