@@ -8,6 +8,18 @@ import { flag, optText, text } from "../methodRegistry";
  */
 export const appRoutes: MethodRoute[] = [
   {
+    name: "codexStorage.get",
+    http: "GET /api/codex/storage",
+    remote: false,
+    handler: (_p, ctx) => ctx.controller.getCodexStorage(),
+  },
+  {
+    name: "codexStorage.transition",
+    http: "POST /api/codex/storage/transition",
+    remote: false,
+    handler: (p, ctx) => ctx.controller.transitionCodexStorage(p),
+  },
+  {
     // Liveness for a caller that only wants to know the app answers. Same body
     // as `state.get` so a probe and a full read cannot disagree.
     name: "app.health",

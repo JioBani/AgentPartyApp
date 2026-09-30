@@ -1,0 +1,590 @@
+"""Real-app QA for an existing native DB missing legacy conversations.
+
+Requires a built worktree, installed Windows Codex and an authenticated QA home.
+Uses real provider calls. All new files stay under a unique .tmp directory.
+Member actions use the real member-scoped MCP endpoint. Direct HTTP is used
+for fixture setup, inspection, close/resume and storage administration, which
+have no corresponding member tool. Codex thread/archive is fixture setup via
+the official app-server API. Optional missing-cache setup removes only derived
+history rows in the disposable QA database, retaining the original rollout.
+"""
+import argparse
+import importlib.util
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+MAIN_ROOT = pathlib.Path(subprocess.check_output(['git','rev-parse','--path-format=absolute','--git-common-dir'],cwd=ROOT,text=True).strip()).parent
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--auth-source', required=True, type=pathlib.Path)
+parser.add_argument('--codex', required=True, type=pathlib.Path)
+parser.add_argument('--model', default='gpt-6-luna')
+parser.add_argument('--old-app-root', type=pathlib.Path, help='Built, unmodified pre-transition app checkout for actual downgrade QA')
+parser.add_argument('--old-commit', default='0caade2', help='Expected committed source of the downgrade app')
+parser.add_argument('--rebuild-missing-cache', action='store_true')
+parser.add_argument('--recovery-only', action='store_true', help='Real-app empty-member and explicit stale-reference recovery QA')
+parser.add_argument('--interrupt-only', action='store_true', help='Interrupt a first real turn and verify its saved rollout and migration')
+parser.add_argument('--quit-overlap-home', type=pathlib.Path, help='Synthetic QA home for real cold-backfill quit/second-instance overlap')
+parser.add_argument('--cutover-only', action='store_true', help='Upgrade from --old-app-root (isolated stores) without a transition: old conversations keep their store, new ones are native')
+parser.add_argument('--app-exe', type=pathlib.Path, help='Optional packaged conversion executable')
+parser.add_argument('--old-app-exe', type=pathlib.Path, help='Optional packaged downgrade executable')
+args = parser.parse_args()
+if args.old_app_root:
+    args.old_commit = subprocess.check_output(['git','rev-parse','--verify',args.old_commit],cwd=args.old_app_root,text=True).strip()
+assert os.name == 'nt'
+assert args.auth_source.name == 'auth.json' and args.auth_source.is_file()
+assert args.codex.is_file()
+assert (ROOT/'dist/main/main.js').is_file(), 'Build this worktree first'
+(ROOT/'.tmp').mkdir(exist_ok=True)
+CASE = pathlib.Path(tempfile.mkdtemp(prefix='partial-storage-', dir=ROOT/'.tmp')).resolve()
+HOME, DATA, WORKSPACE = [CASE/name for name in ['home','user-data','workspace']]
+for directory in [HOME,DATA,WORKSPACE]: directory.mkdir()
+assert CASE.is_relative_to(ROOT/'.tmp')
+shutil.copyfile(args.auth_source,HOME/'auth.json')
+(HOME/'config.toml').write_text('cli_auth_credentials_store="file"\n',encoding='utf-8')
+(DATA/'settings.json').write_text(json.dumps({'locale':'ko','debugLogging':True,'codexExecutablePath':str(args.codex),'idleSleepEnabled':False}))
+env=os.environ.copy()
+for key in ['ELECTRON_RUN_AS_NODE','AGENTPARTY_E2E','CODEX_SQLITE_HOME','AGENTPARTY_CODEX_BIN','AGENTPARTY_CODEX_ARGS']:
+    env.pop(key,None)
+env.update(CODEX_HOME=str(HOME),AGENTPARTY_NATIVE_CODEX_HOME=str(HOME),
+    AGENTPARTY_USER_DATA=str(DATA),AGENTPARTY_AUTOMATION_PORT='0',
+    AGENTPARTY_ALLOW_MULTI_INSTANCE='1',AGENTPARTY_QA='1')
+if args.quit_overlap_home:
+    synthetic = args.quit_overlap_home.resolve()
+    assert synthetic.is_relative_to(ROOT / '.tmp')
+    shutil.copytree(synthetic / 'sessions', HOME / 'sessions')
+    env['AGENTPARTY_ALLOW_MULTI_INSTANCE'] = '0'
+# The harness's inherited CODEX_SQLITE_HOME must never reach a fixture server.
+os.environ.pop('CODEX_SQLITE_HOME',None)
+os.environ['CODEX_HOME']=str(HOME)
+spec=importlib.util.spec_from_file_location('storage_fixture',ROOT/'scripts/codex-storage-transition.py')
+fixture=importlib.util.module_from_spec(spec); spec.loader.exec_module(fixture)
+request={'command':str(args.codex),'args':[]}
+base=None
+validated_app=False
+launcher=None
+party=None
+report={'case':str(CASE),'model':args.model,'steps':[]}
+
+
+def checkpoint(label, **details):
+    report['steps'].append({'label':label,**details})
+    (CASE/'result.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+    print(label,json.dumps(details),flush=True)
+
+
+def api(route, data=None):
+    req=urllib.request.Request(base+route,data=None if data is None else json.dumps(data).encode(),headers={'Content-Type':'application/json'})
+    try: return json.load(urllib.request.urlopen(req,timeout=45))
+    except urllib.error.HTTPError as error: raise RuntimeError(error.read().decode()) from error
+
+
+def mcp(tool, arguments):
+    result=api('/api/parties/'+party+'/members/main/mcp-tools/'+tool,{'arguments':arguments})
+    assert result.get('ok') and result.get('transport')=='mcp-stdio',result
+    return result
+
+
+def member(name):
+    return next(m for m in api('/api/state')['party']['members'] if m['name']==name)
+
+
+def reply(name, prompt, expected):
+    def messages():
+        blocks=api('/api/party/members/'+name+'/transcript')['blocks']
+        errors=[b.get('text') for b in blocks if b.get('kind')=='error']
+        assert not errors,errors
+        return [b.get('text') for b in blocks if b.get('kind')=='assistant']
+    before=len(messages())
+    mcp('send',{'to':name,'content':prompt+' Do not use tools.'})
+    for i in range(180):
+        texts=messages()
+        if len(texts)>before:
+            assert len(texts)==before+1 and texts[-1]==expected, texts[-2:]
+            return member(name)['harnessSessionId']
+        if i%15==0: print('Waiting:',name,i,flush=True)
+        time.sleep(1)
+    raise AssertionError('No real reply from '+name)
+
+
+def create(name, token=None):
+    mcp('member-create',{'name':name,'role':'QA only. Follow explicit prompts. Do not edit files.',
+        'harness':'codex','model':args.model,'effort':'low','serviceTier':'inherit',
+        'location':{'host':'windows','cwd':str(MAIN_ROOT)},
+        'codexPolicy':{'sandbox':'read-only','approval':'never','guardian':False}})
+    if token is not None:
+        return reply(name,'Reply exactly '+token+'.',token)
+
+
+def close_all():
+    for m in api('/api/state')['party']['members']:
+        if m.get('status')!='closed': api('/api/party/members/'+m['name']+'/close',{})
+
+
+def resume(name):
+    if member(name).get('status')=='closed': api('/api/party/members/'+name+'/resume',{})
+
+
+def transition(mode, excluded=None):
+    result=api('/api/codex/storage/transition',{'mode':mode,'externalCodexStopped':True,'acceptGoalReset':True,'excludeMissingThreadIds':excluded or []})
+    assert result['job']['state']=='running', result
+    for i in range(300):
+        result=api('/api/codex/storage')
+        if result['job']['state']!='running': return result
+        if i%15==0: print('Transition:',mode,result['job']['phase'],flush=True)
+        time.sleep(1)
+    raise AssertionError('Storage job timed out')
+
+
+def indexed(tid):
+    file=HOME/'state_5.sqlite'
+    with fixture.connect(file) as db:
+        return db.execute('select archived from threads where id=?',(tid,)).fetchone()
+
+
+def legacy_home(tid):
+    directory=next(p for t,p in fixture.legacy_targets(DATA) if t==tid)
+    assert directory.resolve().is_relative_to(DATA)
+    return directory
+
+
+def official(directory):
+    assert directory.resolve().is_relative_to(CASE)
+    return fixture.Server(request,CASE/'fixture.stderr',HOME,directory)
+
+
+def launch(app_root, label):
+    global launcher, base, validated_app
+    base=None; validated_app=False
+    executable = args.app_exe if app_root==ROOT else args.old_app_exe
+    command = [str(executable.resolve())] if executable else ['node','scripts/launch-electron.mjs']
+    expected_root = executable.resolve().parent/'resources/app.asar/dist/main/application' if executable else app_root/'dist/main/application'
+    with (CASE/(label+'.stdout')).open('w') as out, (CASE/(label+'.stderr')).open('w') as err:
+        launcher=subprocess.Popen([*command,'--workspace',str(WORKSPACE)],
+            cwd=app_root,env=env,stdout=out,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW)
+    for _ in range(120):
+        for file in (WORKSPACE/'.agent_party_app/instances').glob('*.json'):
+            base=json.loads(file.read_text(encoding='utf-8-sig'))['baseUrl']
+            try:
+                state=api('/api/state')
+                assert pathlib.Path(state['runtime']['appRoot']).resolve()==expected_root.resolve(),state['runtime']
+                assert pathlib.Path(state['logs']['logFilePath']).resolve().is_relative_to(DATA)
+                validated_app=True
+                break
+            except OSError: base=None
+        if base: break
+        time.sleep(.5)
+    assert base,'App did not start'
+    (CASE/'connection.json').write_text(json.dumps({'base':base,'home':str(HOME),'data':str(DATA)}))
+
+
+def stop():
+    global validated_app
+    api('/api/window/close',{})
+    launcher.wait(timeout=60)
+    validated_app=False
+
+
+def wait_models():
+    for _ in range(120):
+        if api('/api/state')['codexModels']['status']=='ready': return
+        time.sleep(1)
+    raise AssertionError('Codex model discovery did not become ready')
+
+
+def native_indexed(tid):
+    return (HOME/'state_5.sqlite').is_file() and indexed(tid) is not None
+
+
+def isolated_stores():
+    root=DATA/'codex-sqlite'
+    return sorted(p.name for p in root.iterdir()) if root.is_dir() else []
+
+
+def store_updated(directory, tid):
+    # The native index backfills every shared rollout, so presence there does not
+    # show which store a live session writes. The writing store advances.
+    with fixture.connect(directory/'state_5.sqlite') as db:
+        return db.execute('select updated_at_ms from threads where id=?',(tid,)).fetchone()[0]
+
+
+def replies_together(tokens):
+    """Send to several new members at once; each must answer exactly once."""
+    def assistant(name):
+        blocks=api('/api/party/members/'+name+'/transcript')['blocks']
+        assert not [b for b in blocks if b.get('kind')=='error'],blocks
+        return [b.get('text') for b in blocks if b.get('kind')=='assistant']
+    for name,token in tokens.items():
+        mcp('send',{'to':name,'content':'Reply exactly '+token+'. Do not use tools.'})
+    for _ in range(180):
+        answered={name:assistant(name) for name in tokens}
+        if all(texts for texts in answered.values()):
+            assert all(texts==[tokens[name]] for name,texts in answered.items()),answered
+            return {name:member(name)['harnessSessionId'] for name in tokens}
+        time.sleep(1)
+    raise AssertionError('Parallel replies did not arrive')
+
+
+def cutover_qa():
+    """Upgrade an isolated-store profile. No transition API is called."""
+    global party
+    old=args.old_app_root.resolve()
+    assert (old/'dist/main/main.js').is_file() and old!=ROOT
+    launch(old,'pre-cutover')
+    api('/api/parties',{'name':'Codex cutover QA'})
+    party=api('/api/state')['party']['currentPartyId']
+    wait_models()
+    a=create('legacy-a','LEGACY_A_318')
+    close_all()
+    store=legacy_home(a)
+    assert store.is_dir() and not native_indexed(a)
+    assert not (DATA/'codex-native-cutover.json').exists()
+    before=isolated_stores()
+    a_written=store_updated(store,a)
+    checkpoint('Fixture: the pre-cutover app keeps A in an isolated store',a=a,stores=before)
+    stop()
+
+    launch(ROOT,'upgraded')
+    status=api('/api/codex/storage')
+    assert status['mode']=='legacy' and status.get('newThreadsNativeSince'),status
+    assert not (DATA/'codex-storage.json').exists(),'The cutover must not pin an explicit mode'
+    wait_models()
+    resume('main'); resume('legacy-a')
+    assert reply('legacy-a','Repeat your previous exact response.','LEGACY_A_318')==a
+    assert reply('legacy-a','Now reply exactly LEGACY_A_UPGRADED_604.','LEGACY_A_UPGRADED_604')==a
+    assert store_updated(store,a)>a_written,'A pre-cutover conversation must keep writing its isolated store'
+    a_written=store_updated(store,a)
+    for name in ('native-b','native-c'): create(name)
+    tids=replies_together({'native-b':'NATIVE_B_275','native-c':'NATIVE_C_913'})
+    assert all(native_indexed(tid) for tid in tids.values()),tids
+    assert isolated_stores()==before,'No isolated store may be created after the cutover'
+    checkpoint('PASS: upgrade keeps A in its store; parallel new members are native with no new isolated store',status=status,**tids)
+
+    close_all(); stop()
+    launch(ROOT,'upgraded-restart')
+    resume('main'); resume('legacy-a'); resume('native-b')
+    assert reply('legacy-a','Repeat your previous exact response.','LEGACY_A_UPGRADED_604')==a
+    assert reply('native-b','Repeat your previous exact response.','NATIVE_B_275')==tids['native-b']
+    assert store_updated(store,a)>a_written and isolated_stores()==before
+    checkpoint('PASS: after restart both the isolated and the native conversation continue')
+
+    close_all(); stop()
+    env['CODEX_SQLITE_HOME']=str(store)  # as if a member session launched the app
+    try: launch(ROOT,'inherited-env')
+    finally: env.pop('CODEX_SQLITE_HOME')
+    log_file=pathlib.Path(api('/api/state')['logs']['logFilePath'])
+    assert 'ignored CODEX_SQLITE_HOME inherited' in log_file.read_text(encoding='utf-8',errors='replace')
+    resume('main')
+    d=create('native-d','NATIVE_D_552')
+    assert native_indexed(d) and isolated_stores()==before,'An inherited member store must not capture new threads'
+    with fixture.connect(store/'state_5.sqlite') as db:
+        assert db.execute('select 1 from threads where id=?',(d,)).fetchone() is None
+    checkpoint('PASS: an app launched with an inherited isolated CODEX_SQLITE_HOME ignores it and logs why',d=d)
+
+    close_all()
+    result=transition('native')
+    assert result['job']['state']=='complete' and result['mode']=='native',result
+    resume('main'); resume('legacy-a'); resume('native-c')
+    assert reply('legacy-a','Repeat your previous exact response.','LEGACY_A_UPGRADED_604')==a
+    assert reply('native-c','Repeat your previous exact response.','NATIVE_C_913')==tids['native-c']
+    checkpoint('PASS: a later full transition migrates the mixed profile and both kinds continue',verified=result['job']['verified'])
+
+
+try:
+    if args.cutover_only:
+        assert args.old_app_root,'--cutover-only needs --old-app-root'
+        cutover_qa()
+        report['completed']=True
+        checkpoint('QA complete')
+        raise SystemExit(0)
+    launch(ROOT,'app')
+    if args.quit_overlap_home:
+        for _ in range(1000):
+            running = []
+            for file in (DATA/'codex-sqlite').glob('*/state_5.sqlite'):
+                try:
+                    with fixture.connect(file) as db:
+                        if 'backfill_state' in fixture.tables(db) and any(r[0]=='running' for r in db.execute('select status from backfill_state')):
+                            running.append(file)
+                except Exception:
+                    continue  # Startup can be between file creation and table creation.
+            if running: break
+            time.sleep(.02)
+        else: raise AssertionError('No active real backfill observed before quit')
+        old_base = base
+        api('/api/window/close', {})
+        with (CASE/'second-instance.stdout').open('w') as out:
+            second = subprocess.Popen(['node','scripts/launch-electron.mjs','--workspace',str(WORKSPACE)], cwd=ROOT,
+                                      env=env,stdout=out,stderr=out,creationflags=subprocess.CREATE_NO_WINDOW)
+            second.wait(timeout=60)
+        launcher.wait(timeout=120)
+        for _ in range(240):
+            for file in (WORKSPACE/'.agent_party_app/instances').glob('*.json'):
+                base = json.loads(file.read_text(encoding='utf-8-sig'))['baseUrl']
+                try:
+                    if base != old_base and api('/api/state')['windows']: break
+                except (OSError, RuntimeError): pass
+            else:
+                time.sleep(.25)
+                continue
+            break
+        else: raise AssertionError('Second-instance request was lost while quitting')
+        original_log = (CASE/'app.stdout').read_text(encoding='utf-8',errors='replace')
+        assert 'second instance deferred' in original_log, 'The test missed the shutdown overlap'
+        for file in running: fixture.index_signature(file.parent)
+        api('/api/window/close', {})
+        for _ in range(120):
+            try: api('/api/health')
+            except (OSError, RuntimeError): break
+            time.sleep(.25)
+        else: raise AssertionError('Relaunched QA app did not exit')
+        validated_app = False
+        report['completed'] = True
+        checkpoint('PASS: real backfill survives normal quit; second instance during drain relaunches a usable window; completed indexes retained')
+        raise SystemExit(0)
+    assert api('/api/codex/storage')['mode']=='legacy'
+    assert not (DATA/'codex-storage.json').exists(), 'Status reads must not pin storage policy'
+    result=transition('native')
+    assert result['job']['state']=='complete' and result['mode']=='native',result
+    api('/api/parties',{'name':'Partial Codex storage QA'})
+    party=api('/api/state')['party']['currentPartyId']
+    for _ in range(120):
+        if api('/api/state')['codexModels']['status']=='ready': break
+        time.sleep(1)
+    if args.interrupt_only:
+        create('first-interrupt')
+        mcp('send', {'to':'first-interrupt','content':'Write a numbered list of 100 short counting words. Do not use tools.'})
+        for _ in range(1200):
+            session = next(s for s in api('/api/state')['sessions'] if s['id'] == member('first-interrupt')['sessionId'])
+            if session['snapshot'].get('turnState') == 'responding': break
+            time.sleep(.05)
+        else: raise AssertionError('First turn did not reach turn/started')
+        mcp('interrupt', {'target':'first-interrupt'})
+        for _ in range(300):
+            session = next(s for s in api('/api/state')['sessions'] if s['id'] == member('first-interrupt')['sessionId'])
+            if session['snapshot'].get('turnCount',0) > 0: break
+            time.sleep(.1)
+        else: raise AssertionError('Interrupted turn did not settle')
+        close_all()
+        tid = member('first-interrupt').get('harnessSessionId')
+        assert tid
+        server = official(HOME)
+        try:
+            thread = server.read(tid)
+            assert pathlib.Path(thread['path']).is_file()
+            assert thread['turns'][-1]['status'] == 'interrupted', thread['turns'][-1]['status']
+        finally: server.close()
+        result = transition('legacy')
+        assert result['job']['state'] == 'complete', result
+        result = transition('native')
+        assert result['job']['state'] == 'complete', result
+        report['completed'] = True
+        checkpoint('PASS: first real turn interrupted after turn/started retains a resumable rollout and passes native/legacy migration', threadId=tid)
+        raise SystemExit(0)
+    if args.recovery_only:
+        create('empty-member')
+        close_all()
+        assert not member('empty-member').get('harnessSessionId')
+        result = transition('legacy')
+        assert result['job']['state'] == 'complete' and result['mode'] == 'legacy', result
+        checkpoint('PASS: a real empty member persists no thread ID and does not block transition')
+        # Fixture setup: pre-July legacy apps could save a zero-turn ID.
+        # An imported/missing thread can also coexist with a retained transcript.
+        stop()
+        party_file = DATA / 'party-store/.agent_party_app/parties' / party / 'party.json'
+        saved = json.loads(party_file.read_text(encoding='utf-8-sig'))
+        old_id = '01900000-0000-7000-8000-000000000007'
+        for item in saved['members']:
+            if item['name'] == 'empty-member': item['harnessSessionId'] = old_id
+        party_file.write_text(json.dumps(saved), encoding='utf-8')
+        transcript = party_file.parent / 'members/empty-member/transcript.json'
+        transcript.parent.mkdir(parents=True, exist_ok=True)
+        transcript.write_text(json.dumps({'version':1,'blocks':[{'id':'retained','kind':'user','text':'Retained imported conversation evidence'}]}), encoding='utf-8')
+        launch(ROOT, 'recovery-app')
+        blocks = api('/api/party/members/empty-member/transcript')['blocks']
+        result = transition('native')
+        assert result['job']['state'] == 'failed' and result['mode'] == 'legacy', result
+        assert old_id in result['job']['error'] and 'empty-member' in result['job']['error'], result
+        action = '/api/party/members/empty-member/disconnect-codex-thread'
+        for payload in ({'expectedThreadId':old_id}, {'expectedThreadId':'stale','confirm':True}):
+            try: api(action, payload)
+            except RuntimeError as error: assert 'Confirm disconnect' in str(error), error
+            else: raise AssertionError('Disconnect accepted missing consent or stale identity')
+        api(action, {'expectedThreadId':old_id,'confirm':True})
+        assert not member('empty-member').get('harnessSessionId')
+        assert api('/api/party/members/empty-member/transcript')['blocks'] == blocks
+        stop(); launch(ROOT, 'recovery-restarted')
+        assert not member('empty-member').get('harnessSessionId')
+        assert api('/api/party/members/empty-member/transcript')['blocks'] == blocks
+        result = transition('native')
+        assert result['job']['state'] == 'complete' and result['mode'] == 'native', result
+        resume('main'); resume('empty-member')
+        new_id = reply('empty-member', 'Reply exactly RECOVERY_NEW_219.', 'RECOVERY_NEW_219')
+        assert new_id != old_id
+        try: api(action, {'expectedThreadId':new_id,'confirm':True})
+        except RuntimeError as error: assert 'Close this member' in str(error), error
+        else: raise AssertionError('A live member was disconnected')
+        close_all()
+        api(action, {'expectedThreadId':new_id,'confirm':True})
+        assert new_id in member('empty-member')['disconnectedCodexThreadIds']
+        api('/api/party/members/empty-member/reconnect-codex-thread', {'threadId':new_id,'confirm':True})
+        assert member('empty-member')['harnessSessionId'] == new_id
+        result = transition('legacy')
+        assert result['job']['state'] == 'complete', result
+        legacy = legacy_home(new_id)
+        with fixture.connect(legacy / 'thread_history_1.sqlite') as db:
+            retained = fixture.history_rows(db, new_id)
+        stop()
+        # Official destructive CLI action is restricted to this validator's
+        # generated UUID and disposable home; no operational file is addressed.
+        deleted = subprocess.run([str(args.codex), 'delete', new_id, '--force'],
+                                 env={**os.environ, 'CODEX_HOME':str(HOME), 'CODEX_SQLITE_HOME':str(HOME)},
+                                 capture_output=True, text=True, timeout=60)
+        assert deleted.returncode == 0, deleted.stderr
+        with fixture.connect(HOME / 'thread_history_1.sqlite') as db:
+            native_after_delete = fixture.history_rows(db, new_id)
+        launch(ROOT, 'after-official-delete')
+        result = transition('native')
+        assert result['job']['state'] == 'failed' and result['mode'] == 'legacy', result
+        assert new_id in result['job']['error'] and 'empty-member' in result['job']['error'], result
+        api(action, {'expectedThreadId':new_id,'confirm':True})
+        result = transition('native')
+        assert result['job']['state'] == 'failed' and 'explicit review' in result['job']['error'], result
+        assert result['job']['excludedMissing'] == 1 and new_id in result['job']['missingRollouts'], result
+        result = transition('native', [new_id])
+        assert result['job']['state'] == 'complete' and result['mode'] == 'native', result
+        assert result['job']['excludedMissing'] == 1, result
+        final_report = json.loads(pathlib.Path(result['job']['reportPath']).read_text())
+        assert new_id in final_report['missingUnreferencedRollouts']
+        with fixture.connect(legacy / 'thread_history_1.sqlite') as db:
+            assert fixture.history_rows(db, new_id) == retained
+        with fixture.connect(HOME / 'thread_history_1.sqlite') as db:
+            assert fixture.history_rows(db, new_id) == native_after_delete, 'Deleted cached history was resurrected'
+        report['completed'] = True
+        checkpoint('PASS: empty member; missing-index failure; consent/CAS/live guards; transcript retained across restart; real new conversation; healthy reconnect; official delete with stale legacy cache fails while referenced, then excludes without resurrecting or deleting the source cache')
+        raise SystemExit(0)
+    a=create('native-a','NATIVE_A_431')
+    close_all()
+    result=transition('legacy')
+    assert result['job']['state']=='complete' and result['mode']=='legacy',result
+    resume('main')
+    b=create('legacy-b','LEGACY_B_862')
+    close_all()
+    assert indexed(a) is not None and indexed(b) is None
+    checkpoint('Fixture: native DB contains A, legacy-only B is absent',a=a,b=b)
+    result=transition('native')
+    assert result['job']['state']=='complete' and result['mode']=='native',result
+    assert indexed(a) is not None and indexed(b) is not None
+    resume('main'); resume('native-a'); resume('legacy-b')
+    assert reply('native-a','Repeat your previous exact response.','NATIVE_A_431')==a
+    assert reply('legacy-b','Repeat your previous exact response.','LEGACY_B_862')==b
+    assert reply('legacy-b','Now reply exactly NATIVE_B_LATEST_973.','NATIVE_B_LATEST_973')==b
+    close_all()
+    rollback=transition('legacy')
+    assert rollback['job']['state']=='complete' and rollback['mode']=='legacy',rollback
+    resume('main'); resume('legacy-b')
+    assert reply('legacy-b','Repeat your previous exact response.','NATIVE_B_LATEST_973')==b
+    checkpoint('PASS: missing normal conversation migrated; A/B retained; latest native reply survived rollback')
+    c=create('archived-c','ARCHIVED_C_514')
+    close_all()
+    source=legacy_home(c)
+    server=official(source)
+    try:
+        expected=fixture.thread_messages(server.read(c))
+        assert sum(expected['assistant'].values())==1
+        server.call('thread/archive',{'threadId':c})
+        assert fixture.thread_messages(server.read(c))==expected
+    finally: server.close()
+    assert indexed(a) is not None and indexed(c) is None
+    with fixture.connect(source/'state_5.sqlite') as db:
+        assert db.execute('select archived from threads where id=?',(c,)).fetchone()==(1,)
+    if args.rebuild_missing_cache:
+        import sqlite3
+        assert source.resolve().is_relative_to(CASE)
+        with sqlite3.connect(source/'thread_history_1.sqlite') as db:
+            for table in reversed(fixture.HISTORY_TABLES):
+                db.execute('delete from "'+table+'" where thread_id=?',(c,))
+        checkpoint('Fixture: archived C retains rollout but its derived source cache is missing')
+    checkpoint('Fixture: native DB exists, archived legacy-only C is absent',c=c)
+    result=transition('native')
+    if result['job']['state']=='complete':
+        assert result['mode']=='native' and indexed(c)==(1,)
+        server=official(HOME)
+        try: assert fixture.thread_messages(server.read(c))==expected
+        finally: server.close()
+        checkpoint('PASS: missing archived conversation also migrated without unarchiving',job=result['job'])
+        if args.rebuild_missing_cache:
+            server=official(HOME)
+            try: server.call('thread/unarchive',{'threadId':c})
+            finally: server.close()
+            resume('main'); resume('archived-c')
+            assert reply('archived-c','Repeat your previous exact response.','ARCHIVED_C_514')==c
+            assert reply('archived-c','Now reply exactly REBUILT_LATEST_915.','REBUILT_LATEST_915')==c
+            close_all()
+            server=official(HOME)
+            try: assert sum(fixture.thread_messages(server.read(c))['assistant'].values())==3
+            finally: server.close()
+            checkpoint('PASS: rebuilt projection accepts later real turns without skipping history',c=c)
+    else:
+        assert result['job']['state']=='failed' and result['mode']=='legacy',result
+        with fixture.connect(source/'state_5.sqlite') as db:
+            assert db.execute('select archived from threads where id=?',(c,)).fetchone()==(1,)
+        # In the missing-cache fixture, source/read is intentionally empty.
+        # Report the actual transition failure instead of masking it with a
+        # second assertion against that deliberately removed cache.
+        raise AssertionError('Archived migration failed: '+result['job']['error'])
+    if args.old_app_root:
+        old=args.old_app_root.resolve()
+        assert (old/'dist/main/main.js').is_file() and old!=ROOT
+        assert subprocess.check_output(['git','rev-parse','HEAD'],cwd=old,text=True).strip().startswith(args.old_commit)
+        subprocess.run(['git','diff','--exit-code','HEAD','--','src','scripts','package.json'],cwd=old,check=True)
+        resume('main'); resume('legacy-b')
+        assert reply('legacy-b','Now reply exactly BEFORE_DOWNGRADE_629.','BEFORE_DOWNGRADE_629')==b
+        d=create('native-d','NEW_NATIVE_D_758')
+        close_all()
+        assert not legacy_home(d).exists(), 'D must never have used a legacy DB'
+        # No rollback API or compatibility preparation before launching the
+        # actual old app: only the application binaries change.
+        stop(); launch(old,'old-app')
+        resume('main'); resume('legacy-b'); resume('native-d')
+        assert reply('legacy-b','Repeat your previous exact response.','BEFORE_DOWNGRADE_629')==b
+        assert reply('native-d','Repeat your previous exact response.','NEW_NATIVE_D_758')==d
+        if args.rebuild_missing_cache:
+            resume('archived-c')
+            assert reply('archived-c','Repeat your previous exact response.','REBUILT_LATEST_915')==c
+        assert reply('native-d','Now reply exactly OLD_APP_LATEST_386.','OLD_APP_LATEST_386')==d
+        checkpoint('PASS: actual downgrade app resumes updated and newly created native conversations',oldCommit=args.old_commit,b=b,d=d)
+        close_all(); stop(); launch(ROOT,'reupgraded-app')
+        assert api('/api/codex/storage')['mode']=='native'
+        resume('main'); resume('native-d')
+        assert reply('native-d','Repeat your previous exact response.','OLD_APP_LATEST_386')==d
+        checkpoint('PASS: re-upgrade retains the last response written by the old app',d=d)
+        e=create('crash-new-e','CRASH_NATIVE_E_247')
+        assert not legacy_home(e).exists()
+        # The downgrade must also work when the new app cannot shut down or
+        # run its fallback API. Kill only this validator's owned process tree.
+        subprocess.run(['taskkill','/PID',str(launcher.pid),'/T','/F'],check=True,
+                       capture_output=True,creationflags=subprocess.CREATE_NO_WINDOW)
+        launcher.wait(timeout=30); validated_app=False
+        launch(old,'old-after-crash')
+        resume('main'); resume('crash-new-e')
+        assert reply('crash-new-e','Repeat your previous exact response.','CRASH_NATIVE_E_247')==e
+        checkpoint('PASS: actual downgrade after new-app crash needs no rollback API and preserves new conversation',e=e)
+    report['completed']=True
+    checkpoint('QA complete')
+except Exception as error:
+    checkpoint('QA failed',error=str(error))
+    raise
+finally:
+    if base and validated_app:
+        try: stop()
+        except OSError: pass
+    print('Private artifacts retained at',str(CASE),flush=True)

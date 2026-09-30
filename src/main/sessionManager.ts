@@ -8,7 +8,7 @@ import { CodexAdapter, resolvePartyMcpServerScript, spawnableNodeCommand } from 
 import { partyMcpRuntimeEnv } from "../core/partyMcpRuntime";
 import { GrokAdapter } from "../core/grokAdapter";
 import { MuseAdapter } from "../core/museAdapter";
-import { agentPartyCodexSqliteHome } from "../core/codexSqliteHome";
+import { codexSqliteHomeForScope } from "../core/codexStoragePolicy";
 import { CursorAdapter } from "../core/cursorAdapter";
 import { prepareCursorPartyRuntime } from "../core/cursorPartyPlugin";
 import type { PartyBridge, PartyIdentity } from "../core/partyBridge";
@@ -620,7 +620,7 @@ export class SessionManager extends EventEmitter {
   private reconcileUsageAdapters(): void {
     // Real harness subprocesses would destabilize the deterministic e2e/mock
     // suites (extra processes, ports); those drive usage via injectUsageLimit.
-    if (isE2E()) {
+    if (isE2E() || this.codexStoragePaused) {
       return;
     }
     const backoffUntil: Partial<Record<UsageProviderId, number>> = {};
@@ -883,7 +883,7 @@ export class SessionManager extends EventEmitter {
     try {
       const models = await discoverCodexModels({
         cwd: this.userDataDir,
-        sqliteHome: agentPartyCodexSqliteHome(this.userDataDir, `${this.runtimeScope}:model-discovery`),
+        sqliteHome: codexSqliteHomeForScope(this.userDataDir, `${this.runtimeScope}:model-discovery`),
       });
       this.codexModels = { status: "ready", models, at: new Date().toISOString() };
     } catch (error) {
@@ -1483,6 +1483,35 @@ export class SessionManager extends EventEmitter {
     this.sessions.get(id)?.adapter.setEffort(effort as any);
   }
 
+  supportsLiveServiceTier(id: string): boolean {
+    return Boolean(this.sessions.get(id)?.adapter.setServiceTier);
+  }
+
+  private codexStoragePaused = false;
+
+  /** Maintenance never implicitly interrupts a foreground member. */
+  pauseCodexForStorage(): () => void {
+    if (this.codexStoragePaused) throw new Error("Codex storage maintenance is already running.");
+    const live = [...this.sessions.values()].filter((s) => !s.closed && s.adapter instanceof CodexAdapter);
+    if (live.length) {
+      throw new Error(`Close all local Codex members before changing storage (${live.length} sessions remain). Their saved conversations will be kept.`);
+    }
+    this.codexStoragePaused = true;
+    for (const [provider, source] of this.usageAdapters) {
+      if (source instanceof CodexAdapter) this.disposeUsageAdapter(provider);
+    }
+    return () => {
+      this.codexStoragePaused = false;
+      this.reconcileUsageAdapters();
+    };
+  }
+
+  setServiceTier(id: string, tier: string | undefined): void {
+    const adapter = this.sessions.get(id)?.adapter;
+    if (!adapter?.setServiceTier) throw new Error(`Session '${id}' cannot change its serving tier live.`);
+    adapter.setServiceTier(tier);
+  }
+
   setThinking(id: string, mode: string, budget?: number): void {
     this.sessions.get(id)?.adapter.setThinking(mode, budget);
   }
@@ -1652,6 +1681,9 @@ export class SessionManager extends EventEmitter {
   private createAdapter(id: string, cwd: string, resumeSessionId: string | undefined, request: CreateSessionInput, binding?: SessionPartyBinding, usageSourceId?: string): HarnessSession {
     const settings = getSettings();
     const selectedHarness = request.selectedHarnessId || settings.selectedHarnessId;
+    if (selectedHarness === "codex" && this.codexStoragePaused) {
+      throw new Error("Codex storage maintenance is running. Start this member after it finishes.");
+    }
     const harnessDefaults = harnessDefaultsOf(settings, selectedHarness);
     const selectedModel = request.model || harnessDefaults.model;
     // Resolved ONCE here rather than inside each adapter: the primer is a user
@@ -1775,7 +1807,7 @@ export class SessionManager extends EventEmitter {
         // executable overrides (settings → 환경 tab).
         executablePath: settings.codexExecutablePath || undefined,
         storageDir: path.join(this.userDataDir, "logs"),
-        sqliteHome: agentPartyCodexSqliteHome(this.userDataDir, sqliteScope),
+        sqliteHome: codexSqliteHomeForScope(this.userDataDir, sqliteScope, resumeSessionId),
         resumeSessionId,
         partyBridge: binding?.bridge,
         partyIdentity: binding?.identity,

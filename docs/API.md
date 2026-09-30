@@ -25,6 +25,180 @@ If the port is already in use, the app binds to a free local port. The current U
   `{ "ok": false, "error": "<reason>" }`; an unhandled failure answers `500` in
   the same shape.
 
+## Codex storage administration (Windows, desktop-local)
+
+### `POST /api/party/members/:name/disconnect-codex-thread`
+
+Explicit recovery for a deleted or unpersisted Codex conversation reference:
+
+```json
+{ "expectedThreadId": "current-codex-thread-id", "confirm": true }
+```
+
+The Codex member must be closed, with no external CLI handoff or storage
+maintenance running. The ID must still match. This disconnects only the native
+conversation reference and clears its context meter; the member, AgentParty
+transcript and Codex files remain. The next resume creates a new Codex conversation
+without the previous model context. It does not repair or recover deleted history.
+It does not remove stale Codex index rows. Migration can exclude an absent rollout
+only when no saved member refers to it and none of its indexed paths exists,
+after the caller explicitly acknowledges the exact IDs described below.
+The excluded ID/paths are reported as `missingUnreferencedRollouts`; original and
+backup DB caches remain, and deleted cached content is not imported into native.
+Missing-rollout migration errors identify the party/member so the user can choose
+restoring the rollout or this explicit disconnect. There is no member MCP tool
+for this administrative action; use HTTP through `AppController.handlePartyAction`.
+The member retains `disconnectedCodexThreadIds` as an append-only recovery history.
+This administrative method is local-only (`remote:false`), published in the API
+spec through the shared member route table.
+
+### `POST /api/party/members/:name/reconnect-codex-thread`
+
+```json
+{ "threadId": "previously-disconnected-id", "confirm": true }
+```
+
+Reverses a mistaken disconnect for a closed Codex member that has no current
+thread or external CLI. Only IDs in that member's disconnect history are accepted.
+It restores the reference, without editing transcripts or Codex files. The
+original Codex conversation must still exist for resume to succeed. This action
+also rejects maintenance and is local-only, without a member MCP equivalent.
+
+### `GET /api/codex/storage`
+
+Returns `supported`, `version`, `mode` (`native` or `legacy`), optional
+`verifiedAt`, `backupPath`, `reportPath`, `newThreadsNativeSince`, and the
+latest `job`. Jobs report `state` (`running`, `complete`, `failed`), `target`,
+`phase`, progress counts, and an actionable `error` on failure. Only a completed
+verification changes `mode`; an interrupted job does not imply that migration
+completed.
+
+Native storage removes AgentParty's per-member SQLite override and respects the
+user's Codex home, SQLite environment and configuration. On Windows, AgentParty
+no longer creates isolated per-member stores for new conversations. The first
+desktop start without an explicit mode records `newThreadsNativeSince` in
+`codex-native-cutover.json`. After that time, every new Codex thread uses native
+storage. A conversation keeps its member's isolated store only when that store
+already exists and the thread predates the cutover. Codex thread IDs are
+UUIDv7, so the ID carries the creation time. Existing conversations therefore
+continue without migration, and a new member starts without re-indexing every
+rollout. `mode` still reports `legacy` until the full transition below. An
+explicit record from that transition overrides the cutover: `native` for every
+thread, or `legacy` for every thread after a rollback. WSL/SSH keep their
+existing policy. Reading status never writes either file. A corrupt record or
+cutover produces an error.
+
+AgentParty sets `CODEX_SQLITE_HOME` only on its own Codex children. If the app
+is launched from inside one of them, it discards an inherited value that points
+into its isolated stores and logs `ignored CODEX_SQLITE_HOME inherited from an
+AgentParty member session`. The transition worker also refuses a native
+destination inside those stores.
+
+### `POST /api/codex/storage/transition`
+
+```json
+{ "mode": "native", "externalCodexStopped": true, "acceptGoalReset": true }
+```
+
+Use `mode: "legacy"` for the verified fallback. This administration capability
+has no member MCP equivalent; invoke its local HTTP route directly.
+
+Missing, unreferenced rollouts stop the operation before backup. The job exposes
+`excludedMissing` and `missingRollouts` (ID to indexed paths). Check that the
+storage and relevant directories are available and decide whether to exclude
+those conversations. A retry can supply `excludeMissingThreadIds: ["id", ...]`;
+the set must exactly match the currently missing IDs. Changes in that set cause
+another refusal. Referenced threads, missing paths outside the selected home,
+unavailable rollout roots and permission errors cannot be approved this way.
+Success retains the count in the job and the full list in its `reportPath`.
+
+Before calling, close all local Codex members (their saved conversations remain)
+and stop external Codex CLI/IDE writers. The two acknowledgements are required:
+AgentParty cannot prove external writers have stopped, and goal IDs/accumulated
+goal usage are not merged. Active goals are never silently reactivated during
+history repair or rollback. Maintenance blocks new local Codex starts and
+temporarily stops background Codex usage polling.
+The worker holds a Windows byte-range lock before accepting its request. Both
+candidate apps check that OS lock, not a stored PID; process exit releases it
+even after a crash. An empty or corrupt stale marker does not block startup.
+The worker owns a Windows Job Object so its Codex descendants cannot survive
+its termination. Do not delete the marker while a worker is running.
+
+The asynchronous operation requires Python 3.11+ on PATH and the installed Codex
+app-server. There is no Codex CLI version allowlist or version comparison; its
+reported version is recorded only for diagnostics. Normal sessions do not need Python.
+It backs up SQLite through the consistent backup API (including committed WAL),
+rollouts, app mappings and configuration under
+`userData/codex-storage-backups/<timestamp>`. Allow enough free disk space for
+all rollouts/databases plus temporary history comparison copies. A conservative
+space estimate plus a 5 GiB reserve is checked before opening destination writers.
+Comparison history copies contain only the selected thread and are deleted after
+each comparison; upgraded/reconstructed scratch is removed at the end, including
+on failure. Immutable backups/reports are retained. Other writers can still consume
+space after preflight; I/O errors are surfaced rather than ignored. `auth.json`
+is not copied. Treat retained backups, including configuration, as private data.
+Every thread receives a full API comparison, so large profiles can require tens
+of minutes. During maintenance new Codex starts and installation are refused;
+normal app exit waits for maintenance to finish. There is no cancellation API.
+
+Official Codex APIs create the state index. Live initialization requires a ready
+destination index (complete backfill and migrations matching an officially
+upgraded copy). Missing indexes are built in private SQLite
+storage first and published without replacing an existing file. Orphan WAL/SHM/
+journal files cause refusal. Incomplete live indexes require explicit recovery;
+the worker never repairs their backfill flags. Initialization deadlines warn and
+keep waiting rather than terminate backfill. OS/runtime crashes and external CLI
+schema changes remain outside this protection. Diagnostic `logs_*.sqlite` files
+are excluded from backups and space estimates.
+
+With all destination app-servers
+closed, the one-time worker imports backed-up history projections into
+`thread_history_1.sqlite` in a single SQLite transaction. Before importing, the
+installed Codex opens private copies of the source databases and a copied rollout,
+so Codex itself applies any required schema upgrades (including lazy history
+initialization). Original stores and immutable backups are retained. The resulting
+source and destination history schemas and migration checksums must match; this
+is a data-compatibility check, not a CLI release-number gate. It selects the most advanced
+projection of each rollout, rejects equal-position conflicts and loss of existing
+item IDs, and verifies the copied rows and database integrity before commit.
+This also preserves archived and child-thread history without resuming those
+threads or changing archive flags. Runtime adapters never access database schemas.
+
+Verification compares IDs, user/assistant messages, metadata and supported
+auxiliary state. All conversations compare ordered turns and complete API
+items, including tool/image items, against an isolated source baseline. Where
+uncached history needs reconstruction, the worker may perform a model-free
+resume and unsubscribe after checking for an active goal. It never starts a
+model turn or changes an operational conversation's provider/archive state.
+When the original projection is absent, a private rollout/index copy is replayed
+through Codex. Only that copy can be temporarily unarchived and use the built-in
+provider for model-free parsing of retired-provider history. This is reported in
+job progress. Appended settings must preserve the original bytes exactly and
+must not produce conversation items; the private cursor is checked and reset to
+the original byte/ordinal boundary before import. Original runtime settings and
+archive flags remain unchanged. Unreconstructable history still fails visibly.
+Unknown/conflicting state fails visibly and leaves the mode unchanged. A failed
+attempt may already have added indexes or atomically imported history;
+the old stores and backups remain intact.
+
+Poll the GET endpoint for completion. Rerunning after interruption creates a
+new backup and repeats verification; it does not trust a partial journal.
+Rollback verifies current saved member conversations in their legacy homes,
+including conversations created after switching to native. It does not restore
+stale backup files over current data. No automatic storage fallback or deletion
+is performed. Explicit profile/CLI SQLite overrides and conflicting user
+`sqlite_home` settings require a separate path review.
+Conflicting archive/section/memory flags across stale stores can reject a legacy
+data transition; do not confuse that operation with application downgrade.
+
+Application downgrade is a separate compatibility contract from `mode: legacy`.
+Unpatched 0.12.2 ignores the mode record and can reject a conversation unarchived
+after native conversion because its old isolated index still says archived.
+Use the prepared storage-compatible baseline as the downgrade target. That build
+reads the existing mode record, has no migration worker or transition route, and
+does not rewrite data on downgrade. Retain both executable packages before
+conversion; see [release gates](CODEX_STORAGE_RELEASE_GATES.md).
+
 ## Discovery
 
 ### `GET /api/health`
@@ -572,6 +746,10 @@ state is not `available`). Progress arrives via `GET /api/update` polling or the
 Quits the app and runs the downloaded installer, relaunching afterwards. No
 body. Every running member is stopped by the quit, so the UI confirms first.
 **500** when no update has been downloaded — it never silently no-ops.
+Codex storage maintenance rejects installation. Pending Codex initialization
+finishes before the installer is spawned, and new starts are blocked during that
+preparation. Failed installer dispatch releases that block without disposing
+the running sessions. Manual NSIS installers also refuse to force-close a running app.
 
 ### `POST /api/capture`
 
@@ -3224,6 +3402,9 @@ harness and all values are checked against the model catalog before anything is
 changed. The response is the normal party mutation result containing the updated
 member and party state. Changes requiring a process respawn preserve the native
 conversation and fail while the member is busy instead of killing its turn.
+Codex Fast/Standard changes apply to subsequent turns without replacing the
+app-server, including while its first initialization is pending. A canceled
+first message is not sent after initialization later finishes.
 
 ### `POST /api/party/members/:name/gate`
 

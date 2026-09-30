@@ -1,7 +1,7 @@
 {
   "name": "agentparty-app",
   "productName": "AgentParty",
-  "version": "0.18.1",
+  "version": "0.18.2-beta.3",
   "description": "AgentParty desktop client for local multi-agent coding sessions.",
   "author": "AgentParty",
   "license": "UNLICENSED",
@@ -275,6 +275,10 @@
       "dist/engine-server.mjs"
     ],
     "extraResources": [
+      {
+        "from": "scripts/codex-storage-transition.py",
+        "to": "bin/codex-storage-transition.py"
+      },
       {
         "from": "scripts/agent-party",
         "to": "bin/agent-party"

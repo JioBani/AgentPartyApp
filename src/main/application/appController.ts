@@ -50,6 +50,7 @@ import { translatePrimerSection } from "../../core/primerTranslator";
 import { matchesFontQuery, normalizeFontSettings, RECOMMENDED_FONTS, type FontSettings, type LocalFontFamily, type LocalFontListing, type RecommendedFont } from "../../shared/appFonts";
 import { isE2E } from "../runtimeMode";
 import type { SessionManager } from "../sessionManager";
+import { CodexStorageService } from "../codexStorageService";
 import type { EngineConnection, QaInteractionInput, QaMemberSpec } from "../engine/engineConnection";
 import type { EngineRegistry } from "../engine/engineRegistry";
 import type { WindowEntry, WindowInfo, WindowRegistry } from "../windowRegistry";
@@ -226,7 +227,7 @@ export interface UpdateController {
   listReleases(refresh?: boolean): Promise<ReleaseSummary[]>;
   check(options?: UpdateCheckOptions): Promise<UpdateStatus>;
   download(): Promise<UpdateStatus>;
-  install(): { ok: true };
+  install(): Promise<{ ok: true }> | { ok: true };
   setMockStatus(patch: Partial<UpdateStatus> | undefined): UpdateStatus;
   setMockReleases(releases: ReleaseSummary[] | undefined): ReleaseSummary[] | undefined;
 }
@@ -267,6 +268,16 @@ function publicModelDiscovery(codexModels: CodexModelDiscoveryState, museModels:
  */
 export class AppController {
   constructor(private readonly deps: AppControllerDeps) {}
+
+  private codexStorage?: CodexStorageService;
+
+  getCodexStorage() {
+    return (this.codexStorage ??= new CodexStorageService(this.deps.sessionManager)).status();
+  }
+
+  transitionCodexStorage(input: { mode?: unknown; externalCodexStopped?: unknown; acceptGoalReset?: unknown; excludeMissingThreadIds?: unknown }) {
+    return (this.codexStorage ??= new CodexStorageService(this.deps.sessionManager)).start(input);
+  }
 
   dispose(): void {}
 
@@ -868,7 +879,7 @@ export class AppController {
    * Quits and installs the downloaded build. Every running member is stopped by
    * the quit — the UI confirms before calling this.
    */
-  installUpdate(): { ok: true } {
+  async installUpdate(): Promise<{ ok: true }> {
     return this.updater().install();
   }
 

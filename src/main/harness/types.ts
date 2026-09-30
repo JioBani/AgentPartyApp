@@ -27,6 +27,8 @@ export interface HarnessSession extends EventEmitter {
   setDebugMode(enabled: boolean): void;
   setModel(model: string, providerId?: string, runtimeModel?: string): void;
   setEffort(effort: string): void;
+  /** Serving tier can change between turns without replacing this process. */
+  setServiceTier?(tier: string | undefined): void;
   setThinking(mode: string, budget?: number): void;
   setPermissionMode(permissionMode: string): void;
   /**
