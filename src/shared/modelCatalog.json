@@ -1,7 +1,7 @@
 {
   "_about": "Single source of truth for model routing, leaderboard metrics and reasoning control. Anthropic is native on Claude Code and uses local Claude OAuth on Codex; OpenAI is native on Codex and uses local Codex OAuth on Claude Code; provider=openrouter models use OpenRouter on either harness. The selected harness process never changes. Add a model by adding one entry, then run `npm run catalog:publish` to ship it to all users without an app release (docs/기획 노트 — 원격 모델 카탈로그.md).",
   "schemaVersion": 1,
-  "revision": 2026092302,
+  "revision": 2026100101,
   "models": [
     {
       "id": "claude-fable-5-1[1m]",
@@ -319,6 +319,38 @@
         "maxImages": 20,
         "maxBytesPerImage": 5242880
       }
+    },
+    {
+      "id": "GPT-6.1 Sol",
+      "label": "GPT-6.1 Sol",
+      "provider": "openai",
+      "codexModel": "gpt-6.1-sol",
+      "runtimeModel": "claude-gpt-6.1-sol",
+      "subscription": true,
+      "description": "OpenAI's newest workhorse model for complex coding and everyday work, with near-Astra performance. Both harnesses use the signed-in Codex/ChatGPT subscription.",
+      "context": "272K",
+      "perf": 5,
+      "costTier": 5,
+      "inPerM": 2,
+      "cacheReadPerM": 0.1,
+      "cacheWritePerM": 2.5,
+      "outPerM": 10,
+      "serviceTierPricing": {
+        "priority": { "inPerM": 4, "cacheReadPerM": 0.2, "cacheWritePerM": 5, "outPerM": 20 },
+        "fast": { "inPerM": 4, "cacheReadPerM": 0.2, "cacheWritePerM": 5, "outPerM": 20 }
+      },
+      "longContextPricing": {
+        "thresholdTokens": 272000,
+        "inputMultiplier": 2,
+        "outputMultiplier": 1.5
+      },
+      "reasoning": {
+        "effort": {
+          "options": ["low", "medium", "high", "xhigh", "max"],
+          "default": "low"
+        }
+      },
+      "vision": { "image": true, "maxImages": 20, "maxBytesPerImage": 5242880 }
     },
     {
       "id": "GPT-6 Sol",

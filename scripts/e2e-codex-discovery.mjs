@@ -63,7 +63,7 @@ async function main() {
     assert(!accountRoutes.some((route) => route.model === "hidden-model"), "hidden fake model is dropped");
     assert(accountRoutes[0].model === "fake-5.5", "the account-default model is first");
     assert(accountRoutes[0].capabilities?.effort?.options?.length === 4, "effort options come from the model's supportedReasoningEfforts");
-    for (const model of ["gpt-6-sol", "gpt-6-luna"]) {
+    for (const model of ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]) {
       const fallback = catalog.modelRoutes.find((route) => route.harnessId === "codex" && route.model === model);
       assert(fallback?.capabilities?.serviceTier?.options?.map((option) => option.id).join() === "inherit,standard,priority", `${model} bundled route has Fast when model/list omits it`);
     }
@@ -150,7 +150,7 @@ async function main() {
     // The fake app-server does not know the new GPT-6 models. The real runtime
     // picker must nevertheless expose their bundled Fast capability.
     await post("/api/capture", { click: ".wb-model-pill" });
-    for (const model of ["gpt-6-sol", "gpt-6-luna"]) {
+    for (const model of ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]) {
       await post("/api/capture", { click: `[data-model="${model}"] .wb-model-pick` });
       const tiers = await post("/api/measure", { selector: ".wb-modal-catalog .wb-segment" });
       assert(tiers.texts?.includes("Fast") && tiers.texts?.includes("Standard"), `${model} runtime picker renders Standard and Fast`);

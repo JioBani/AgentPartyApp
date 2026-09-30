@@ -22,10 +22,11 @@ import { fileURLToPath } from "node:url";
 import { firstBaseUrl } from "./lib/discovery.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ws = path.join(os.tmpdir(), "agentparty-catalog-list-e2e-workspace");
-const userData = path.join(os.tmpdir(), "agentparty-catalog-list-e2e-user-data");
+const qaRoot = process.env.AGENTPARTY_CATALOG_E2E_TEMP_ROOT || os.tmpdir();
+const ws = path.join(qaRoot, "agentparty-catalog-list-e2e-workspace");
+const userData = path.join(qaRoot, "agentparty-catalog-list-e2e-user-data");
 // Captures are regenerated evidence, not source — kept out of the repo.
-const shots = path.join(os.tmpdir(), "agentparty-catalog-list-e2e-shots");
+const shots = path.join(qaRoot, "agentparty-catalog-list-e2e-shots");
 
 let base = "";
 const failures = [];
@@ -185,6 +186,7 @@ async function main() {
     // --- R-6: favourites, both directions ---------------------------------
     console.log("\nR-6 — favourites travel the SAME path as the UI:");
     const modelRoutes = (await getJson("/api/models")).modelRoutes || [];
+    assert(modelRoutes.some((route) => route.harnessId === "codex" && route.model === "gpt-6.1-sol" && route.enabled), "the automation API exposes the usable Codex GPT-6.1 Sol route");
     // /api/models serves EVERY harness's routes; this catalog is scoped to the
     // member's harness. Starring a route outside that scope would correctly show
     // nothing, so pick from what this list actually offers.
@@ -303,6 +305,9 @@ async function main() {
     assert(hit.expanded.every((v) => v === "true"), "every surviving group renders expanded while searching");
     assert(hit.clear === true, "the clear control appears once there is a query");
 
+    const sol61Hit = await search("GPT-6.1 Sol");
+    assert(sol61Hit.rows.filter((name) => name === "GPT-6.1 Sol").length === 1, "GPT-6.1 Sol appears once in the real model picker");
+
     const miss = await search("Llama");
     assert(miss.empty === true, "no match draws the empty state");
     assert(miss.emptyText.includes('"Llama"'), "the empty state echoes the query in the user's original casing");
@@ -414,6 +419,37 @@ async function main() {
     await capture("catalog-app-search-light.png", "light");
     await search("Llama");
     await capture("catalog-app-empty-light.png", "light");
+
+    const switchedToCodex = await cdp.eval(`(() => {
+      const button = [...document.querySelectorAll(".wb-harness-tab")].find((item) => item.textContent.includes("Codex"));
+      if (!button || button.disabled) return false;
+      button.click();
+      return true;
+    })()`);
+    assert(switchedToCodex, "the Codex harness tab remains reachable");
+    await delay(400);
+    const codexSol61 = await search("GPT-6.1 Sol");
+    assert(codexSol61.rows.filter((name) => name === "GPT-6.1 Sol").length === 1, "Codex lists GPT-6.1 Sol exactly once");
+    const codexSol61Row = await cdp.eval(`(() => {
+      const row = [...document.querySelectorAll(".wb-model-scroll .wb-model-row")].find((item) => item.textContent.includes("GPT-6.1 Sol"));
+      const pick = row?.querySelector(".wb-model-pick");
+      if (!pick) return { enabled: false, pointer: false };
+      const bounds = pick.getBoundingClientRect();
+      const pointer = pick.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
+      if (!pick.disabled) pick.click();
+      return { enabled: !pick.disabled, pointer };
+    })()`);
+    assert(codexSol61Row.enabled && codexSol61Row.pointer, "Codex GPT-6.1 Sol is selectable and unobscured");
+    await delay(300);
+    const sol61Detail = await cdp.eval(`(() => ({
+      name: document.querySelector(".wb-detail-name-row")?.textContent || "",
+      activeEffort: [...document.querySelectorAll(".wb-detail-section .wb-segment.is-active")].map((item) => item.textContent.trim()),
+      fast: [...document.querySelectorAll(".wb-detail-section .wb-segment")].some((item) => item.textContent.trim() === "Fast"),
+    }))()`);
+    assert(sol61Detail.name.includes("GPT-6.1 Sol"), "selecting the Codex row opens GPT-6.1 Sol details");
+    assert(sol61Detail.activeEffort.includes("Low") && sol61Detail.fast, "the real picker exposes Codex's low default and Fast tier");
+    await capture("catalog-app-sol61-light.png", "light");
+    await capture("catalog-app-sol61-dark.png", "dark");
 
     console.log(`\ncaptures → ${shots}`);
   } finally {
