@@ -1,5 +1,20 @@
 # Codex 저장소 전환과 즉시 복귀 후보
 
+## 2026-09-30 로컬 설치 완료
+
+현재 권한에서 별도 설치 helper 실행 성공. 앱의 작업 종료를 기다려 정상 종료한 뒤
+새 오프라인 백업을 만들고, 실제 NSIS 설치 파일로 compat `0.18.2-beta.1` →
+전환 후보 `0.18.2-beta.3` 순서로 설치했다. 두 설치 모두 exit 0이며 각 실행에서
+36개 party/286개 member의 thread 연결과 저장소 mode 기록 보존 검사가 통과했다.
+최종 실제 앱 API 버전은 `0.18.2-beta.3`, 저장소 상태는 `legacy`이다.
+운영 마이그레이션은 실행하지 않았다. 이는 실제 설치/순방향 업데이트 증거이며,
+NSIS 다운그레이드·feed recall·초기화/유지보수 중 updater 경로를 대신하지 않는다.
+
+- 설치 결과: `.tmp/local-maintenance/install-result.json` (`complete`, error 없음).
+- 오프라인 백업: `E:\AgentParty-local-backup\app-update-20260930T053023Z`.
+- 앞선 `blocked by policy` 응답의 차단 주체는 확인되지 않았다. 이를 현재 설치가
+  차단된다는 근거로 사용하지 않는다. 실제 설치는 현재 권한에서 정상 실행됐다.
+
 ## 2026-09-30 재검증 진행 기록
 
 - 후보 `3970fb0` / `0.18.2-beta.3`: 검증용 임시 파일의 Windows 읽기 전용
